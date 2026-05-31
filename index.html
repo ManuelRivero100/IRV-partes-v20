@@ -3,6 +3,19 @@
 <head>
 <meta charset="utf-8">
   <link rel="manifest" href="manifest.json">
+<script>
+// Override manifest icon with inline SVG
+if('serviceWorker' in navigator){
+  var iconData = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAxOTIgMTkyJz48cmVjdCB3aWR0aD0nMTkyJyBoZWlnaHQ9JzE5Micgcng9JzM2JyBmaWxsPScjZjBlYWQ2Jy8+PGNpcmNsZSBjeD0nOTYnIGN5PSc5Nicgcj0nODgnIGZpbGw9J25vbmUnIHN0cm9rZT0nIzFjM2Q3YScgc3Ryb2tlLXdpZHRoPSc4Jy8+PGNpcmNsZSBjeD0nOTYnIGN5PSc5Nicgcj0nNzgnIGZpbGw9JyNmMGVhZDYnIHN0cm9rZT0nIzFjM2Q3YScgc3Ryb2tlLXdpZHRoPSczJy8+PGcgdHJhbnNmb3JtPSd0cmFuc2xhdGUoNTQsODApJz48ZWxsaXBzZSBjeD0nMCcgY3k9Jy0xNicgcng9JzknIHJ5PScxNCcgZmlsbD0nI2YwYjgwMCcgdHJhbnNmb3JtPSdyb3RhdGUoMCknLz48ZWxsaXBzZSBjeD0nMCcgY3k9Jy0xNicgcng9JzknIHJ5PScxNCcgZmlsbD0nI2YwYjgwMCcgdHJhbnNmb3JtPSdyb3RhdGUoOTApJy8+PGVsbGlwc2UgY3g9JzAnIGN5PSctMTYnIHJ4PSc5JyByeT0nMTQnIGZpbGw9JyNmMGI4MDAnIHRyYW5zZm9ybT0ncm90YXRlKDE4MCknLz48ZWxsaXBzZSBjeD0nMCcgY3k9Jy0xNicgcng9JzknIHJ5PScxNCcgZmlsbD0nI2YwYjgwMCcgdHJhbnNmb3JtPSdyb3RhdGUoMjcwKScvPjxjaXJjbGUgY3g9JzAnIGN5PScwJyByPSc3JyBmaWxsPScjMWMzZDdhJy8+PC9nPjxjaXJjbGUgY3g9JzEzNScgY3k9Jzc2JyByPScyMicgZmlsbD0nI2YwYjgwMCcvPjxyZWN0IHg9JzEyNCcgeT0nOTUnIHdpZHRoPScyMicgaGVpZ2h0PSc0JyByeD0nMicgZmlsbD0nI2YwYjgwMCcvPjxyZWN0IHg9JzEyNicgeT0nMTAxJyB3aWR0aD0nMTgnIGhlaWdodD0nNCcgcng9JzInIGZpbGw9JyNmMGI4MDAnLz48cmVjdCB4PScxMjgnIHk9JzEwNycgd2lkdGg9JzE0JyBoZWlnaHQ9JzQnIHJ4PScyJyBmaWxsPScjZjBiODAwJy8+PHBvbHlnb24gcG9pbnRzPScxMzcsNjEgMTI5LDgwIDEzNiw4MCAxMjgsOTQgMTQ0LDc0IDEzNiw3NCcgZmlsbD0nIzFjM2Q3YScvPjx0ZXh0IHg9Jzk2JyB5PScxNTgnIHRleHQtYW5jaG9yPSdtaWRkbGUnIGZvbnQtZmFtaWx5PSdBcmlhbCBCbGFjayxzYW5zLXNlcmlmJyBmb250LXNpemU9JzM2JyBmb250LXdlaWdodD0nOTAwJyBmaWxsPScjMWMzZDdhJyBsZXR0ZXItc3BhY2luZz0nNic+SVJWPC90ZXh0Pjwvc3ZnPg==";
+  // Patch manifest dynamically
+  fetch('manifest.json').then(function(r){return r.json();}).then(function(m){
+    m.icons=[{src:iconData,sizes:"192x192",type:"image/svg+xml"}];
+    var blob=new Blob([JSON.stringify(m)],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    document.querySelector('link[rel="manifest"]').href=url;
+  }).catch(function(){});
+}
+</script>
   <meta name="theme-color" content="#2d9e5f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -505,6 +518,7 @@ textarea{resize:vertical;min-height:72px}
         </div>
         <div class="brow" style="margin-top:6px">
           <button class="btn btn-s btn-sm" onclick="exportarBackup()">&#128230; Exportar backup</button>
+          <button class="btn btn-s btn-sm" onclick="verBackupTexto()" style="background:var(--blue-light);color:var(--blue);border-color:var(--blue);">&#128203; Ver como texto</button>
           <label class="btn btn-s btn-sm" style="cursor:pointer;position:relative;overflow:hidden">&#128229; Importar backup<input type="file" accept=".json" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer" onchange="importarBackup(this)"></label>
         </div>
         <div class="brow" style="margin-top:6px">
@@ -516,18 +530,27 @@ textarea{resize:vertical;min-height:72px}
         </div>
       </div>
     </div>
+  
+
+
+</div>
+<div id="resumenTotalView" style="display:none;position:fixed;inset:0;z-index:100;background:var(--bg);overflow-y:auto;padding:16px;">
+    <button class="back" onclick="volverCentros()">&#8592; Centros</button>
+    <div class="card"><div class="card-title">&#128202; Resumen total</div><div id="resumenTotalContent"></div></div>
+    <div class="brow"><button class="btn btn-s btn-sm" onclick="compartirResumenTotal()">&#128203; Compartir</button></div>
+  </div>
+<div id="centrosView" style="display:none;position:fixed;inset:0;z-index:100;background:var(--bg);overflow-y:auto;padding:16px;">
+    <button class="back" onclick="volverSecFin()">&#8592; Historial</button>
+    <div class="hist-sec-hdr fin">&#9989; Finalizados &mdash; por centro</div>
+    <div id="centrosList"></div>
+    <button onclick="verResumenTotal()" style="width:100%;padding:11px;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:.88rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;font-family:inherit;">&#128202; Resumen total de todos los centros</button>
   </div>
   <div id="secView" style="display:none">
     <button class="back" onclick="volverHistOpts()">&#8592; Historial</button>
     <div id="secHdr" class="hist-sec-hdr"></div>
     <div id="secList"></div>
   </div>
-  <div id="centrosView" style="display:none">
-    <button class="back" onclick="volverSecFin()">&#8592; Historial</button>
-    <div class="hist-sec-hdr fin">&#9989; Finalizados &mdash; por centro</div>
-    <div id="centrosList"></div>
-    <button onclick="verResumenTotal()" style="width:100%;padding:11px;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:.88rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;font-family:inherit;">&#128202; Resumen total de todos los centros</button>
-  </div>
+  
   <div id="incidenciasView" style="display:none">
     <button class="back" onclick="volverCentros()">&#8592; Centros</button>
     <div class="card" id="incCentroCard"></div>
@@ -535,11 +558,7 @@ textarea{resize:vertical;min-height:72px}
     <div id="incidenciasList"></div>
     <button onclick="verResumenCentro()" style="width:100%;padding:11px;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:.88rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;font-family:inherit;">&#128202; Resumen del centro</button>
   </div>
-  <div id="resumenTotalView" style="display:none">
-    <button class="back" onclick="volverCentros()">&#8592; Centros</button>
-    <div class="card"><div class="card-title">&#128202; Resumen total</div><div id="resumenTotalContent"></div></div>
-    <div class="brow"><button class="btn btn-s btn-sm" onclick="compartirResumenTotal()">&#128203; Compartir</button></div>
-  </div>
+  
   <div id="resumenCentroView" style="display:none">
     <button class="back" onclick="volverIncidencias()">&#8592; Incidencias</button>
     <div class="card"><div class="card-title" id="resumenCentroTitle">&#128202; Resumen del centro</div><div id="resumenCentroContent"></div></div>
@@ -2472,6 +2491,38 @@ function compartirDesde(detalle,obsVal){
 }
 
 // ===== BACKUP =====
+function verBackupTexto(){
+  var h=getH();
+  var data={
+    version:'v18',
+    fecha:new Date().toISOString(),
+    partes:h,
+    materiales:getMats(),
+    clientes:JSON.parse(localStorage.getItem('pm_clientes')||'[]'),
+    mercadona_jobs:JSON.parse(localStorage.getItem('pm_mercadona_jobs')||'null'),
+    catalogo:getCat(),
+    catalogo_v:localStorage.getItem('pm_catalogo_v')||'',
+    data_v:localStorage.getItem('pm_data_v')||'',
+    mats_v:localStorage.getItem('pm_mats_v')||''
+  };
+  var txt = JSON.stringify(data, null, 2);
+  // Show in a dialog
+  var dlg = document.createElement('div');
+  dlg.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  dlg.innerHTML='<div style="background:var(--surface);border-radius:12px;padding:20px;width:100%;max-width:420px;max-height:80vh;display:flex;flex-direction:column;gap:12px;">'
+    +'<div style="font-weight:700;font-size:.95rem;">📋 Copia este texto</div>'
+    +'<div style="font-size:.72rem;color:var(--text2);">Selecciona todo y copia. Luego pégalo en la app de GitHub Pages con "Importar desde texto pegado"</div>'
+    +'<textarea style="flex:1;min-height:200px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:.7rem;font-family:monospace;resize:none;" readonly>'+txt+'</textarea>'
+    +'<button onclick="this.parentElement.parentElement.remove()" style="padding:10px;background:var(--green);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Cerrar</button>'
+    +'</div>';
+  document.body.appendChild(dlg);
+  // Auto select text
+  setTimeout(function(){
+    var ta=dlg.querySelector('textarea');
+    if(ta){ta.focus();ta.select();}
+  },100);
+}
+
 function exportarBackup(){
   var h=getH();if(!h.length){alert('No hay partes guardados.');return;}
   var d=new Date();
@@ -3374,7 +3425,7 @@ function getOrdenes(filtro){
   var res=[];
   Object.keys(grupos).forEach(function(k){
     var g=grupos[k];
-    g.estado=g.partes[g.partes.length-1].r.estado||'terminado';
+    g.estado=g.partes.some(function(p){return (p.r.estado||'terminado')==='en-ejecucion';})? 'en-ejecucion':'terminado';
     if(!filtro||g.estado===filtro) res.push(g);
   });
   return res.sort(function(a,b){ return b.fechaMax.localeCompare(a.fechaMax); });
@@ -4193,12 +4244,14 @@ function verResumenCentro(){
 function verResumenTotal(){
   var h=getH();
   if(curCliente)h=h.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
-  h=h.filter(function(r){return (r.estado||'terminado')==='terminado';});
   var codAcum={};
   h.forEach(function(r){(r.codigos||[]).forEach(function(c){if(!codAcum[c.cod])codAcum[c.cod]={rc:c.cod,rl:c.lab,v:0,u:c.u};codAcum[c.cod].v+=c.v;});});
   window._resumenTotalCodAcum=codAcum;
   _mostrarResumenTotal('agrupado');
-  histShow(['resumenTotalView']);
+  var el=document.getElementById('resumenTotalView');
+  if(el){el.style.display='block';}
+  var el2=document.getElementById('centrosView');
+  if(el2){el2.style.display='none';}
 }
 
 function verSec(sec){
@@ -4301,6 +4354,19 @@ function _renderAcum(codAcum){
     :'<div style="font-size:.82rem;color:var(--text3);">Sin datos.</div>';
 }
 
+
+var _codConcepto = {
+  'MF9344':'H. Normal','MF9348':'H. Normal','MA4836':'H. Normal','MF9404':'H. Normal',
+  'MF9345':'H. Extra','MF9349':'H. Extra','M71088':'H. Extra','MF9405':'H. Extra',
+  'MF9346':'H. Nocturna','MF9350':'H. Nocturna','MA4837':'H. Nocturna','MF9406':'H. Nocturna',
+  'MF9347':'H. Festiva','MF9351':'H. Festiva','MA4838':'H. Festiva','MF9407':'H. Festiva',
+  'M71077':'Despl. Normal','MK9OVB':'Despl. Normal',
+  'MB8726':'Despl. Extra','MB8723':'Despl. Extra',
+  'MB8728':'Despl. Nocturno','MB8725':'Despl. Nocturno',
+  'MB8727':'Despl. Festivo','MB8724':'Despl. Festivo',
+  'MF9352':'Kilometraje','MF9412':'Kilometraje','MA4841':'Kilometraje',
+  'MF9895':'½ Dieta','MF9896':'½ Dieta','MA4839':'½ Dieta'
+};
 function _renderAcumAgrupado(codAcum){
   // Agrupar por concepto
   var grupos={};
