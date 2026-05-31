@@ -3425,7 +3425,8 @@ function getOrdenes(filtro){
   var res=[];
   Object.keys(grupos).forEach(function(k){
     var g=grupos[k];
-    g.estado=g.partes.some(function(p){return (p.r.estado||'terminado')==='en-ejecucion';})? 'en-ejecucion':'terminado';
+    g.partes.sort(function(a,b){return a.r.fecha.localeCompare(b.r.fecha);});
+    g.estado=g.partes[g.partes.length-1].r.estado||'terminado';
     if(!filtro||g.estado===filtro) res.push(g);
   });
   return res.sort(function(a,b){ return b.fechaMax.localeCompare(a.fechaMax); });
@@ -4598,9 +4599,30 @@ function toggleAddMat(){ $('addMatForm').style.display=$('addMatForm').style.dis
 function verCentros(){
   var h=getH();
   if(curCliente)h=h.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
-  h=h.filter(function(r){return (r.estado||'terminado')==='terminado';});
+  // Determine which orders are finalized (last parte is terminado)
+  var allH=getH();
+  if(curCliente)allH=allH.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
+  var ordenEstado={};
+  var ordenPartes={};
+  allH.forEach(function(r){
+    var k=r.pedido+'||'+(r.centro||'');
+    if(!ordenPartes[k])ordenPartes[k]=[];
+    ordenPartes[k].push(r);
+  });
+  Object.keys(ordenPartes).forEach(function(k){
+    var ps=ordenPartes[k].slice().sort(function(a,b){return a.fecha.localeCompare(b.fecha);});
+    ordenEstado[k]=ps[ps.length-1].estado||'terminado';
+  });
+  // Only show finalized orders
+  h=h.filter(function(r){
+    var k=r.pedido+'||'+(r.centro||'');
+    return ordenEstado[k]==='terminado';
+  });
   var centrosMap={};
-  h.forEach(function(r){
+  // Count ALL partes per order, not just terminado ones
+  allH.forEach(function(r){
+    var k2=r.pedido+'||'+(r.centro||'');
+    if(ordenEstado[k2]!=='terminado') return;
     var k=r.centro||'sin-centro';
     if(!centrosMap[k])centrosMap[k]={centro:k,tienda:r.tienda,partes:0,ordenes:{},fechaMax:''};
     centrosMap[k].tienda=r.tienda;centrosMap[k].partes++;
@@ -4620,8 +4642,25 @@ function verIncidenciasCentro(centro){
   _curCentroFin=centro;
   var h=getH();
   if(curCliente)h=h.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
-  h=h.filter(function(r){return (r.estado||'terminado')==='terminado'&&r.centro===centro;});
-  var tienda=h.length?h[h.length-1].tienda:'';
+  // Get all partes for this centro
+  var allForCentro=getH();
+  if(curCliente)allForCentro=allForCentro.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
+  allForCentro=allForCentro.filter(function(r){return r.centro===centro;});
+  // Determine which orders are finalized
+  var ordFinalized={};
+  var ordPartes={};
+  allForCentro.forEach(function(r){
+    var k=r.pedido+'||'+centro;
+    if(!ordPartes[k])ordPartes[k]=[];
+    ordPartes[k].push(r);
+  });
+  Object.keys(ordPartes).forEach(function(k){
+    var ps=ordPartes[k].slice().sort(function(a,b){return a.fecha.localeCompare(b.fecha);});
+    if((ps[ps.length-1].estado||'terminado')==='terminado') ordFinalized[k]=1;
+  });
+  // Use all partes of finalized orders
+  h=allForCentro.filter(function(r){return ordFinalized[r.pedido+'||'+centro];});
+  var tienda=allForCentro.length?allForCentro[allForCentro.length-1].tienda:'';
   $('incCentroCard').innerHTML='<div style="font-weight:700;font-size:.95rem;">&#127978; '+tienda+'</div><div style="font-size:.76rem;color:var(--text2);margin-top:2px;">Centro '+centro+' &middot; '+h.length+' parte'+(h.length===1?'':'s')+'</div>';
   var ordenesMap={};
   h.forEach(function(r){
