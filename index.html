@@ -3805,7 +3805,7 @@ function guardarConEstado(estado){
   if(!window.recTmp) return;
   window.recTmp.obs=$('obs').value.trim();
   window.recTmp.estado=estado;
-  window.recTmp.materiales=getMatsUsados();
+  window.recTmp.materiales=msGetSel();
 
   // Detectar si tienda/dir/tel cambiaron respecto al historial del mismo centro
   var r=window.recTmp;
