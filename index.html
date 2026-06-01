@@ -2792,7 +2792,7 @@ var MAT_SECCIONES_ELECTRICIDAD = [
     {cod:'',nom:'Embarrado (u)'}
   ]}
 ];
-var _MS={secAbierta:null,subAbierta:null,editSecAbierta:null,nuevaSecVis:false,sel:{},modo:'parte',catJob:null};
+var _MS={secAbierta:null,subAbierta:null,editSecAbierta:null,nuevaSecVis:false,sel:{},extras:{},modo:'parte',catJob:null};
 function msGetSecciones(job){
   var j=job||curJob||'';
   var key=msJobKey(j);
@@ -2867,7 +2867,9 @@ function msRender(cid){
         });
       }
     });
-    // Single add button at the bottom
+    // Lista de materiales añadidos manualmente
+    html+='<div id="msExtrasList"></div>';
+        // Single add button at the bottom
     html+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">'
       +'<div style="font-size:.72rem;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">+ A&#241;adir material</div>'
       +'<div style="display:flex;gap:8px;">'
@@ -2880,6 +2882,7 @@ function msRender(cid){
       +'<div style="font-size:.68rem;color:var(--text3);margin-top:5px;">Si no existe se a&#241;ade como flotante al cat&#225;logo</div>'
       +'</div>';
     el.innerHTML=html;
+    msRenderExtras();
     return;
   }
   // Catalog/edit view - old ms* behavior
@@ -2972,6 +2975,29 @@ function msAddGlobalFocus(el){
     el.scrollIntoView({behavior:'smooth',block:'center'});
   },300);
 }
+function msRenderExtras(){
+  var el=document.getElementById('msExtrasList'); if(!el) return;
+  var extras=_MS.extras||{};
+  var keys=Object.keys(extras);
+  if(!keys.length){ el.innerHTML=''; return; }
+  var h='';
+  keys.forEach(function(nom){
+    var q=extras[nom]||1;
+    var nomEsc=nom.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+    h+='<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border2);">'
+      +'<span style="flex:1;font-size:.88rem;color:var(--text);">'+nom+'</span>'
+      +'<input type="number" min="1" value="'+q+'" '
+      +'style="width:60px;padding:5px 8px;border:1.5px solid var(--green);border-radius:var(--r-sm);font-size:.88rem;text-align:center;background:var(--surface2);color:var(--text);font-family:inherit;" '
+      +'data-nom="'+nomEsc+'" '
+      +'oninput="if(!_MS.extras)_MS.extras={};_MS.extras[this.dataset.nom]=parseFloat(this.value)||1" '
+      +'onfocus="this.select()">'
+      +'<button data-nom="'+nomEsc+'" '
+      +'onclick="delete _MS.extras[this.dataset.nom];msRenderExtras();" '
+      +'style="width:26px;height:26px;border-radius:50%;background:var(--red-light);color:var(--red);border:none;cursor:pointer;font-size:.9rem;flex-shrink:0;">&#x2715;</button>'
+      +'</div>';
+  });
+  el.innerHTML=h;
+}
 function msAcGlobal(val){
   val=val.trim();
   var box=$('msAcGlobalBox');if(!box)return;
@@ -2991,10 +3017,11 @@ function msAcGlobal(val){
   box.style.display=html?'block':'none';
 }
 function msAcGlobalSel(nom){
-  _MS.sel[nom]=(_MS.sel[nom]||0)+1;
+  if(!_MS.extras) _MS.extras={};
+  if(!_MS.extras[nom]) _MS.extras[nom]=1;
   var inp=$('msAddGlobal');if(inp)inp.value='';
   var box=$('msAcGlobalBox');if(box){box.style.display='none';box.innerHTML='';}
-  msRender('parteMatCard');
+  msRenderExtras();
 }
 function msAcGlobalNuevo(){
   var inp=$('msAddGlobal');
@@ -3005,7 +3032,8 @@ function msAcGlobalNuevo(){
     msAcGlobalSel(val);return;
   }
   // Add as flotante
-  _MS.sel[val]=1;
+  if(!_MS.extras) _MS.extras={};
+  _MS.extras[val]=1;
   if(g){catAddFlotante(val,g.id);catActualizarBadge();}
   var t=document.createElement('div');
   t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--amber);color:#fff;padding:8px 16px;border-radius:20px;font-size:.82rem;font-weight:600;z-index:999;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.3);';
@@ -3077,11 +3105,15 @@ function msAddInline(si){
   msRender(_MS.modo==='catalogo'?'matCatCard':'parteMatCard');
   if(inp)inp.value='';
 }
-function msInitSel(mats){_MS.sel={};_MS.secAbierta=null;(mats||[]).forEach(function(m){if(m.cantidad>0)_MS.sel[m.nombre||m.nom]=m.cantidad;});}
+function msInitSel(mats){_MS.sel={};_MS.extras={};_MS.secAbierta=null;(mats||[]).forEach(function(m){if(m.cantidad>0)_MS.sel[m.nombre||m.nom]=m.cantidad;});}
 function msGetSel(){
-  return Object.keys(_MS.sel).map(function(nom){
+  var r=Object.keys(_MS.sel).map(function(nom){
     return {cod:'',nombre:nom,cantidad:_MS.sel[nom]};
   });
+  Object.keys(_MS.extras||{}).forEach(function(nom){
+    if(!_MS.sel[nom]) r.push({cod:'',nombre:nom,cantidad:_MS.extras[nom]||1});
+  });
+  return r;
 }
 
 function msGetSecIco(nombre){
@@ -4440,7 +4472,7 @@ function fT(m){ return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-
 
 function fmt(v){ var r=Math.round(v*100)/100; return Number.isInteger(r)?''+r:(''+r).replace(/0+$/,'').replace(/\.$/,''); }
 
-function gc(job,lab,rol){ var e=COD[jk(job)]&&COD[jk(job)][lab]; if(!e) return lab; if(e.r&&rol) return e.c[rol]||lab; return e.c||lab; }
+function gc(job,lab,rol){ if(!curCliente||curCliente.tipo!=='mercadona') return lab; var e=COD[jk(job)]&&COD[jk(job)][lab]; if(!e) return lab; if(e.r&&rol) return e.c[rol]||lab; return e.c||lab; }
 
 function guardarEdicionParte(){if(_editIdx===null)return;var h=getH();var r=h[_editIdx];if(!r)return;var newTienda=$('editTienda').value.trim(),newDir=$('editDir').value.trim(),newTel=$('editTel').value.trim(),newObs=$('editObs').value.trim();if(!newTienda){showMsg('msgEdit','La tienda no puede estar vacía.','error');return;}var cambios=[];if(r.tienda!==newTienda)cambios.push('Tienda: '+r.tienda+' → '+newTienda);if(r.dir!==newDir)cambios.push('Dirección: '+r.dir+' → '+newDir);if(r.tel!==newTel)cambios.push('Teléfono: '+r.tel+' → '+newTel);r.tienda=newTienda;r.dir=newDir;r.tel=newTel;r.obs=newObs;if(r.detalle){r.detalle=r.detalle.replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTienda);}).replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newDir);}).replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTel);});}if(cambios.length&&r.centro){if(confirm('¿Actualizar en todos los partes del mismo centro?\n\n'+cambios.join('\n'))){h.forEach(function(p,i){if(i===_editIdx)return;if(p.centro===r.centro&&p.clienteId===r.clienteId){p.tienda=newTienda;p.dir=newDir;p.tel=newTel;if(p.detalle){p.detalle=p.detalle.replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTienda);}).replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newDir);}).replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTel);});}}});}}setH(h);showMsg('msgEdit','Guardado correctamente.','success');setTimeout(function(){verParte(_editIdx);},700);}
 
