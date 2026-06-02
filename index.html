@@ -3412,7 +3412,8 @@ function checkAutoEnlace(){
   var fecha=$('fecha').value; var arrVal=$('arr').value;
   if(!fecha||!arrVal){ resetAE(); return; }
   // Busca en TODOS los partes del día (cualquier cliente)
-  var same=getH().filter(function(x){ return x.fecha===fecha; });
+  var curCid=curCliente?curCliente.id:'mercadona';
+  var same=getH().filter(function(x){ return x.fecha===fecha && (x.clienteId||'mercadona')===curCid; });
   if(!same.length){ resetAE(); return; }
   var last=same[same.length-1];
   if(!last.linkType||last.linkType==='No'){ resetAE(); return; }
