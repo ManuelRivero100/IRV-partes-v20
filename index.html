@@ -2472,8 +2472,13 @@ function pdfDesde(detalle,obsVal,fArg,cArg,pArg){
 function compartirDesde(detalle,obsVal,matsText){
   var tmp=document.createElement('div'); tmp.innerHTML=detalle||'';
   var sep='====================',lines=['PARTE DE TRABAJO',sep];
+  var skipNext=false;
   Array.from(tmp.children).forEach(function(el){
-    if(el.classList.contains('rgroup-title')){ var t=el.textContent.trim(); if(t!=='Datos generales'){ lines.push(''); lines.push(t); } }
+    // Detectar el div de título "Materiales" y saltar ese bloque
+    var txt=el.textContent?el.textContent.trim():'';
+    if(txt==='Materiales'){ skipNext=true; return; }
+    if(skipNext){ skipNext=false; return; } // saltar el div con los items de materiales
+    if(el.classList.contains('rgroup-title')){ var t=txt; if(t&&t!=='Datos generales'){ lines.push(''); lines.push(t); } }
     else if(el.classList.contains('rrow')){
       var rc=el.querySelector('.rc')?el.querySelector('.rc').textContent.trim():'';
       var rl=el.querySelector('.rl')?el.querySelector('.rl').textContent.trim():'';
@@ -2484,10 +2489,7 @@ function compartirDesde(detalle,obsVal,matsText){
       else if(rv) lines.push(rc+' | '+rl+'\n'+rv);
       else lines.push(rc+' | '+rl);
     } else {
-      var t2=el.textContent?el.textContent.trim():'';
-      // Saltar si es la sección de materiales del detalle (evitar duplicado)
-      if(t2 && t2.toLowerCase().indexOf('materiales')===0) return;
-      if(t2){ lines.push(''); lines.push(t2); } // línea en blanco antes de nombres
+      if(txt){ lines.push(''); lines.push(txt); }
     }
   });
   if(matsText){ lines.push(matsText); }
