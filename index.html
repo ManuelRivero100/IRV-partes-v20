@@ -4539,7 +4539,7 @@ function _renderAcumAgrupado(codAcum){
 }
 
 function cerrarEditPanel(){var p=document.getElementById('editPanel');if(p)p.style.display='none';}
-function abrirEdicionParte(idx){var h=getH();var r=h[idx];if(!r)return;_editIdx=idx;$('editTienda').value=r.tienda||'';$('editDir').value=r.dir||'';$('editTel').value=r.tel||'';$('editObs').value=r.obs||'';$('editLink').value=r.linkType||'No';$('confirmDel').style.display='none';$('editPanel').style.display='block';$('editPanel').scrollIntoView({behavior:'smooth',block:'nearest'});}
+function abrirEdicionParte(idx){var h=getH();var r=h[idx];if(!r)return;_editIdx=idx;$('editTienda').value=r.tienda||'';$('editDir').value=r.dir||'';$('editTel').value=r.tel||'';$('editObs').value=r.obs||'';var lv=r.linkType||'No'; $('editLink').value=(lv==='Sí'||lv==='Si'||lv==='SÍ')?'Sí':lv;$('confirmDel').style.display='none';$('editPanel').style.display='block';$('editPanel').scrollIntoView({behavior:'smooth',block:'nearest'});}
 
 function agregarMatEdit(){
   var cod=$('nuevoMatEdit').value.trim().toUpperCase();
