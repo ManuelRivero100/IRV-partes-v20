@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <meta charset="utf-8">
   <link rel="manifest" href="manifest.json">
 <script>
@@ -2487,9 +2488,29 @@ function compartirDesde(detalle,obsVal,matsText){
       else if(el.classList.contains('obs-row')) lines.push(rc+': '+rl);
       else if(rv) lines.push(rc+' | '+rl+'\n'+rv);
       else lines.push(rc+' | '+rl);
-    } else { var t2=el.textContent?el.textContent.trim():''; if(t2) lines.push(t2); }
+    } else { var t2=el.textContent?el.textContent.trim():''; if(t2){ lines.push(''); lines.push(t2); } }
   });
-
+  // Materiales
+  var matsFromDetalle='';
+  if(!matsText){
+    var inM2=false;
+    Array.from(tmp.children).forEach(function(el){
+      var t=el.textContent?el.textContent.trim():'';
+      if(t==='Materiales'){ inM2=true; return; }
+      if(inM2){
+        Array.from(el.children).forEach(function(item){
+          var it=item.textContent?item.textContent.trim():'';
+          if(it) matsFromDetalle+=(matsFromDetalle?'\n':'')+it;
+        });
+        inM2=false;
+      }
+    });
+    if(matsFromDetalle) matsFromDetalle='\nMateriales\n'+matsFromDetalle;
+  }
+  var finalMats=matsText||matsFromDetalle;
+  if(finalMats) lines.push(finalMats);
+  if(obsVal){ lines.push(''); lines.push('Obs.: '+obsVal); }
+  var texto=lines.join('\n').trim();
   if(navigator.share){ navigator.share({title:'Parte de Trabajo',text:texto}); }
   else { navigator.clipboard.writeText(texto).then(function(){ alert('Texto copiado.'); }).catch(function(){ alert('No se pudo compartir.'); }); }
 }
@@ -4774,7 +4795,6 @@ onFechaChange();
 renderWorkers();
 
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 // Limpiar Service Workers y cachés anteriores
 if('serviceWorker' in navigator){
