@@ -4238,11 +4238,6 @@ function verParte(idx){
   var fF=r.fecha?r.fecha.split('-').reverse().join('/'):'--';
   var eb='';  // El estado es de la orden, no del parte
   var matHTML='';
-  var usados=(r.materiales||[]).filter(function(m){ return m.cantidad&&+m.cantidad>0; });
-  if(usados.length){
-    matHTML='<div class="card"><div class="card-title">&#128295; Materiales usados</div>'+
-      usados.map(function(m){ return '<div class="acum-row" style="padding:5px 0;"><span>'+m.nombre+'</span><span style="font-weight:600;">'+m.cantidad+'</span></div>'; }).join('')+'</div>';
-  }
   $('parteBody').innerHTML=
     '<div class="card"><div class="card-title">&#128203; '+r.tienda+' &middot; '+fF+'</div>'+
 
