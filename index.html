@@ -4256,6 +4256,18 @@ function verParte(idx){
     '<div id="confirmDel" style="display:none;padding:12px;background:var(--red-light);border:1px solid rgba(192,57,43,.2);border-radius:var(--r-sm);margin-top:8px">'+
     '<div style="font-size:.88rem;font-weight:600;color:var(--red);margin-bottom:8px">&iquest;Borrar este parte?</div>'+
     '<div style="display:flex;gap:8px"><button class="btn btn-d btn-sm" onclick="borrarParteOk('+idx+')">S&iacute;, borrar</button><button class="btn btn-s btn-sm" onclick="$(\'confirmDel\').style.display=\'none\'">Cancelar</button></div>'+
+    '<div id="editPanel" style="display:none;margin-top:10px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);">'+
+    '<div style="font-size:.8rem;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Editar parte</div>'+
+    '<div class="field"><label>Tienda</label><input id="editTienda" type="text" style="width:100%"></div>'+
+    '<div class="field"><label>Direcci&oacute;n</label><input id="editDir" type="text" style="width:100%"></div>'+
+    '<div class="field"><label>Tel&eacute;fono</label><input id="editTel" type="tel" style="width:100%"></div>'+
+    '<div class="field"><label>Observaciones</label><textarea id="editObs" rows="3" style="width:100%;resize:vertical;"></textarea></div>'+
+    '<div class="field"><label>Enlace</label><select id="editLink" style="width:100%"><option value="No">No</option><option value="S\u00ed">S\u00ed</option><option value="Auto">Auto</option></select></div>'+
+    '<div id="msgEdit" style="display:none;margin:6px 0;"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:8px;">'+
+    '<button class="btn btn-g btn-sm" onclick="guardarEdicionParte()">Guardar</button>'+
+    '<button class="btn btn-s btn-sm" onclick="$(\'editPanel\').style.display=\'none\'">Cancelar</button>'+
+    '</div></div>'+
     '</div></div>'+matHTML;
 }
 
@@ -4429,7 +4441,7 @@ function _renderAcumAgrupado(codAcum){
   return html||'<div style="font-size:.82rem;color:var(--text3);">Sin datos.</div>';
 }
 
-function abrirEdicionParte(idx){var h=getH();var r=h[idx];if(!r)return;_editIdx=idx;$('editTienda').value=r.tienda||'';$('editDir').value=r.dir||'';$('editTel').value=r.tel||'';$('editObs').value=r.obs||'';$('confirmDel').style.display='none';$('editPanel').style.display='block';$('editPanel').scrollIntoView({behavior:'smooth',block:'nearest'});}
+function abrirEdicionParte(idx){var h=getH();var r=h[idx];if(!r)return;_editIdx=idx;$('editTienda').value=r.tienda||'';$('editDir').value=r.dir||'';$('editTel').value=r.tel||'';$('editObs').value=r.obs||'';$('editLink').value=r.linkType||'No';$('confirmDel').style.display='none';$('editPanel').style.display='block';$('editPanel').scrollIntoView({behavior:'smooth',block:'nearest'});}
 
 function agregarMatEdit(){
   var cod=$('nuevoMatEdit').value.trim().toUpperCase();
@@ -4475,7 +4487,7 @@ function fmt(v){ var r=Math.round(v*100)/100; return Number.isInteger(r)?''+r:('
 
 function gc(job,lab,rol){ if(!curCliente||curCliente.tipo!=='mercadona') return lab; var e=COD[jk(job)]&&COD[jk(job)][lab]; if(!e) return lab; if(e.r&&rol) return e.c[rol]||lab; return e.c||lab; }
 
-function guardarEdicionParte(){if(_editIdx===null)return;var h=getH();var r=h[_editIdx];if(!r)return;var newTienda=$('editTienda').value.trim(),newDir=$('editDir').value.trim(),newTel=$('editTel').value.trim(),newObs=$('editObs').value.trim();if(!newTienda){showMsg('msgEdit','La tienda no puede estar vacía.','error');return;}var cambios=[];if(r.tienda!==newTienda)cambios.push('Tienda: '+r.tienda+' → '+newTienda);if(r.dir!==newDir)cambios.push('Dirección: '+r.dir+' → '+newDir);if(r.tel!==newTel)cambios.push('Teléfono: '+r.tel+' → '+newTel);r.tienda=newTienda;r.dir=newDir;r.tel=newTel;r.obs=newObs;if(r.detalle){r.detalle=r.detalle.replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTienda);}).replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newDir);}).replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTel);});}if(cambios.length&&r.centro){if(confirm('¿Actualizar en todos los partes del mismo centro?\n\n'+cambios.join('\n'))){h.forEach(function(p,i){if(i===_editIdx)return;if(p.centro===r.centro&&p.clienteId===r.clienteId){p.tienda=newTienda;p.dir=newDir;p.tel=newTel;if(p.detalle){p.detalle=p.detalle.replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTienda);}).replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newDir);}).replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTel);});}}});}}setH(h);showMsg('msgEdit','Guardado correctamente.','success');setTimeout(function(){verParte(_editIdx);},700);}
+function guardarEdicionParte(){if(_editIdx===null)return;var h=getH();var r=h[_editIdx];if(!r)return;var newTienda=$('editTienda').value.trim(),newDir=$('editDir').value.trim(),newTel=$('editTel').value.trim(),newObs=$('editObs').value.trim(),newLink=$('editLink').value;if(!newTienda){showMsg('msgEdit','La tienda no puede estar vacía.','error');return;}var cambios=[];if(r.tienda!==newTienda)cambios.push('Tienda: '+r.tienda+' → '+newTienda);if(r.dir!==newDir)cambios.push('Dirección: '+r.dir+' → '+newDir);if(r.tel!==newTel)cambios.push('Teléfono: '+r.tel+' → '+newTel);r.tienda=newTienda;r.dir=newDir;r.tel=newTel;r.obs=newObs;r.linkType=newLink;if(r.detalle){r.detalle=r.detalle.replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTienda);}).replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newDir);}).replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTel);});}if(cambios.length&&r.centro){if(confirm('¿Actualizar en todos los partes del mismo centro?\n\n'+cambios.join('\n'))){h.forEach(function(p,i){if(i===_editIdx)return;if(p.centro===r.centro&&p.clienteId===r.clienteId){p.tienda=newTienda;p.dir=newDir;p.tel=newTel;if(p.detalle){p.detalle=p.detalle.replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTienda);}).replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newDir);}).replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTel);});}}});}}setH(h);showMsg('msgEdit','Guardado correctamente.','success');setTimeout(function(){verParte(_editIdx);},700);}
 
 function guardarMatEdit(){
   var a=getMats(); var k=jkm(_matJob); if(!a[k]) a[k]=[];
