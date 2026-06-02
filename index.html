@@ -3986,8 +3986,27 @@ function pdfOrden(){
       y+=rH+0.4;
     });
 
-    // Materiales del parte
+    // Materiales del parte - combina r.materiales con los del detalle HTML (partes antiguos)
     var usados=(r.materiales||[]).filter(function(m){ return m.cantidad&&+m.cantidad>0; });
+    if(!usados.length && r.detalle){
+      var tmpDiv=document.createElement('div'); tmpDiv.innerHTML=r.detalle;
+      var inMats=false;
+      Array.from(tmpDiv.children).forEach(function(el){
+        var t=el.textContent?el.textContent.trim():'';
+        if(t==='Materiales'){ inMats=true; return; }
+        if(inMats){
+          Array.from(el.children).forEach(function(item){
+            var txt=item.textContent?item.textContent.trim():'';
+            if(txt){
+              var parts=txt.match(/^(\d+)\s+(.+)$/);
+              if(parts) usados.push({nombre:parts[2],cantidad:parseInt(parts[1])});
+              else usados.push({nombre:txt,cantidad:1});
+            }
+          });
+          inMats=false;
+        }
+      });
+    }
     if(usados.length){
       checkPage(6);
       doc.setFillColor(250,250,250); doc.rect(mg,y,cW,5.5,'F');
