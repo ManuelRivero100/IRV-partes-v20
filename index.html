@@ -2483,7 +2483,12 @@ function compartirDesde(detalle,obsVal,matsText){
       else if(el.classList.contains('obs-row')) lines.push(rc+': '+rl);
       else if(rv) lines.push(rc+' | '+rl+'\n'+rv);
       else lines.push(rc+' | '+rl);
-    } else { var t2=el.textContent?el.textContent.trim():''; if(t2) lines.push(t2); }
+    } else {
+      var t2=el.textContent?el.textContent.trim():'';
+      // Saltar si es la sección de materiales del detalle (evitar duplicado)
+      if(t2 && t2.toLowerCase().indexOf('materiales')===0) return;
+      if(t2){ lines.push(''); lines.push(t2); } // línea en blanco antes de nombres
+    }
   });
   if(matsText){ lines.push(matsText); }
   if(obsVal){ lines.push(''); lines.push('Obs.: '+obsVal); }
