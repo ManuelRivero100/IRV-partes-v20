@@ -323,6 +323,7 @@ textarea{resize:vertical;min-height:72px}
 .ico-consumibles{background:linear-gradient(145deg,#9d174d,#ec4899);}
 .ico-sec-default{background:linear-gradient(145deg,#374151,#6b7280);}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body>
 <div class="app"><div class="hdr">
@@ -2390,7 +2391,7 @@ function nuevo(){
 
 // ===== PDF PARTE INDIVIDUAL =====
 function hacerPDF(i){ var r=getH()[i]; if(!r) return; pdfDesde(r.detalle||'',r.obs||'',r.fecha||'',r.centro||'',r.pedido||''); }
-function compartirParte(i){ var r=getH()[i]; if(!r) return; compartirDesde(r.detalle||'',r.obs||''); }
+function compartirParte(i){ var r=getH()[i]; if(!r) return; var mats=(r.materiales||[]).filter(function(m){return m.cantidad&&+m.cantidad>0;}); var matsText=mats.length?'\nMateriales\n'+mats.map(function(m){return m.cantidad+' '+m.nombre;}).join('\n'):''; compartirDesde(r.detalle||'',r.obs||'',matsText); }
 
 function pdfDesde(detalle,obsVal,fArg,cArg,pArg){
   if(!window.jspdf){ alert('PDF no disponible.'); return; }
@@ -2468,7 +2469,7 @@ function pdfDesde(detalle,obsVal,fArg,cArg,pArg){
   doc.save(pts.join('_')+'.pdf');
 }
 
-function compartirDesde(detalle,obsVal){
+function compartirDesde(detalle,obsVal,matsText){
   var tmp=document.createElement('div'); tmp.innerHTML=detalle||'';
   var sep='====================',lines=['PARTE DE TRABAJO',sep];
   Array.from(tmp.children).forEach(function(el){
@@ -2484,6 +2485,7 @@ function compartirDesde(detalle,obsVal){
       else lines.push(rc+' | '+rl);
     } else { var t2=el.textContent?el.textContent.trim():''; if(t2) lines.push(t2); }
   });
+  if(matsText){ lines.push(matsText); }
   if(obsVal){ lines.push(''); lines.push('Obs.: '+obsVal); }
   var texto=lines.join('\n').trim();
   if(navigator.share){ navigator.share({title:'Parte de Trabajo',text:texto}); }
