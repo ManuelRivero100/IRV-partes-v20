@@ -2411,6 +2411,7 @@ function pdfDesde(detalle,obsVal,fArg,cArg,pArg){
   doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.text('Generador de partes con calculo automatico',mg+4,y+14); y+=24;
   var tmp=document.createElement('div'); tmp.innerHTML=detalle||'';
   var cC=20,dC=24,vC=cW-cC-dC;
+  var skipNextEl=false;
   Array.from(tmp.children).forEach(function(el){
     if(y>270){ doc.addPage(); y=10; }
     if(el.classList.contains('rgroup-title')){
@@ -2471,18 +2472,22 @@ function pdfDesde(detalle,obsVal,fArg,cArg,pArg){
   }
   var fd=fArg||new Date().toISOString().slice(0,10);
   var pts=[fd]; if(cArg) pts.push(cArg); if(pArg) pts.push(pArg);
-  var pdfBlob=doc.output('blob');
-  var bUrl=URL.createObjectURL(pdfBlob);
-  window.open(bUrl,'_blank');
+  doc.output('dataurlnewwindow');
 }
 
 
 function compartirDesde(detalle,obsVal,matsText){
   var tmp=document.createElement('div'); tmp.innerHTML=detalle||'';
   var sep='====================',lines=['PARTE DE TRABAJO',sep];
+  var skipNext=false;
   Array.from(tmp.children).forEach(function(el){
-    if(el.classList.contains('rgroup-title')){ var t=el.textContent.trim(); if(t!=='Datos generales'){ lines.push(''); lines.push(t); } }
-    else if(el.classList.contains('rrow')){
+    // Saltar bloque de materiales del detalle (lo añadimos aparte)
+    if(skipNext){ skipNext=false; return; }
+    var t2=el.textContent?el.textContent.trim():'';
+    if(t2==='Materiales'){ skipNext=true; return; }
+    if(el.classList.contains('rgroup-title')){
+      if(t2&&t2!=='Datos generales'){ lines.push(''); lines.push(t2); }
+    } else if(el.classList.contains('rrow')){
       var rc=el.querySelector('.rc')?el.querySelector('.rc').textContent.trim():'';
       var rl=el.querySelector('.rl')?el.querySelector('.rl').textContent.trim():'';
       var rv=el.querySelector('.rv')?el.querySelector('.rv').textContent.trim():'';
@@ -2491,27 +2496,29 @@ function compartirDesde(detalle,obsVal,matsText){
       else if(el.classList.contains('obs-row')) lines.push(rc+': '+rl);
       else if(rv) lines.push(rc+' | '+rl+'\n'+rv);
       else lines.push(rc+' | '+rl);
-    } else { var t2=el.textContent?el.textContent.trim():''; if(t2){ lines.push(''); lines.push(t2); } }
+    } else {
+      if(t2){ lines.push(''); lines.push(t2); }
+    }
   });
-  // Materiales
-  var matsFromDetalle='';
-  if(!matsText){
-    var inM2=false;
+  // Materiales: usar matsText (partes nuevos) o extraer del detalle (partes antiguos)
+  if(matsText){
+    lines.push(matsText);
+  } else {
+    var matsLines=[];
+    var inMats=false;
     Array.from(tmp.children).forEach(function(el){
       var t=el.textContent?el.textContent.trim():'';
-      if(t==='Materiales'){ inM2=true; return; }
-      if(inM2){
+      if(t==='Materiales'){ inMats=true; return; }
+      if(inMats){
         Array.from(el.children).forEach(function(item){
           var it=item.textContent?item.textContent.trim():'';
-          if(it) matsFromDetalle+=(matsFromDetalle?'\n':'')+it;
+          if(it) matsLines.push(it);
         });
-        inM2=false;
+        inMats=false;
       }
     });
-    if(matsFromDetalle) matsFromDetalle='\nMateriales\n'+matsFromDetalle;
+    if(matsLines.length) lines.push('\nMateriales\n'+matsLines.join('\n'));
   }
-  var finalMats=matsText||matsFromDetalle;
-  if(finalMats) lines.push(finalMats);
   if(obsVal){ lines.push(''); lines.push('Obs.: '+obsVal); }
   var texto=lines.join('\n').trim();
   if(navigator.share){ navigator.share({title:'Parte de Trabajo',text:texto}); }
