@@ -2472,12 +2472,20 @@ function pdfDesde(detalle,obsVal,fArg,cArg,pArg){
 function compartirDesde(detalle,obsVal,matsText){
   var tmp=document.createElement('div'); tmp.innerHTML=detalle||'';
   var sep='====================',lines=['PARTE DE TRABAJO',sep];
-  var skipNext=false;
+  var inMatsBlock=false;
+  var matsFromDetalle=[];
   Array.from(tmp.children).forEach(function(el){
-    // Detectar el div de título "Materiales" y saltar ese bloque
     var txt=el.textContent?el.textContent.trim():'';
-    if(txt==='Materiales'){ skipNext=true; return; }
-    if(skipNext){ skipNext=false; return; } // saltar el div con los items de materiales
+    // Detectar bloque de materiales del detalle y extraerlos
+    if(txt==='Materiales'){ inMatsBlock=true; return; }
+    if(inMatsBlock){
+      // Leer cada item de material del bloque
+      Array.from(el.children).forEach(function(item){
+        var t=item.textContent?item.textContent.trim():'';
+        if(t) matsFromDetalle.push(t);
+      });
+      inMatsBlock=false; return;
+    }
     if(el.classList.contains('rgroup-title')){ var t=txt; if(t&&t!=='Datos generales'){ lines.push(''); lines.push(t); } }
     else if(el.classList.contains('rrow')){
       var rc=el.querySelector('.rc')?el.querySelector('.rc').textContent.trim():'';
@@ -2492,7 +2500,9 @@ function compartirDesde(detalle,obsVal,matsText){
       if(txt){ lines.push(''); lines.push(txt); }
     }
   });
+  // Usar matsText si existe (partes nuevos), si no usar matsFromDetalle (partes antiguos)
   if(matsText){ lines.push(matsText); }
+  else if(matsFromDetalle.length){ lines.push(''); lines.push('Materiales'); matsFromDetalle.forEach(function(m){ lines.push(m); }); }
   if(obsVal){ lines.push(''); lines.push('Obs.: '+obsVal); }
   var texto=lines.join('\n').trim();
   if(navigator.share){ navigator.share({title:'Parte de Trabajo',text:texto}); }
