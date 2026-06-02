@@ -2471,8 +2471,11 @@ function pdfDesde(detalle,obsVal,fArg,cArg,pArg){
   }
   var fd=fArg||new Date().toISOString().slice(0,10);
   var pts=[fd]; if(cArg) pts.push(cArg); if(pArg) pts.push(pArg);
-  doc.save(pts.join('_')+'.pdf');
+  var pdfBlob=doc.output('blob');
+  var bUrl=URL.createObjectURL(pdfBlob);
+  window.open(bUrl,'_blank');
 }
+
 
 function compartirDesde(detalle,obsVal,matsText){
   var tmp=document.createElement('div'); tmp.innerHTML=detalle||'';
