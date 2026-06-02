@@ -4256,6 +4256,7 @@ function verParte(idx){
     '<div id="confirmDel" style="display:none;padding:12px;background:var(--red-light);border:1px solid rgba(192,57,43,.2);border-radius:var(--r-sm);margin-top:8px">'+
     '<div style="font-size:.88rem;font-weight:600;color:var(--red);margin-bottom:8px">&iquest;Borrar este parte?</div>'+
     '<div style="display:flex;gap:8px"><button class="btn btn-d btn-sm" onclick="borrarParteOk('+idx+')">S&iacute;, borrar</button><button class="btn btn-s btn-sm" onclick="$(\'confirmDel\').style.display=\'none\'">Cancelar</button></div>'+
+    '</div>'+
     '<div id="editPanel" style="display:none;margin-top:10px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);">'+
     '<div style="font-size:.8rem;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Editar parte</div>'+
     '<div class="field"><label>Tienda</label><input id="editTienda" type="text" style="width:100%"></div>'+
@@ -4266,9 +4267,9 @@ function verParte(idx){
     '<div id="msgEdit" style="display:none;margin:6px 0;"></div>'+
     '<div style="display:flex;gap:8px;margin-top:8px;">'+
     '<button class="btn btn-g btn-sm" onclick="guardarEdicionParte()">Guardar</button>'+
-    '<button class="btn btn-s btn-sm" onclick="$(\'editPanel\').style.display=\'none\'">Cancelar</button>'+
+    '<button class="btn btn-s btn-sm" onclick="cerrarEditPanel()">Cancelar</button>'+
     '</div></div>'+
-    '</div></div>'+matHTML;
+    '</div>'+matHTML;
 }
 
 // ===== EDITAR PARTE (V17) =====
@@ -4441,6 +4442,7 @@ function _renderAcumAgrupado(codAcum){
   return html||'<div style="font-size:.82rem;color:var(--text3);">Sin datos.</div>';
 }
 
+function cerrarEditPanel(){var p=document.getElementById('editPanel');if(p)p.style.display='none';}
 function abrirEdicionParte(idx){var h=getH();var r=h[idx];if(!r)return;_editIdx=idx;$('editTienda').value=r.tienda||'';$('editDir').value=r.dir||'';$('editTel').value=r.tel||'';$('editObs').value=r.obs||'';$('editLink').value=r.linkType||'No';$('confirmDel').style.display='none';$('editPanel').style.display='block';$('editPanel').scrollIntoView({behavior:'smooth',block:'nearest'});}
 
 function agregarMatEdit(){
