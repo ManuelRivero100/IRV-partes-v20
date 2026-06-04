@@ -421,7 +421,7 @@ textarea{resize:vertical;min-height:72px}
     </div>
     <div class="field" id="fieldCentro">
       <label id="labelCentro">N&ordm; centro</label>
-      <input id="centro" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 2721" oninput="buscarPorCentroORef(this.value)">
+      <input id="centro" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 2721" oninput="buscarPorCentroORef(this.value);if(this.value.length>2)ocultarLectura()">
       <div class="ac-box" id="acCentro"></div>
     </div>
     <div class="field"><label id="labelTienda">Tienda <span class="req">*</span></label><input id="tienda" placeholder="Mercadona SAN JAVIER 2721" oninput="buscarRefNoMerc(this.value)" autocomplete="off"><div class="ac-box" id="acRef"></div></div>
@@ -701,6 +701,99 @@ textarea{resize:vertical;min-height:72px}
 </div>
 
 <script>
+
+/*
+=======================================================================
+PARTES IRV-10 — GUÍA DE ARQUITECTURA Y DIRECTRICES DE MODIFICACIÓN
+=======================================================================
+
+FILOSOFÍA PRINCIPAL:
+  Antes de crear algo nuevo, busca qué protocolo ya existe y reutilízalo.
+  El error más común es crear lógica nueva para algo que ya está resuelto.
+
+=======================================================================
+PROTOCOLOS EXISTENTES
+=======================================================================
+
+1. TIPO DE TRABAJO — setJob(job, btn)
+   - Determina códigos de facturación, franjas y secciones de materiales
+   - TOCA cuando cambies tipos de trabajo o códigos
+   - NO TOQUES para añadir campos al formulario
+
+2. DATOS DE LA ORDEN — leer(), buscarPorOrden(), buscarPorCentroORef(), rellenarDatos()
+   - Auto-relleno desde texto pegado o desde historial
+   - Clientes no-Mercadona usan getNextCodLugar() y buscarRefNoMerc()
+   - TOCA solo aquí para cambiar cómo se rellenan campos
+   - NO CREES un nuevo auto-relleno si ya existe uno
+
+3. KILOMETRAJE Y ENLACE — setLink(), checkAutoEnlace(), resetAE()
+   - 3 modos: No / Si / Auto (detecta parte anterior del mismo día)
+   - Auto-enlace se activa por hora de llegada, NO modificar esa lógica
+   - TOCA solo aquí para cambiar cálculos de km y desplazamiento
+
+4. FRANJAS HORARIAS — calcMin(), franjas(), gc()
+   - calcMin() calcula minutos por tipo (Normal/Extra/Nocturna/Festiva)
+   - gc() asigna códigos de facturación según tipo de trabajo y rol
+   - NO TOQUES estas funciones salvo para cambiar tarifas o códigos
+
+5. TRABAJADORES — renderWorkers(), setWR()
+   - wRoles[] = roles (Oficial/Peón), wNames[] = nombres (en memoria)
+   - Los nombres NO se guardan en el objeto del parte, solo en el detalle HTML
+   - Para recuperar nombres al editar: extraer del detalle HTML
+
+6. DIETA — calculada en generarCore()
+   - Automática: acumula totalMin del día por cliente
+   - NO crear lógica de dieta fuera de generarCore()
+
+7. MATERIALES — msRender(cid), msInitSel(mats), msGetSel()
+   - _MS.sel = materiales del catálogo seleccionados
+   - _MS.extras = materiales añadidos manualmente (flotantes)
+   - msGetSel() devuelve AMBOS — usar siempre para recoger materiales
+   - msInitSel() separa automáticamente sel de extras según catálogo
+   - El parámetro cid indica el contenedor donde renderizar
+   - REGLA: para usar materiales en un contexto nuevo, pasar el cid correcto
+   - NO crear un nuevo sistema de materiales, reutilizar ms*
+
+8. FORMULARIO COMPLETO — nuevo(), adaptarFormularioACliente()
+   - nuevo() resetea TODO el formulario (incluyendo _editIdx)
+   - adaptarFormularioACliente() adapta campos según tipo de cliente
+   - REGLA: para precargar datos en el formulario, llamar nuevo() primero
+     y luego sobreescribir los campos necesarios
+
+9. GUARDADO — guardarConEstado(), _finalizarGuardado()
+   - Si _editIdx !== null, reemplaza el parte existente en lugar de añadir
+   - Si _editIdx === null, añade un parte nuevo
+   - REGLA: para editar un parte, setear _editIdx antes de guardar
+
+10. HISTORIAL — getH(), setH(), getOrdenes(), verOrden(), verParte()
+    - getH()/setH() son el único punto de acceso al almacenamiento
+    - NO acceder a localStorage directamente para partes
+
+=======================================================================
+REGLAS DE MODIFICACIÓN
+=======================================================================
+
+  ✓ Para EDITAR un parte existente:
+    → Cargar datos en el formulario con abrirEdicionParte()
+    → El formulario ya tiene todos los protocolos activos
+    → Al guardar, _editIdx indica qué parte reemplazar
+
+  ✓ Para AÑADIR un campo nuevo:
+    → Añadirlo al HTML del formulario
+    → Guardarlo en window.recTmp dentro de generarCore()
+    → Leerlo en verParte() para mostrarlo
+
+  ✓ Para REUTILIZAR un protocolo en otro contexto:
+    → No copiar la lógica, llamar a la función original
+    → Pasar los parámetros necesarios (ej: cid en msRender)
+
+  ✗ NO crear lógica paralela a algo que ya existe
+  ✗ NO hardcodear IDs de contenedores en funciones reutilizables
+  ✗ NO modificar franjas/codigos sin entender el impacto en facturación
+  ✗ NO guardar en localStorage directamente, usar getH()/setH()
+
+=======================================================================
+*/
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -2372,6 +2465,7 @@ function copiar(){
 }
 
 function nuevo(){
+  _editIdx=null;
   ['pedido','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
   $('w').value='2'; $('job').value=''; $('link').value='No';
   curJob=''; curLink='No'; wRoles=[]; wNames=[]; esFestivo=false; _cAC=null; _oAC=null; aeData=null;
@@ -2857,6 +2951,29 @@ function msRender(cid){
     var g=catGetGrupoParaJob(curJob);
     if(!g){ el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay materiales para este tipo de trabajo.</div>'; return; }
     var html='';
+    // Lista de materiales ya seleccionados (sel + extras) con cantidad editable y botón borrar
+    var selActuales=[];
+    Object.keys(_MS.sel).forEach(function(nom){selActuales.push({nom:nom,qty:_MS.sel[nom],tipo:'sel'});});
+    Object.keys(_MS.extras||{}).forEach(function(nom){selActuales.push({nom:nom,qty:_MS.extras[nom],tipo:'ext'});});
+    if(selActuales.length){
+      html+='<div style="background:var(--surface2);border:1px solid var(--green);border-radius:var(--r-sm);margin-bottom:10px;overflow:hidden;">';
+      html+='<div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--green);padding:8px 12px;border-bottom:1px solid var(--border);">Materiales del parte</div>';
+      selActuales.forEach(function(m){
+        var nomEsc=m.nom.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+        html+='<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border2);">'
+          +'<span style="flex:1;font-size:.88rem;">'+m.nom+'</span>'
+          +'<input type="number" min="1" value="'+m.qty+'" '
+          +'style="width:58px;padding:5px 8px;border:1.5px solid var(--green);border-radius:var(--r-sm);font-size:.88rem;text-align:center;background:var(--surface2);color:var(--text);font-family:inherit;" '
+          +'data-nom="'+nomEsc+'" data-tipo="'+m.tipo+'" '
+          +'oninput="msActualizarCantidad(this)" '
+          +'onfocus="this.select()">'
+          +'<button data-nom="'+nomEsc+'" data-tipo="'+m.tipo+'" data-cid="'+cid+'" '
+          +'onclick="msBorrarMaterial(this)" '
+          +'style="width:26px;height:26px;border-radius:50%;background:var(--red-light);color:var(--red);border:none;cursor:pointer;font-size:.9rem;flex-shrink:0;">&#x2715;</button>'
+          +'</div>';
+      });
+      html+='</div>';
+    }
     (g.secciones||[]).forEach(function(sec,si){
       var allM=[];
       (sec.mats||[]).forEach(function(m){allM.push(m.nom);});
@@ -3015,6 +3132,15 @@ function msAddGlobalFocus(el){
     el.scrollIntoView({behavior:'smooth',block:'center'});
   },300);
 }
+function msActualizarCantidad(inp){
+  var nom=inp.dataset.nom; var tipo=inp.dataset.tipo; var qty=parseFloat(inp.value)||1;
+  if(tipo==='sel') _MS.sel[nom]=qty; else _MS.extras[nom]=qty;
+}
+function msBorrarMaterial(btn){
+  var nom=btn.dataset.nom; var tipo=btn.dataset.tipo; var cid=btn.dataset.cid||'parteMatCard';
+  if(tipo==='sel') delete _MS.sel[nom]; else delete _MS.extras[nom];
+  msRender(cid);
+}
 function msRenderExtras(){
   var el=document.getElementById('msExtrasList'); if(!el) return;
   var extras=_MS.extras||{};
@@ -3145,7 +3271,22 @@ function msAddInline(si){
   msRender(_MS.modo==='catalogo'?'matCatCard':'parteMatCard');
   if(inp)inp.value='';
 }
-function msInitSel(mats){_MS.sel={};_MS.extras={};_MS.secAbierta=null;(mats||[]).forEach(function(m){if(m.cantidad>0)_MS.sel[m.nombre||m.nom]=m.cantidad;});}
+function msInitSel(mats){
+  _MS.sel={};_MS.extras={};_MS.secAbierta=null;
+  if(!mats||!mats.length) return;
+  // Separar materiales del catálogo de los extras (añadidos manualmente)
+  var g=catGetGrupoParaJob(curJob);
+  var todos=g?catAllMatsGrupo(g.id):[];
+  (mats||[]).forEach(function(m){
+    if(!m.cantidad||+m.cantidad<=0) return;
+    var nom=m.nombre||m.nom||'';
+    if(!nom) return;
+    // Si está en el catálogo va a sel, si no va a extras
+    var enCat=todos.some(function(n){return n.toLowerCase()===nom.toLowerCase();});
+    if(enCat) _MS.sel[nom]=+m.cantidad;
+    else _MS.extras[nom]=+m.cantidad;
+  });
+}
 function msGetSel(){
   var r=Object.keys(_MS.sel).map(function(nom){
     return {cod:'',nombre:nom,cantidad:_MS.sel[nom]};
@@ -4355,11 +4496,14 @@ function verParte(idx){
     '</div>'+
     '<div id="editPanel" style="display:none;margin-top:10px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);">'+
     '<div style="font-size:.8rem;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Editar parte</div>'+
+    '<div class="field"><label>N&ordm; orden</label><input id="editPedido" type="text" style="width:100%"></div>'+
+    '<div class="field"><label>N&ordm; centro</label><input id="editCentro" type="text" style="width:100%"></div>'+
     '<div class="field"><label>Tienda</label><input id="editTienda" type="text" style="width:100%"></div>'+
     '<div class="field"><label>Direcci&oacute;n</label><input id="editDir" type="text" style="width:100%"></div>'+
     '<div class="field"><label>Tel&eacute;fono</label><input id="editTel" type="tel" style="width:100%"></div>'+
     '<div class="field"><label>Observaciones</label><textarea id="editObs" rows="3" style="width:100%;resize:vertical;"></textarea></div>'+
-    '<div class="field"><label>Enlace</label><select id="editLink" style="width:100%"><option value="No">No</option><option value="S\u00ed">S\u00ed</option><option value="Auto">Auto</option></select></div>'+
+    '<div style="margin:8px 0;"><button class="btn btn-s btn-sm" onclick="editToggleMats()" id="editBtnMats">&#128230; Materiales</button></div>'+
+    '<div id="editMatZone" style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;"><div id="editMatCard"></div></div>'+
     '<div id="msgEdit" style="display:none;margin:6px 0;"></div>'+
     '<div style="display:flex;gap:8px;margin-top:8px;">'+
     '<button class="btn btn-g btn-sm" onclick="guardarEdicionParte()">Guardar</button>'+
@@ -4456,7 +4600,16 @@ function _finalizarGuardado(estado){
   var r=window.recTmp; if(!r) return;
   r.estado=estado;
   var h=getH();
-  if(exists(r,h)){ showMsg('msgRes','Este parte ya está guardado.','warn'); return; }
+  if(_editIdx!==null){
+    h[_editIdx]=r;
+    setH(h);
+    _editIdx=null;
+    showMsg('msgRes','Parte actualizado.','success');
+    $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
+    setTimeout(function(){ goTo('w-menu'); },1200);
+    return;
+  }
+  if(exists(r,h)){ showMsg('msgRes','Este parte ya est\u00e1 guardado.','warn'); return; }
   h.push(r); setH(h);
   showMsg('msgRes','Guardado correctamente.','success');
   $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
@@ -4538,8 +4691,127 @@ function _renderAcumAgrupado(codAcum){
   return html||'<div style="font-size:.82rem;color:var(--text3);">Sin datos.</div>';
 }
 
+function editMatRender(){
+  var el=document.getElementById('editMatsList'); if(!el) return;
+  var mats=window._editMats||[];
+  if(!mats.length){el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:4px 0;">Sin materiales</div>';return;}
+  el.innerHTML=mats.map(function(m,i){
+    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border2);">'+
+      '<span style="flex:1;font-size:.88rem;">'+m.nombre+'</span>'+
+      '<input type="number" min="1" value="'+m.cantidad+'" '+
+      'style="width:58px;padding:5px 8px;border:1.5px solid var(--green);border-radius:var(--r-sm);font-size:.88rem;text-align:center;background:var(--surface2);color:var(--text);font-family:inherit;" '+
+      'oninput="window._editMats['+i+'].cantidad=parseFloat(this.value)||1" onfocus="this.select()">'+
+      '<button onclick="window._editMats.splice('+i+',1);editMatRender();" '+
+      'style="width:26px;height:26px;border-radius:50%;background:var(--red-light);color:var(--red);border:none;cursor:pointer;font-size:.9rem;flex-shrink:0;">&#x2715;</button>'+
+      '</div>';
+  }).join('');
+}
+function editMatAc(val){
+  var box=document.getElementById('editMatAcBox'); if(!box) return;
+  if(!val||val.length<1){box.style.display='none';box.innerHTML='';return;}
+  var g=catGetGrupoParaJob(curJob||'Climatizacion');
+  var todos=g?catAllMatsGrupo(g.id):[];
+  var res=todos.filter(function(n){return n.toLowerCase().includes(val.toLowerCase());}).slice(0,8);
+  var h2='';
+  res.forEach(function(nom){
+    var nomEsc=nom.replace(/"/g,'&quot;');
+    h2+='<div style="padding:9px 12px;font-size:.86rem;cursor:pointer;border-bottom:1px solid var(--border2);" '+
+      'onmousedown="editMatSelAc(\''+nomEsc+'\')">&#128295; '+nom+'</div>';
+  });
+  var exacto=todos.find(function(n){return n.toLowerCase()===val.toLowerCase();});
+  if(!exacto){
+    h2+='<div style="padding:9px 12px;font-size:.86rem;cursor:pointer;color:var(--text3);font-style:italic;" '+
+      'onmousedown="editMatSelAc(document.getElementById(\'editMatNom\').value,true)">+ A&#241;adir como flotante</div>';
+  }
+  box.innerHTML=h2;
+  box.style.display=h2?'block':'none';
+}
+function editMatSelAc(nom,esNuevo){
+  var inp=document.getElementById('editMatNom'); if(inp) inp.value=nom;
+  var box=document.getElementById('editMatAcBox'); if(box){box.style.display='none';box.innerHTML='';}
+  if(esNuevo){
+    var g=catGetGrupoParaJob(curJob||'Climatizacion');
+    if(g){catAddFlotante(nom,g.id);catActualizarBadge();}
+  }
+}
+function editMatAnadir(){
+  var inp=document.getElementById('editMatNom');
+  var nom=inp?inp.value.trim():''; if(!nom) return;
+  var qty=parseFloat(document.getElementById('editMatQty').value)||1;
+  if(!window._editMats) window._editMats=[];
+  window._editMats.push({cod:'',nombre:nom,cantidad:qty});
+  inp.value=''; document.getElementById('editMatQty').value='1';
+  var box=document.getElementById('editMatAcBox'); if(box){box.style.display='none';box.innerHTML='';}
+  editMatRender();
+}
 function cerrarEditPanel(){var p=document.getElementById('editPanel');if(p)p.style.display='none';}
-function abrirEdicionParte(idx){var h=getH();var r=h[idx];if(!r)return;_editIdx=idx;$('editTienda').value=r.tienda||'';$('editDir').value=r.dir||'';$('editTel').value=r.tel||'';$('editObs').value=r.obs||'';var lv=r.linkType||'No'; $('editLink').value=(lv==='Sí'||lv==='Si'||lv==='SÍ')?'Sí':lv;$('confirmDel').style.display='none';$('editPanel').style.display='block';$('editPanel').scrollIntoView({behavior:'smooth',block:'nearest'});}
+function abrirEdicionParte(idx){
+  var h=getH(); var r=h[idx]; if(!r) return;
+  // Guardar idx ANTES de nuevo() que lo resetea
+  var editIdxTemp=idx;
+  // Limpiar formulario
+  nuevo();
+  // Restaurar _editIdx después de nuevo()
+  _editIdx=editIdxTemp;
+  // Número de trabajadores y roles/nombres
+  var nW=(r.roles||[]).length||2;
+  $('w').value=nW;
+  wRoles=(r.roles||[]).slice();
+  var nomMatch=r.detalle?r.detalle.match(/letter-spacing:[^>]*>([^<]+)<\/div>/):null;
+  if(nomMatch){
+    wNames=nomMatch[1].split(/\s*·\s*|\s*&middot;\s*/).map(function(n){return n.trim();}).filter(Boolean);
+  } else {
+    wNames=(r.roles||[]).map(function(){return '';});
+  }
+  // Tipo de trabajo — debe ir antes de adaptarFormularioACliente
+  if(r.job){
+    document.querySelectorAll('#jobTgl button').forEach(function(b){
+      if(b.textContent.trim()===r.job) setJob(r.job,b);
+    });
+  }
+  // Datos de la orden
+  // Número de orden según tipo de cliente
+  var esMerc=curCliente&&curCliente.tipo==='mercadona';
+  if(esMerc){
+    $('pedido').value=r.pedido||'';
+  } else {
+    _pedidoNoMerc=r.pedido||'';
+    $('pedidoGenDisplay').textContent=r.pedido||'';
+  }
+  $('fecha').value=r.fecha||'';
+  $('centro').value=r.centro||'';
+  $('tienda').value=r.tienda||'';
+  $('dir').value=r.dir||'';
+  $('tel').value=r.tel||'';
+  $('arr').value=r.arr||'';
+  $('lea').value=r.lea||'';
+  // Kilometraje y desplazamiento
+  $('km').value=r.km||'';
+  $('tr').value=r.tr||'';
+  $('kmE').value=r.km||'';
+  $('trE').value=r.tr||'';
+  // Enlace
+  var lv=r.linkType||'No';
+  var lnkBtns=document.querySelectorAll('#lnkTgl button');
+  if(lv==='Si'||lv==='Í'||lv==='Sí'){
+    setLink('Si', lnkBtns[1]||lnkBtns[0]);
+  } else {
+    setLink('No', lnkBtns[0]);
+  }
+  // Renderizar trabajadores con nombres
+  renderWorkers();
+  // Materiales — después de setJob para que msRender no los sobreescriba
+  msInitSel(r.materiales||[]);
+  if(curJob) msRender('parteMatCard');
+  // Observaciones (en w-result, no w-form)
+  $('obs').value=r.obs||'';
+  // Ocultar lectura
+  ocultarLectura();
+  // Ir al formulario
+  _keepForm=true;
+  goToRaw('w-form');
+  window.scrollTo(0,0);
+}
 
 function agregarMatEdit(){
   var cod=$('nuevoMatEdit').value.trim().toUpperCase();
@@ -4585,28 +4857,33 @@ function fmt(v){ var r=Math.round(v*100)/100; return Number.isInteger(r)?''+r:('
 
 function gc(job,lab,rol){ if(!curCliente||curCliente.tipo!=='mercadona') return lab; var e=COD[jk(job)]&&COD[jk(job)][lab]; if(!e) return lab; if(e.r&&rol) return e.c[rol]||lab; return e.c||lab; }
 
-function guardarEdicionParte(){if(_editIdx===null)return;var h=getH();var r=h[_editIdx];if(!r)return;var newTienda=$('editTienda').value.trim(),newDir=$('editDir').value.trim(),newTel=$('editTel').value.trim(),newObs=$('editObs').value.trim(),newLink=$('editLink').value;if(!newTienda){showMsg('msgEdit','La tienda no puede estar vacía.','error');return;}var cambios=[];if(r.tienda!==newTienda)cambios.push('Tienda: '+r.tienda+' → '+newTienda);if(r.dir!==newDir)cambios.push('Dirección: '+r.dir+' → '+newDir);if(r.tel!==newTel)cambios.push('Teléfono: '+r.tel+' → '+newTel);r.tienda=newTienda;r.dir=newDir;r.tel=newTel;r.obs=newObs;r.linkType=newLink;if(r.detalle){r.detalle=r.detalle.replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTienda);}).replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newDir);}).replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTel);});}if(cambios.length&&r.centro){if(confirm('¿Actualizar en todos los partes del mismo centro?\n\n'+cambios.join('\n'))){h.forEach(function(p,i){if(i===_editIdx)return;if(p.centro===r.centro&&p.clienteId===r.clienteId){p.tienda=newTienda;p.dir=newDir;p.tel=newTel;if(p.detalle){p.detalle=p.detalle.replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTienda);}).replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newDir);}).replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p1){return p1+escHtml(newTel);});}}});}}setH(h);showMsg('msgEdit','Guardado correctamente.','success');setTimeout(function(){verParte(_editIdx);},700);}
-
-function guardarMatEdit(){
-  var a=getMats(); var k=jkm(_matJob); if(!a[k]) a[k]=[];
-  var mats=getMJ(_matJob).map(normalizeMat);
-  var cods=[];
-  var sinCod=false;
-  document.querySelectorAll('[data-idx]').forEach(function(inp){
-    var i=parseInt(inp.getAttribute('data-idx'));
-    if(mats[i]){ mats[i].cod=inp.value.trim().toUpperCase(); if(!mats[i].cod) sinCod=true; }
-    if(mats[i]&&mats[i].cod) cods.push(mats[i].cod);
-  });
-  if(sinCod&&curCliente&&curCliente.tipo==='mercadona'){ alert('Todos los materiales deben tener código antes de guardar.'); return; }
-  document.querySelectorAll('[data-idx-nom]').forEach(function(inp){
-    var i=parseInt(inp.getAttribute('data-idx-nom'));
-    if(mats[i]) mats[i].nom=inp.value;
-  });
-  var uniq=new Set(cods.filter(Boolean));
-  if(uniq.size!==cods.filter(Boolean).length){ alert('Hay códigos duplicados. Corrígelos antes de guardar.'); return; }
-  mats.sort(function(a,b){ if(!a.cod&&b.cod) return -1; if(a.cod&&!b.cod) return 1; return 0; });
-  a[k]=mats; setMats(a);
-  showMsg('msgMat','Lista actualizada.','success'); setTimeout(volverMatList,1000);
+function guardarEdicionParte(){
+  if(_editIdx===null)return;
+  var h=getH();var r=h[_editIdx];if(!r)return;
+  var newPedido=$('editPedido').value.trim();
+  var newCentro=$('editCentro').value.trim();
+  var newTienda=$('editTienda').value.trim();
+  var newDir=$('editDir').value.trim();
+  var newTel=$('editTel').value.trim();
+  var newObs=$('editObs').value.trim();
+  if(!newTienda){showMsg('msgEdit','La tienda no puede estar vacía.','error');return;}
+  // Recoger materiales si el panel está abierto
+  if($('editMatZone')&&$('editMatZone').style.display!=='none') window._editMats=msGetSel();
+  if(newPedido) r.pedido=newPedido;
+  if(newCentro) r.centro=newCentro;
+  r.tienda=newTienda; r.dir=newDir; r.tel=newTel; r.obs=newObs;
+  r.materiales=window._editMats||r.materiales||[];
+  // Actualizar detalle HTML con los nuevos datos
+  if(r.detalle){
+    r.detalle=r.detalle
+      .replace(/(<span class="rc">N[ºo°]? orden<\/span><span class="rl">)[^<]*/g,function(m,p){return p+(r.pedido||'');})
+      .replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p){return p+newTienda;})
+      .replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p){return p+newDir;})
+      .replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p){return p+newTel;});
+  }
+  setH(h);
+  showMsg('msgEdit','Guardado correctamente.','success');
+  setTimeout(function(){verParte(_editIdx);},700);
 }
 
 function guardarNuevoMat(){
