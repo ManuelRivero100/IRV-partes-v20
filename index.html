@@ -590,8 +590,8 @@ textarea{resize:vertical;min-height:72px}
     <div style="margin-top:14px">
       <div class="card"><div class="card-title">&#128269; Buscar</div>
         <div class="g2">
-          <div class="field"><label>Centro / tienda / pedido</label><input id="busca" oninput="refreshCounts()" placeholder="Filtrar&hellip;"></div>
-          <div class="field"><label>Fecha</label><input id="buscaF" type="date" oninput="refreshCounts()"></div>
+          <div class="field"><label>Centro / tienda / pedido</label><input id="busca" oninput="refreshCounts();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);" placeholder="Filtrar&hellip;"></div>
+          <div class="field"><label>Fecha</label><input id="buscaF" type="date" oninput="refreshCounts();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);"></div>
         </div>
         <div class="brow">
           <button class="btn btn-d btn-sm" onclick="pedirBorrarHist()">&#128465;&#65039; Borrar historial</button>
