@@ -493,7 +493,7 @@ textarea{resize:vertical;min-height:72px}
   </div>
 </div>
 <div id="w-hist" class="win">
-  <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
+  <button class="back" onclick="goTo('w-clientes')">&#8592; Clientes</button>
   <div id="histOpts">
     <div class="hist-opts">
       <div class="hist-opt amber-opt" onclick="verSec('ej')">
@@ -818,8 +818,23 @@ function goTo(id){
   if(id==='w-mat') msAbrirCatalogo();
   if(id==='w-stats') statsInit();
   if(id==='w-catalogo'){$('catTabMat').style.display='block';$('catTabConc').style.display='none';$('catFamiliaView').style.display='none';renderCatGrupos();catActualizarBadge();}
-  if(id==='w-clientes') renderClientes();
-  if(id==='w-menu'&&curCliente) renderMenu();
+  if(id==='w-clientes'){
+    curCliente=null;
+    $('hdr-sub').textContent='Selecciona un cliente';
+    // Resetear vistas del historial (solo visibilidad, no contenido)
+    ['secView','centrosView','incidenciasView','ordenView','parteView'].forEach(function(vid){
+      var el=document.getElementById(vid); if(el) el.style.display='none';
+    });
+    var rtv=$('resumenTotalView'); if(rtv) rtv.style.display='none';
+    var rcv=$('resumenCentroView'); if(rcv) rcv.style.display='none';
+    var ho=$('histOpts'); if(ho) ho.style.display='block';
+    window._ordenActual=null;
+    window._incidenciasCache=[];
+    _centrosCache=[];
+    _secActual='';
+    renderClientes();
+  }
+  if(id==='w-menu'&&curCliente){ resetearEstadoCompleto(); renderMenu(); }
 }
 
 
@@ -855,6 +870,7 @@ var wNames = [];
 var _actObrasSeleccionada = null;
 var _pedidoNoMerc = null;
 var _editIdx = null;
+var _nocturnoConfirmado = false;
 var _incidenciasCache = [];
 
 
@@ -2266,7 +2282,20 @@ function generar(){
     return;
   }
 
+  // Detectar turno nocturno (salida anterior a llegada)
+  var arrMin=tm($('arr').value), leaMin=tm($('lea').value);
+  if(leaMin>0&&arrMin>0&&leaMin<arrMin&&!_nocturnoConfirmado){
+    $('dlgNocturno').classList.add('show');
+    return;
+  }
   generarCore();
+}
+
+function respNocturno(si){
+  $('dlgNocturno').classList.remove('show');
+  if(!si){ showMsg('msgForm','Corrige la hora de salida.','error'); return; }
+  _nocturnoConfirmado=true;
+  generar();
 }
 
 function generarCore(){
@@ -2288,8 +2317,9 @@ function generarCore(){
   var wVal=+$('w').value||0; if(!wVal){ showMsg('msgForm','Indica el número de trabajadores.','error'); return; }
 
   var fecha=$('fecha').value; var arr=tm($('arr').value); var lea=tm($('lea').value);
+  var esNocturno=_nocturnoConfirmado&&lea<arr;
   var w=Math.max(1,Math.min(4,wVal));
-  if(lea<=arr){ showMsg('msgForm','La hora de salida debe ser posterior a la llegada.','error'); return; }
+  if(lea<=arr&&!esNocturno){ showMsg('msgForm','La hora de salida debe ser posterior a la llegada.','error'); return; }
   var td=getTD(fecha); var nr=curJob==='Climatización';
   if(nr){ for(var wi=1;wi<w;wi++){ if(!wRoles[wi]){ showMsg('msgForm','Selecciona categoría del Trabajador '+(wi+1)+'.','error'); return; } } }
   var roles=nr?wRoles.slice(0,w):Array(w).fill('Oficial');
@@ -2362,7 +2392,14 @@ function generarCore(){
   if(tlK) html+=gt(tlK);
   html+=cRow(gc(curJob,'Km',''),'Kmje',fmt(kmT)+' km');
   html+=gt(tlT);
-  var hMin=calcMin(arr,lea,td);
+  var hMin;
+  if(esNocturno){
+    var t1=calcMin(arr,1440,td);
+    var t2=calcMin(0,lea,td);
+    hMin={Normal:(t1.Normal||0)+(t2.Normal||0),Extra:(t1.Extra||0)+(t2.Extra||0),Nocturna:(t1.Nocturna||0)+(t2.Nocturna||0),Festiva:(t1.Festiva||0)+(t2.Festiva||0)};
+  } else {
+    hMin=calcMin(arr,lea,td);
+  }
   var lA={'H. Normal':'H.Nor','H. Extra':'H.Ext','H. Nocturna':'H.Noc','H. Festiva':'H.Fes'};
   ['H. Normal','H. Extra','H. Nocturna','H. Festiva'].forEach(function(lab){
     var tipo=lab.replace('H. ',''); var min=hMin[tipo]; if(!min) return;
@@ -2375,15 +2412,21 @@ function generarCore(){
   });
   html+=gt(tlS);
   var gD={Normal:0,Extra:0,Nocturna:0,Festiva:0};
-  if(trI>0){ var dI=calcMin(arr-trI,arr,td); Object.keys(dI).forEach(function(k){ gD[k]=(gD[k]||0)+dI[k]; }); }
-  if(trO>0){ var dO=calcMin(lea,lea+trO,td); Object.keys(dO).forEach(function(k){ gD[k]=(gD[k]||0)+dO[k]; }); }
+  if(trI>0){
+    var dI=calcMin(arr-trI,arr,td);
+    Object.keys(dI).forEach(function(k){ gD[k]=(gD[k]||0)+dI[k]; });
+  }
+  if(trO>0){
+    var dO=calcMin(lea,lea+trO,td);
+    Object.keys(dO).forEach(function(k){ gD[k]=(gD[k]||0)+dO[k]; });
+  }
   var dL={Normal:'D. Normal',Extra:'D. Extra',Nocturna:'D. Nocturno',Festiva:'D. Festivo'};
   var dA={Normal:'Dsp.Nor',Extra:'Dsp.Ext',Nocturna:'Dsp.Noc',Festiva:'Dsp.Fes'};
   ['Normal','Extra','Nocturna','Festiva'].forEach(function(k){
     if(!gD[k]) return; var h=gD[k]/60; var t=h*w;
     html+=cRow(gc(curJob,dL[k],''),dA[k],w>1?fmtH(h)+' x'+w+'= '+fmtH(t):fmtH(h));
   });
-  var totMin=trI+(lea-arr)+trO;
+  var totMin=trI+(esNocturno?(1440-arr+lea):(lea-arr))+trO;
   var clienteIdActual=curCliente?curCliente.id:'mercadona';
   var sameCliente=same.filter(function(x){ return (x.clienteId||'mercadona')===clienteIdActual; });
   var dietaYa=sameCliente.some(function(x){ return x.dieta; });
@@ -2393,7 +2436,8 @@ function generarCore(){
   if(dieta){ html+=cRow(gc(curJob,'Dieta',''),'\u00bd Dieta',w>1?'\u00d7 '+w:'\u00d7 1'); }
   else { var info=dietaYa?'&#9989; Media dieta ya aplicada hoy':'&#9203; Acumulado: '+fmt(acum/60)+' h de 5 h (faltan '+fmt(Math.max(0,300-acum)/60)+' h)'; html+='<div style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2)">'+info+'</div>'; }
   if(autoObs){ html+=gt('Enlace'); html+=oRow('Auto',autoObs); }
-  html+=totRow(fmtH((lea-arr)/60*w));
+  var durTotal=esNocturno?(1440-arr+lea):(lea-arr);
+  html+=totRow(fmtH(durTotal/60*w));
   var noms=wNames.filter(function(n){ return n&&n.trim(); });
   if(noms.length) html+='<div style="text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em">'+noms.map(function(n){ return n.trim(); }).join(' &middot; ')+'</div>';
 
@@ -2409,6 +2453,7 @@ function generarCore(){
     });
     html+='</div>';
   }
+  _nocturnoConfirmado=false;
   $('out').innerHTML=html;
   $('gbtn').textContent='&#128190; Guardar parte'; $('gbtn').disabled=false; $('gbtn').style.opacity='1';
   $('msgRes').className='msg';
@@ -2462,6 +2507,50 @@ function copiar(){
   });
   var obs=$('obs').value.trim(); if(obs) lines.push('Obs. | '+obs);
   navigator.clipboard.writeText(lines.join('\n')).then(function(){ showMsg('msgRes','Copiado.','success'); });
+}
+
+function resetearEstadoCompleto(){
+  _editIdx=null; _actObrasSeleccionada=null; _pedidoNoMerc=null;
+  aeData=null; esFestivo=false; _nocturnoConfirmado=false;
+  curJob=''; curLink='No'; wRoles=[]; wNames=[];
+  _MS.sel={}; _MS.extras={}; _MS.secAbierta=null;
+  _keepForm=false;
+  ['pedido','tienda','dir','tel','centro','raw','obs','km','tr',
+   'kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){
+    var el=$(id); if(el) el.value='';
+  });
+  $('w').value='2';
+  $('job').value='';
+  $('link').value='No';
+  var ad=$('actObrasDisplay'); if(ad){ad.style.display='none';ad.textContent='';}
+  var ah=$('actObrasHint'); if(ah) ah.style.display='block';
+  var fp=$('fieldPedido'); if(fp) fp.style.display='block';
+  var fa=$('fieldActObras'); if(fa) fa.style.display='none';
+  var cmf=$('cardMatForm'); if(cmf) cmf.style.display='none';
+  var wr=$('workersRol'); if(wr) wr.style.display='none';
+  var wl=$('workersList'); if(wl) wl.innerHTML='';
+  $('modeNo').style.display='block';
+  $('modeSi').style.display='none';
+  $('modeAuto').style.display='none';
+  $('lnkToggleDiv').style.display='block';
+  $('abn').classList.remove('show');
+  $('acOrden').classList.remove('show');
+  $('acCentro').classList.remove('show');
+  $('msgForm').className='msg';
+  $('out').innerHTML='';
+  window.recTmp=null;
+  $('fecha').value=hoy();
+  onFechaChange();
+  document.querySelectorAll('#jobTgl button').forEach(function(b){ b.classList.remove('active'); });
+  document.querySelectorAll('#lnkTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); });
+  document.querySelectorAll('#festivoTgl button').forEach(function(b,i){
+    b.classList.toggle('active',i===0);
+    b.disabled=false; b.style.opacity='1'; b.style.cursor='pointer';
+  });
+  msInitSel([]);
+  renderWorkers();
+  renderJobTgl();
+  if(curCliente) adaptarFormularioACliente();
 }
 
 function nuevo(){
@@ -5199,6 +5288,17 @@ if('caches' in window){
   </div>
 </div>
 
+
+<div class="dialogo" id="dlgNocturno">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo">&#127769; Turno nocturno</div>
+    <div class="dialogo-sub">La hora de salida es anterior a la llegada. &iquest;Trabajaste de un d&iacute;a para otro?</div>
+    <div class="brow">
+      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="respNocturno(true)">&#9989; S&iacute;, de un d&iacute;a para otro</button>
+      <button class="btn btn-s" style="flex:1;justify-content:center" onclick="respNocturno(false)">No, es un error</button>
+    </div>
+  </div>
+</div>
 
 <script>
 if('serviceWorker' in navigator){
