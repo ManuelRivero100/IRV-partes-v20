@@ -2302,18 +2302,42 @@ function statsVolverMain(){
 
 function statsExportarPDF(){
   var datos=statsFiltrar();
-  if(!datos.length){showMsg('msgRes','Sin datos para exportar.','warn');return;}
+  if(!datos.length){ showMsg('msgRes','Sin datos para exportar.','warn'); return; }
+  if(!window.jspdf){ alert('PDF no disponible.'); return; }
+  var doc=pdfNuevo();
+  var y=12;
+
   var cli=$('statsCliente')?$('statsCliente').options[$('statsCliente').selectedIndex].text:'Todos';
   var periodos={todo:'Todo el historial',mes:'Este mes',semana:'Esta semana'};
-  var titulo='Estad\u00edsticas IRV-10 \u2014 '+cli+' \u2014 '+periodos[_statsPeriodo];
+  y=pdfHdr(doc,y,'Estad\u00edsticas IRV-10 \u00b7 '+cli);
+  y+=2;
+
+  y=pdfInfoRow(doc,y,'PER\u00cdODO',periodos[_statsPeriodo]||'Todo');
+  y+=3;
+
   var centros={},incs={},horas=0,km=0,dietas=0;
   datos.forEach(function(r){
-    centros[r.centro||'?']=1;incs[(r.pedido||'')+'||'+(r.centro||'')]=1;
-    (r.codigos||[]).forEach(function(c){if(c.u==='h')horas+=c.v;if(c.u==='km')km+=c.v;if(c.u==='dieta')dietas+=c.v;});
+    centros[r.centro||'?']=1;
+    incs[(r.pedido||'')+'||'+(r.centro||'')]=1;
+    (r.codigos||[]).forEach(function(c){
+      if(c.u==='h') horas+=c.v;
+      if(c.u==='km') km+=c.v;
+      if(c.u==='dieta') dietas+=c.v;
+    });
   });
-  var txt=titulo+'\n\nCentros: '+Object.keys(centros).length+'\nIncidencias: '+Object.keys(incs).length+'\nPartes: '+datos.length+'\nHoras: '+statsFmtH(horas)+'\nKm: '+Math.round(km)+' km\nDietas: '+dietas+'\n';
-  hacerPDFTexto(txt,titulo);
+
+  y=pdfGroupTitle(doc,y,'Resumen');
+  y=pdfCodeRow(doc,y,'#','Centros',''+Object.keys(centros).length);
+  y=pdfCodeRow(doc,y,'#','Incidencias',''+Object.keys(incs).length);
+  y=pdfCodeRow(doc,y,'#','Partes',''+datos.length);
+  y=pdfCodeRow(doc,y,'h','Horas',statsFmtH(horas));
+  y=pdfCodeRow(doc,y,'km','Kilometraje',Math.round(km)+' km');
+  y=pdfCodeRow(doc,y,'\u00bd','Dietas',''+dietas);
+
+  pdfFooter(doc,y+8);
+  pdfGuardar(doc,'IRV_estadisticas_'+cli.replace(/\s/g,'_'));
 }
+
 
 function statsCompartir(){
   var datos=statsFiltrar();
@@ -2679,251 +2703,250 @@ function compartirParte(i){
   compartirDesde(r.detalle||'',r.obs||'',matsText);
 }
 
-function pdfDesde(r){
-  if(!window.jspdf){ alert('PDF no disponible.'); return; }
+
+// =====================================================
+// SISTEMA PDF UNIFICADO — todos los PDF usan estas funciones
+// Para cambiar diseño: editar solo aquí
+// =====================================================
+var _PDF = {
+  mg: 45,      // margen lateral (centra tarjeta de 120mm en A4 de 210mm)
+  cW: 120,     // ancho de la tarjeta
+  RH: 7,       // altura de fila estándar
+  RC: 26,      // ancho columna código
+  RL: 50,      // ancho columna label
+  // Colores app
+  bgPage:  [18,20,28],
+  bgSurf:  [30,33,48],
+  bgSurf2: [37,40,64],
+  green:   [45,158,95],
+  greenDk: [26,107,58],
+  greenLt: [232,245,238],
+  purple:  [124,58,237],
+  purpleLt:[245,243,255],
+  amber:   [245,158,11],
+  amberLt: [255,251,235],
+  textW:   [232,234,240],
+  text2:   [155,163,188],
+  border:  [46,50,80],
+  red:     [224,85,85],
+};
+_PDF.RV = _PDF.cW - _PDF.RC - _PDF.RL;
+
+function pdfNuevo(){
   var jsPDF=window.jspdf.jsPDF;
   var doc=new jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
-  var W=doc.internal.pageSize.getWidth();
-  var mg=12, cW=W-mg*2;
-  var y=mg;
+  // Fondo página
+  doc.setFillColor(_PDF.bgPage[0],_PDF.bgPage[1],_PDF.bgPage[2]);
+  doc.rect(0,0,210,297,'F');
+  return doc;
+}
 
-  // Colores de la app
-  var bgPage  =[18,20,28];    // #12141c
-  var bgSurf  =[30,33,48];    // #1e2130
-  var bgSurf2 =[37,40,64];    // #252840
-  var green   =[45,158,95];   // #2d9e5f
-  var greenDk =[26,107,58];   // #1a6b3a
-  var greenLt =[232,245,238];
-  var purple  =[124,58,237];
-  var purpleLt=[245,243,255];
-  var amber   =[245,158,11];
-  var amberLt =[255,251,235];
-  var textW   =[232,234,240]; // #e8eaf0
-  var text2   =[155,163,188]; // #9ba3bc
-  var border  =[46,50,80];    // #2e3250
+function pdfNuevaPagina(doc){
+  doc.addPage();
+  doc.setFillColor(_PDF.bgPage[0],_PDF.bgPage[1],_PDF.bgPage[2]);
+  doc.rect(0,0,210,297,'F');
+}
 
-  var RH=7;  // row height
-  var RC=22; // code col width
-  var RL=40; // label col width
-  var RV=cW-RC-RL; // value col width
+function pdfCheck(doc,y,need){
+  if(y+need>285){ pdfNuevaPagina(doc); return _PDF.mg; }
+  return y;
+}
 
-  // Fondo página completo
-  doc.setFillColor(bgPage[0],bgPage[1],bgPage[2]);
-  doc.rect(0,0,W,297,'F');
-
-  function checkPage(need){
-    if(y+need>285){
-      doc.addPage();
-      doc.setFillColor(bgPage[0],bgPage[1],bgPage[2]);
-      doc.rect(0,0,W,297,'F');
-      y=mg;
-    }
-  }
-
-  function groupTitle(txt){
-    checkPage(6);
-    doc.setFontSize(6.5);
-    doc.setFont('helvetica','bold');
-    doc.setTextColor(text2[0],text2[1],text2[2]);
-    doc.text(txt.toUpperCase(),mg,y+4);
-    y+=6;
-  }
-
-  function infoRow(label,val){
-    checkPage(RH+1);
-    // fondo
-    doc.setFillColor(bgSurf[0],bgSurf[1],bgSurf[2]);
-    doc.rect(mg,y,cW,RH,'F');
-    doc.setFillColor(bgSurf2[0],bgSurf2[1],bgSurf2[2]);
-    doc.rect(mg,y,RC,RH,'F');
-    // borde
-    doc.setDrawColor(border[0],border[1],border[2]);
-    doc.setLineWidth(0.2);
-    doc.rect(mg,y,cW,RH);
-    // label
-    doc.setFontSize(6.5); doc.setFont('helvetica','bold');
-    doc.setTextColor(text2[0],text2[1],text2[2]);
-    doc.text(label,mg+RC/2,y+5,{align:'center'});
-    // value
-    doc.setFontSize(8); doc.setFont('helvetica','normal');
-    doc.setTextColor(textW[0],textW[1],textW[2]);
-    var lines=doc.splitTextToSize(val,RL+RV-4);
-    if(lines.length>1){
-      var extraH=(lines.length-1)*4;
-      doc.setFillColor(bgSurf[0],bgSurf[1],bgSurf[2]);
-      doc.rect(mg,y,cW,RH+extraH,'F');
-      doc.setFillColor(bgSurf2[0],bgSurf2[1],bgSurf2[2]);
-      doc.rect(mg,y,RC,RH+extraH,'F');
-      doc.setDrawColor(border[0],border[1],border[2]);
-      doc.rect(mg,y,cW,RH+extraH);
-      doc.setFontSize(6.5); doc.setFont('helvetica','bold');
-      doc.setTextColor(text2[0],text2[1],text2[2]);
-      doc.text(label,mg+RC/2,y+5,{align:'center'});
-      doc.setFontSize(8); doc.setFont('helvetica','normal');
-      doc.setTextColor(textW[0],textW[1],textW[2]);
-      doc.text(lines,mg+RC+3,y+5);
-      y+=RH+extraH+0.5;
-    } else {
-      doc.text(val,mg+RC+3,y+5);
-      y+=RH+0.5;
-    }
-  }
-
-  function codeRow(cod,lab,val){
-    checkPage(RH+1);
-    // cod bg verde
-    doc.setFillColor(greenDk[0],greenDk[1],greenDk[2]);
-    doc.rect(mg,y,RC,RH,'F');
-    // lab bg verde claro
-    doc.setFillColor(greenLt[0],greenLt[1],greenLt[2]);
-    doc.rect(mg+RC,y,RL,RH,'F');
-    // val bg superficie
-    doc.setFillColor(bgSurf2[0],bgSurf2[1],bgSurf2[2]);
-    doc.rect(mg+RC+RL,y,RV,RH,'F');
-    // borde
-    doc.setDrawColor(border[0],border[1],border[2]);
-    doc.setLineWidth(0.2);
-    doc.rect(mg,y,cW,RH);
-    // textos
-    doc.setFontSize(6.5); doc.setFont('helvetica','bold');
-    doc.setTextColor(255,255,255);
-    doc.text(cod,mg+RC/2,y+5,{align:'center'});
-    doc.setTextColor(green[0],green[1],green[2]);
-    doc.setFontSize(7.5);
-    doc.text(lab,mg+RC+3,y+5);
-    doc.setTextColor(textW[0],textW[1],textW[2]);
-    doc.setFont('helvetica','bold');
-    doc.text(val,mg+cW-3,y+5,{align:'right'});
-    y+=RH+0.5;
-  }
-
-  function tipoRow(tipo){
-    checkPage(RH+2);
-    doc.setFillColor(purple[0],purple[1],purple[2]);
-    doc.rect(mg,y,RC,RH+2,'F');
-    doc.setFillColor(purpleLt[0],purpleLt[1],purpleLt[2]);
-    doc.rect(mg+RC,y,cW-RC,RH+2,'F');
-    doc.setDrawColor(border[0],border[1],border[2]);
-    doc.rect(mg,y,cW,RH+2);
-    doc.setFontSize(6.5); doc.setFont('helvetica','bold');
-    doc.setTextColor(255,255,255);
-    doc.text('TIPO',mg+RC/2,y+6,{align:'center'});
-    doc.setFontSize(9); doc.setFont('helvetica','bold');
-    doc.setTextColor(purple[0],purple[1],purple[2]);
-    doc.text(tipo,mg+RC+4,y+6);
-    y+=RH+2+1;
-  }
-
-  function totalRow(val){
-    checkPage(RH+2);
-    doc.setFillColor(greenDk[0],greenDk[1],greenDk[2]);
-    doc.rect(mg,y,cW,RH+2,'F');
-    doc.setDrawColor(green[0],green[1],green[2]);
-    doc.setLineWidth(0.3);
-    doc.rect(mg,y,cW,RH+2);
-    doc.setFontSize(8); doc.setFont('helvetica','bold');
-    doc.setTextColor(255,255,255);
-    doc.text('TOTAL',mg+4,y+6);
-    doc.setFontSize(10);
-    doc.text(val,mg+cW-4,y+6,{align:'right'});
-    y+=RH+2+1;
-  }
-
-  function obsRow(txt){
-    if(!txt) return;
-    checkPage(10);
-    var lines=doc.splitTextToSize(txt,cW-RC-4);
-    var h=Math.max(RH+2,lines.length*4.5+4);
-    doc.setFillColor(amber[0],amber[1],amber[2]);
-    doc.rect(mg,y,RC,h,'F');
-    doc.setFillColor(amberLt[0],amberLt[1],amberLt[2]);
-    doc.rect(mg+RC,y,cW-RC,h,'F');
-    doc.setDrawColor(border[0],border[1],border[2]);
-    doc.rect(mg,y,cW,h);
-    doc.setFontSize(6.5); doc.setFont('helvetica','bold');
-    doc.setTextColor(255,255,255);
-    doc.text('OBS.',mg+RC/2,y+h/2+2,{align:'center'});
-    doc.setFontSize(8); doc.setFont('helvetica','normal');
-    doc.setTextColor(amber[0],amber[1],amber[2]);
-    doc.text(lines,mg+RC+3,y+5);
-    y+=h+1;
-  }
-
-  function matRow(nombre,cantidad){
-    checkPage(RH+1);
-    doc.setFillColor(bgSurf[0],bgSurf[1],bgSurf[2]);
-    doc.rect(mg,y,cW,RH,'F');
-    doc.setFillColor(bgSurf2[0],bgSurf2[1],bgSurf2[2]);
-    doc.rect(mg,y,RC,RH,'F');
-    doc.setDrawColor(border[0],border[1],border[2]);
-    doc.setLineWidth(0.2);
-    doc.rect(mg,y,cW,RH);
-    doc.setFontSize(6.5); doc.setFont('helvetica','bold');
-    doc.setTextColor(text2[0],text2[1],text2[2]);
-    doc.text('MAT.',mg+RC/2,y+5,{align:'center'});
-    doc.setFontSize(8); doc.setFont('helvetica','normal');
-    doc.setTextColor(textW[0],textW[1],textW[2]);
-    var lines=doc.splitTextToSize(nombre,cW-RC-28);
-    doc.text(lines,mg+RC+3,y+5);
-    doc.setFont('helvetica','bold');
-    doc.text('×'+cantidad,mg+cW-3,y+5,{align:'right'});
-    y+=RH+0.5;
-  }
-
-  // ── CABECERA ──────────────────────────────────────────────────────
-  // Título verde
-  doc.setFillColor(green[0],green[1],green[2]);
-  doc.roundedRect(mg,y,cW,12,2,2,'F');
-  doc.setFontSize(9); doc.setFont('helvetica','bold');
+function pdfHdr(doc,y,titulo){
+  y=pdfCheck(doc,y,14);
+  doc.setFillColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+  doc.roundedRect(_PDF.mg,y,_PDF.cW,10,2,2,'F');
+  doc.setFontSize(8); doc.setFont('helvetica','bold');
   doc.setTextColor(255,255,255);
-  var titulo=(r.tienda||'')+(r.fecha?' · '+r.fecha.split('-').reverse().join('/'):'');
-  doc.text(titulo,mg+4,y+8);
-  y+=14;
+  var lines=doc.splitTextToSize(titulo,_PDF.cW-6);
+  doc.text(lines,_PDF.mg+3,y+6);
+  return y+12;
+}
 
-  // ── TIPO ──────────────────────────────────────────────────────────
-  if(r.job) tipoRow(r.job);
+function pdfTipoRow(doc,y,tipo){
+  y=pdfCheck(doc,y,_PDF.RH+1);
+  doc.setFillColor(_PDF.purple[0],_PDF.purple[1],_PDF.purple[2]);
+  doc.rect(_PDF.mg,y,_PDF.RC,_PDF.RH,'F');
+  doc.setFillColor(_PDF.purpleLt[0],_PDF.purpleLt[1],_PDF.purpleLt[2]);
+  doc.rect(_PDF.mg+_PDF.RC,y,_PDF.cW-_PDF.RC,_PDF.RH,'F');
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH);
+  doc.setFontSize(6.5); doc.setFont('helvetica','bold');
+  doc.setTextColor(255,255,255);
+  doc.text('TIPO',_PDF.mg+_PDF.RC/2,y+5,{align:'center'});
+  doc.setFontSize(9); doc.setTextColor(_PDF.purple[0],_PDF.purple[1],_PDF.purple[2]);
+  doc.text(tipo,_PDF.mg+_PDF.RC+3,y+5.5);
+  return y+_PDF.RH+1;
+}
+
+function pdfGroupTitle(doc,y,txt){
+  y=pdfCheck(doc,y,6);
+  doc.setFontSize(6); doc.setFont('helvetica','bold');
+  doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.text(txt.toUpperCase(),_PDF.mg,y+4);
+  return y+6;
+}
+
+function pdfInfoRow(doc,y,label,val){
+  if(!val) return y;
+  var lines=doc.splitTextToSize(val,_PDF.cW-_PDF.RC-4);
+  var h=Math.max(_PDF.RH, lines.length*4+4);
+  y=pdfCheck(doc,y,h+1);
+  doc.setFillColor(_PDF.bgSurf2[0],_PDF.bgSurf2[1],_PDF.bgSurf2[2]);
+  doc.rect(_PDF.mg,y,_PDF.RC,h,'F');
+  doc.setFillColor(_PDF.bgSurf[0],_PDF.bgSurf[1],_PDF.bgSurf[2]);
+  doc.rect(_PDF.mg+_PDF.RC,y,_PDF.cW-_PDF.RC,h,'F');
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,h);
+  doc.setFontSize(6); doc.setFont('helvetica','bold');
+  doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.text(label,_PDF.mg+_PDF.RC/2,y+h/2+2,{align:'center'});
+  doc.setFontSize(7.5); doc.setFont('helvetica','normal');
+  doc.setTextColor(_PDF.textW[0],_PDF.textW[1],_PDF.textW[2]);
+  doc.text(lines,_PDF.mg+_PDF.RC+3,y+5);
+  return y+h+0.5;
+}
+
+function pdfCodeRow(doc,y,cod,lab,val){
+  y=pdfCheck(doc,y,_PDF.RH+1);
+  doc.setFillColor(_PDF.greenDk[0],_PDF.greenDk[1],_PDF.greenDk[2]);
+  doc.rect(_PDF.mg,y,_PDF.RC,_PDF.RH,'F');
+  doc.setFillColor(_PDF.greenLt[0],_PDF.greenLt[1],_PDF.greenLt[2]);
+  doc.rect(_PDF.mg+_PDF.RC,y,_PDF.RL,_PDF.RH,'F');
+  doc.setFillColor(_PDF.bgSurf2[0],_PDF.bgSurf2[1],_PDF.bgSurf2[2]);
+  doc.rect(_PDF.mg+_PDF.RC+_PDF.RL,y,_PDF.RV,_PDF.RH,'F');
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH);
+  doc.setFontSize(6.5); doc.setFont('helvetica','bold');
+  doc.setTextColor(255,255,255);
+  doc.text(cod,_PDF.mg+_PDF.RC/2,y+5,{align:'center'});
+  doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+  doc.setFontSize(7);
+  doc.text(lab,_PDF.mg+_PDF.RC+3,y+5);
+  doc.setTextColor(_PDF.textW[0],_PDF.textW[1],_PDF.textW[2]);
+  doc.setFont('helvetica','bold'); doc.setFontSize(8);
+  doc.text(val,_PDF.mg+_PDF.cW-3,y+5,{align:'right'});
+  return y+_PDF.RH+0.5;
+}
+
+function pdfTotalRow(doc,y,val){
+  y=pdfCheck(doc,y,_PDF.RH+3);
+  doc.setFillColor(_PDF.greenDk[0],_PDF.greenDk[1],_PDF.greenDk[2]);
+  doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+2,'F');
+  doc.setDrawColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+  doc.setLineWidth(0.3); doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+2);
+  doc.setFontSize(8); doc.setFont('helvetica','bold');
+  doc.setTextColor(255,255,255);
+  doc.text('TOTAL',_PDF.mg+4,y+6);
+  doc.setFontSize(10);
+  doc.text(val,_PDF.mg+_PDF.cW-4,y+6,{align:'right'});
+  return y+_PDF.RH+3;
+}
+
+function pdfMatRow(doc,y,nombre,cantidad){
+  var lines=doc.splitTextToSize(nombre,_PDF.cW-_PDF.RC-20);
+  var h=Math.max(_PDF.RH, lines.length*4+4);
+  y=pdfCheck(doc,y,h+1);
+  doc.setFillColor(_PDF.bgSurf2[0],_PDF.bgSurf2[1],_PDF.bgSurf2[2]);
+  doc.rect(_PDF.mg,y,_PDF.RC,h,'F');
+  doc.setFillColor(_PDF.bgSurf[0],_PDF.bgSurf[1],_PDF.bgSurf[2]);
+  doc.rect(_PDF.mg+_PDF.RC,y,_PDF.cW-_PDF.RC,h,'F');
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,h);
+  doc.setFontSize(6); doc.setFont('helvetica','bold');
+  doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.text('MAT.',_PDF.mg+_PDF.RC/2,y+h/2+2,{align:'center'});
+  doc.setFontSize(7.5); doc.setFont('helvetica','normal');
+  doc.setTextColor(_PDF.textW[0],_PDF.textW[1],_PDF.textW[2]);
+  doc.text(lines,_PDF.mg+_PDF.RC+3,y+5);
+  doc.setFont('helvetica','bold'); doc.setFontSize(8);
+  doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+  doc.text('x'+cantidad,_PDF.mg+_PDF.cW-3,y+h/2+2,{align:'right'});
+  return y+h+0.5;
+}
+
+function pdfObsRow(doc,y,txt){
+  if(!txt) return y;
+  var lines=doc.splitTextToSize(txt,_PDF.cW-_PDF.RC-4);
+  var h=Math.max(_PDF.RH+2, lines.length*4.5+5);
+  y=pdfCheck(doc,y,h+1);
+  doc.setFillColor(_PDF.amber[0],_PDF.amber[1],_PDF.amber[2]);
+  doc.rect(_PDF.mg,y,_PDF.RC,h,'F');
+  doc.setFillColor(_PDF.amberLt[0],_PDF.amberLt[1],_PDF.amberLt[2]);
+  doc.rect(_PDF.mg+_PDF.RC,y,_PDF.cW-_PDF.RC,h,'F');
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,h);
+  doc.setFontSize(6.5); doc.setFont('helvetica','bold');
+  doc.setTextColor(255,255,255);
+  doc.text('OBS.',_PDF.mg+_PDF.RC/2,y+h/2+2,{align:'center'});
+  doc.setFontSize(7.5); doc.setFont('helvetica','normal');
+  doc.setTextColor(_PDF.amber[0],_PDF.amber[1],_PDF.amber[2]);
+  doc.text(lines,_PDF.mg+_PDF.RC+3,y+5);
+  return y+h+1;
+}
+
+function pdfDivider(doc,y){
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.3);
+  doc.line(_PDF.mg,y,_PDF.mg+_PDF.cW,y);
+  return y+4;
+}
+
+function pdfFooter(doc,y){
+  doc.setFontSize(6); doc.setFont('helvetica','normal');
+  doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.text('Partes IRV-10 \u00b7 Soluciones a tu Medida',_PDF.mg+_PDF.cW/2,y+4,{align:'center'});
+}
+
+function pdfGuardar(doc,nombre){
+  doc.save(nombre+'.pdf');
+}
+
+function pdfDesde(r){
+  if(!window.jspdf){ alert('PDF no disponible.'); return; }
+  var doc=pdfNuevo();
+  var y=12;
+
+  var titulo=(r.tienda||'')+(r.fecha?' \u00b7 '+r.fecha.split('-').reverse().join('/'):'');
+  y=pdfHdr(doc,y,titulo);
   y+=2;
 
-  // ── DATOS GENERALES ───────────────────────────────────────────────
-  groupTitle('Datos generales');
-  if(r.fecha)   infoRow('FECHA',   r.fecha.split('-').reverse().join('/'));
-  if(r.actObras) infoRow('ACTUACIÓN', r.actObras);
-  else if(r.pedido) infoRow('Nº ORDEN', r.pedido);
-  if(r.tienda)  infoRow('TIENDA',   r.tienda);
-  if(r.dir)     infoRow('DIRECCIÓN',r.dir);
-  if(r.tel)     infoRow('TELÉFONO', r.tel);
+  if(r.job) y=pdfTipoRow(doc,y,r.job);
+  y+=2;
+
+  y=pdfGroupTitle(doc,y,'Datos generales');
+  if(r.fecha)    y=pdfInfoRow(doc,y,'FECHA',   r.fecha.split('-').reverse().join('/'));
+  if(r.actObras) y=pdfInfoRow(doc,y,'ACTUACI\u00d3N',r.actObras);
+  else if(r.pedido) y=pdfInfoRow(doc,y,'N\u00ba ORDEN',r.pedido);
+  if(r.tienda)   y=pdfInfoRow(doc,y,'TIENDA',  r.tienda);
+  if(r.dir)      y=pdfInfoRow(doc,y,'DIRECCI\u00d3N',r.dir);
+  if(r.tel)      y=pdfInfoRow(doc,y,'TEL\u00c9FONO',r.tel);
   y+=3;
 
-  // ── CÓDIGOS ───────────────────────────────────────────────────────
   var codigos=r.codigos||[];
   if(codigos.length){
-    groupTitle('Códigos de facturación');
+    y=pdfGroupTitle(doc,y,'C\u00f3digos de facturaci\u00f3n');
     codigos.forEach(function(c){
-      var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?'× '+Math.round(c.v):fmtH(c.v);
-      codeRow(c.cod,c.lab,val);
+      var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?'\u00d7 '+Math.round(c.v):fmtH(c.v);
+      y=pdfCodeRow(doc,y,c.cod,c.lab,val);
     });
-    y+=3;
+    y+=2;
+    var hTotal=0;
+    codigos.forEach(function(c){ if(c.u==='h'&&(c.lab||'').indexOf('Dsp')===-1) hTotal+=c.v; });
+    if(hTotal>0){ y=pdfTotalRow(doc,y,fmtH(hTotal)); y+=2; }
   }
 
-  // ── TOTAL ─────────────────────────────────────────────────────────
-  var hTotal=0;
-  codigos.forEach(function(c){ if(c.u==='h'&&(c.lab||'').indexOf('Dsp')===-1) hTotal+=c.v; });
-  if(hTotal>0){ totalRow(fmtH(hTotal)); y+=3; }
-
-  // ── MATERIALES ────────────────────────────────────────────────────
   var mats=(r.materiales||[]).filter(function(m){return m.cantidad&&+m.cantidad>0;});
   if(mats.length){
-    groupTitle('Materiales');
-    mats.forEach(function(m){ matRow(m.nombre,m.cantidad); });
-    y+=3;
+    y=pdfGroupTitle(doc,y,'Materiales');
+    mats.forEach(function(m){ y=pdfMatRow(doc,y,m.nombre,m.cantidad); });
+    y+=2;
   }
 
-  // ── OBSERVACIONES ─────────────────────────────────────────────────
-  if(r.obs) obsRow(r.obs);
+  if(r.obs) y=pdfObsRow(doc,y,r.obs);
 
-  // ── GUARDAR ───────────────────────────────────────────────────────
-  var fname='IRV_'+(r.pedido||r.actObras||'parte')+'_'+(r.centro||'')+'_'+(r.fecha||'').replace(/-/g,'')+'.pdf';
-  doc.save(fname);
+  pdfFooter(doc,y+4);
+  pdfGuardar(doc,'IRV_'+(r.pedido||r.actObras||'parte')+'_'+(r.centro||'')+'_'+(r.fecha||'').replace(/-/g,''));
 }
 
 
@@ -3721,7 +3744,7 @@ function msToggleNuevaSec(){_MS.nuevaSecVis=!_MS.nuevaSecVis;msRenderEdit();}
 function msCrearSec(){var inp=$('msNewSecNom'),nom=inp?inp.value.trim():'';if(!nom)return;var s=msGetSecciones(_MS.catJob||curJob);s.push({id:'sec_'+Date.now(),nombre:nom,mats:[]});msSetSecciones(s);_MS.nuevaSecVis=false;msRenderEdit();}
 
 
-var DATOS_RESPALDO=[{"fecha": "2026-05-29", "pedido": "IRV-0005", "actObras": null, "centro": "CL0001", "tienda": "Antonio Redondo", "dir": "Calle Medico Miguel Ramos Alcantarilla ", "tel": "*******", "km": 10, "tr": 30, "job": "Electricidad", "roles": ["Oficial", "Oficial", "Oficial"], "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Electricidad</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">29/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">IRV-0005</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Antonio Redondo</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Calle Medico Miguel Ramos Alcantarilla </span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">*******</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:30) - (09:00) · 10 km</div><div class=\"rrow\"><span class=\"rc\">Km</span><span class=\"rl\">Kmje</span><span class=\"rv\">20 km</span></div><div class=\"rgroup-title\">(09:00) - (13:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">H. Normal</span><span class=\"rl\">H.Nor</span><span class=\"rv\">4h x3= 12h</span></div><div class=\"rgroup-title\">(13:00) - (13:30) · 10 km</div><div class=\"rrow\"><span class=\"rc\">D. Normal</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h x3= 3h</span></div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div class=\"rrow\"><span class=\"rc\">Dieta</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 3</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">12h</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Diego · Manuel · Fidel</div>", "fin": 780, "trS": 30, "totalMin": 300, "dieta": true, "arr": "09:00", "lea": "13:00", "obs": "Se monta cableado de acometida de dos viviendas, se conectan a la CGP y CPM se dejan alimentadas", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 810, "tipoDia": "normal", "estado": "en-ejecucion", "materiales": [], "codigos": [{"cod": "Km", "lab": "Kmje", "v": 20, "u": "km"}, {"cod": "H. Normal", "lab": "H.Nor", "v": 12, "u": "h"}, {"cod": "D. Normal", "lab": "Dsp.Nor", "v": 3, "u": "h"}, {"cod": "Dieta", "lab": "½ Dieta", "v": 3, "u": "dieta"}], "clienteId": "c_1779618649261", "cod_v": 0}, {"fecha": "2026-03-12", "pedido": "IRV-0001", "actObras": "IRV-0001", "centro": "2738", "tienda": "Mercadorna Yecla 2738", "dir": "Av de la Paz 2 Yecla", "tel": "******", "km": 100, "tr": 75, "job": "Obras", "roles": ["Oficial"], "fin": 705, "trS": 75, "totalMin": 210, "dieta": false, "arr": "10:45", "lea": "11:45", "obs": "Se marc", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 780, "tipoDia": "normal", "estado": "en-ejecucion", "materiales": [{"cod": "", "nombre": "Caja de preinstalacion Split A/A", "cantidad": 1}], "codigos": [{"cod": "MA4841", "lab": "Kmje", "v": 200, "u": "km"}, {"cod": "MA4836", "lab": "H.Nor", "v": 1, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 2.5, "u": "h"}], "clienteId": "mercadona", "cod_v": 0, "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Obras</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">12/03/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Actuación</span><span class=\"rl\">IRV-0001</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadorna Yecla 2738</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Av de la Paz 2 Yecla</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">******</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(09:30) - (10:45) · 100 km</div><div class=\"rrow\"><span class=\"rc\">MA4841</span><span class=\"rl\">Kmje</span><span class=\"rv\">200 km</span></div><div class=\"rgroup-title\">(10:45) - (11:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MA4836</span><span class=\"rl\">H.Nor</span><span class=\"rv\">1h</span></div><div class=\"rgroup-title\">(11:45) - (13:00) · 100 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h 1/2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">1h</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Diego</div>"}, {"fecha": "2026-03-27", "pedido": "IRV-0001", "centro": "2738", "tienda": "Mercadorna Teclado 2738", "dir": "Av de la Paz 2 Yecla", "tel": "******", "km": 100, "tr": 90, "job": "Obras", "roles": ["Oficial", "Oficial"], "fin": 810, "trS": 90, "totalMin": 270, "dieta": false, "arr": "12:00", "lea": "13:30", "obs": "Desmontaje de A/A split en oficina", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 900, "estado": "en-ejecucion", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MA4841", "lab": "Kmje", "v": 200, "u": "km"}, {"cod": "MA4836", "lab": "H.Nor", "v": 3, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 6, "u": "h"}], "clienteId": "mercadona", "actObras": "IRV-0001", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Obras</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">27/03/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Actuación</span><span class=\"rl\">IRV-0001</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadorna Teclado 2738</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Av de la Paz 2 Yecla</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">******</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(10:30) - (12:00) · 100 km</div><div class=\"rrow\"><span class=\"rc\">MA4841</span><span class=\"rl\">Kmje</span><span class=\"rv\">200 km</span></div><div class=\"rgroup-title\">(12:00) - (13:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MA4836</span><span class=\"rl\">H.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">6h</span></div><div class=\"rgroup-title\">(13:30) - (15:00) · 100 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">6h</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">1h 1/2</span></div>"}, {"fecha": "2026-03-30", "pedido": "113201", "centro": "4777", "tienda": "Mercadona CC la Rambla 4777", "dir": "Rambla de Benipila", "tel": "968132450", "km": 50, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 960, "trS": 45, "totalMin": 510, "dieta": true, "arr": "09:00", "lea": "16:00", "obs": "Se cambia de lugar 02 unidades externas de split", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1005, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 100, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 14, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">30/03/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">113201</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona CC la Rambla 4777</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Rambla de Benipila</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968132450</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:15) - (09:00) · 50 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">100 km</span></div><div class=\"rgroup-title\">(09:00) - (16:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">14h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rgroup-title\">(16:00) - (16:45) · 50 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">7h</span></div>"}, {"fecha": "2026-03-31", "pedido": "IRV-0001", "actObras": "IRV-0001", "centro": "2738", "tienda": "Mercadorna Yecla 2738", "dir": "Av de la Paz 2 Yecla", "tel": "******", "km": 100, "tr": 90, "job": "Obras", "roles": ["Oficial", "Oficial"], "fin": 960, "trS": 90, "totalMin": 570, "dieta": true, "arr": "09:30", "lea": "16:00", "obs": "Se instala A/A split en sala de reuniones", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1050, "tipoDia": "normal", "estado": "en-ejecucion", "materiales": [{"cod": "MO0007", "nombre": "Varilla de Plata al 5% en gr", "cantidad": 10}, {"cod": "MO0008", "nombre": "Carga de nitrógeno", "cantidad": 2}, {"cod": "MO0017", "nombre": "Soportes de Escuadras de 50x50", "cantidad": 1}, {"cod": "MO0018", "nombre": "Silen Block para Escuadras", "cantidad": 1}, {"cod": "MO0021", "nombre": "Hidro Tubo de 20 mm", "cantidad": 10}, {"cod": "", "nombre": "Té de 25mm de PVC", "cantidad": 1}, {"cod": "", "nombre": "Reducción de 25 a 20mm PVC", "cantidad": 2}, {"cod": "", "nombre": "Codos de 90° de 20mm de PVC", "cantidad": 6}], "codigos": [{"cod": "MA4841", "lab": "Kmje", "v": 200, "u": "km"}, {"cod": "MA4836", "lab": "H.Nor", "v": 13, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 6, "u": "h"}, {"cod": "MA4839", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "cod_v": 0, "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Obras</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">31/03/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Actuación</span><span class=\"rl\">IRV-0001</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadorna Yecla 2738</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Av de la Paz 2 Yecla</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">******</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:00) - (09:30) · 100 km</div><div class=\"rrow\"><span class=\"rc\">MA4841</span><span class=\"rl\">Kmje</span><span class=\"rv\">200 km</span></div><div class=\"rgroup-title\">(09:30) - (16:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MA4836</span><span class=\"rl\">H.Nor</span><span class=\"rv\">6h 1/2 x2= 13h</span></div><div class=\"rgroup-title\">(16:00) - (17:30) · 100 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h x2= 6h</span></div><div class=\"rrow\"><span class=\"rc\">MA4839</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">13h</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Manuel · Pedro</div>"}, {"fecha": "2026-04-06", "pedido": "111821", "centro": "4466", "tienda": "Mercadona Mazarron Puerto 4466", "dir": "C/A del PP la Charca", "tel": "868454984", "km": 74, "tr": 60, "job": "Conductos", "roles": ["Oficial", "Oficial"], "fin": 555, "trS": 60, "totalMin": 180, "dieta": false, "arr": "08:15", "lea": "09:15", "obs": "Reparación de conducto caído y despegado", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 615, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9412", "lab": "Kmje", "v": 148, "u": "km"}, {"cod": "MF9404", "lab": "H.Nor", "v": 2, "u": "h"}, {"cod": "MK9OVB", "lab": "Dsp.Nor", "v": 2.5, "u": "h"}, {"cod": "MB8723", "lab": "Dsp.Ext", "v": 1.5, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Conductos</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">06/04/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">111821</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Mazarron Puerto 4466</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/A del PP la Charca</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">868454984</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(07:15) - (08:15) · 74 km</div><div class=\"rrow\"><span class=\"rc\">MF9412</span><span class=\"rl\">Kmje</span><span class=\"rv\">148 km</span></div><div class=\"rgroup-title\">(08:15) - (09:15) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9404</span><span class=\"rl\">H.Nor</span><span class=\"rv\">2h</span></div><div class=\"rrow\"><span class=\"rc\">MK9OVB</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8723</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rgroup-title\">(09:15) - (10:15) · 74 km</div><div class=\"rrow\"><span class=\"rc\">MK9OVB</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8723</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">1h</span></div>"}, {"fecha": "2026-04-06", "pedido": "114915", "centro": "2745", "tienda": "Mercadona Torres de Cotilla 2745", "dir": "Calle Mayor 12 Torres de Cotilla", "tel": "968623167", "km": 20, "tr": 30, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 1005, "trS": 30, "totalMin": 435, "dieta": true, "arr": "10:30", "lea": "16:45", "obs": "Se cambia válvula de bola de soldar de 1⅛", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1035, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 40, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.De", "v": 12.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 2, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">06/04/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">114915</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Torres de Cotilla 2745</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Calle Mayor 12 Torres de Cotilla</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968623167</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(10:00) - (10:30) · 20 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">40 km</span></div><div class=\"rgroup-title\">(10:30) - (16:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.De</span><span class=\"rv\">12h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h</span></div><div class=\"rgroup-title\">(16:45) - (17:15) · 20 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">6h 1/4</span></div>"}, {"fecha": "2026-04-08", "pedido": "113201", "actObras": null, "centro": "4777", "tienda": "Mercadona CC la Rambla 4777", "dir": "Rambla de Benipila", "tel": "968132450", "km": 50, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 705, "trS": 45, "totalMin": 240, "dieta": false, "arr": "09:15", "lea": "11:45", "obs": "", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 750, "tipoDia": "normal", "estado": "terminado", "materiales": [{"cod": "MM0020", "nombre": "Bomba de Desagüe Maxi Hi Flow", "cantidad": 1}, {"cod": "MM0023", "nombre": "Hidro Tubo Cristal", "cantidad": 1}, {"cod": "", "nombre": "Tubo de 20mm de PVC", "cantidad": 4}, {"cod": "", "nombre": "Manguitos de 20mm de PVC", "cantidad": 4}, {"cod": "", "nombre": "Polímero de Secado Rapido", "cantidad": 1}, {"cod": "", "nombre": "Codos de 90° de 20mm de PVC", "cantidad": 4}], "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 100, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}], "clienteId": "mercadona", "cod_v": 0, "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">08/04/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">113201</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona CC la Rambla 4777</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Rambla de Benipila</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968132450</span><span class=\"rv\"></span></div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">100 km</span></div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">2h 1/2 x2= 5h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2 x2= 3h</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">5h</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Manuel · Pedro</div>"}, {"fecha": "2026-04-27", "pedido": "117650", "centro": "4771", "tienda": "Mercadona FUENTE ÁLAMO 4771", "dir": "C/ RUBI-CORVERICA NORTE", "tel": "968132451", "km": 45, "tr": 45, "job": "Conductos", "roles": ["Oficial", "Oficial"], "fin": 450, "trS": 45, "totalMin": 165, "dieta": false, "arr": "06:15", "lea": "07:30", "obs": "Hay que reemplazar cuatro tramos de conducto de 80 x 80 x 120 de largo", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 495, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9412", "lab": "Kmje", "v": 90, "u": "km"}, {"cod": "MF9405", "lab": "H.Ext", "v": 2.5, "u": "h"}, {"cod": "MK9OVB", "lab": "Dsp.Nor", "v": 0.5, "u": "h"}, {"cod": "MB8723", "lab": "Dsp.Ext", "v": 1.5, "u": "h"}, {"cod": "MB8725", "lab": "Dsp.Noc", "v": 1, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Conductos</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">27/04/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">117650</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona FUENTE ÁLAMO 4771</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/ RUBI-CORVERICA NORTE</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968132451</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(05:30) - (06:15) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9412</span><span class=\"rl\">Kmje</span><span class=\"rv\">90 km</span></div><div class=\"rgroup-title\">(06:15) - (07:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9405</span><span class=\"rl\">H.Ext</span><span class=\"rv\">2h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MK9OVB</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1/2h</span></div><div class=\"rrow\"><span class=\"rc\">MB8723</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8725</span><span class=\"rl\">Dsp.Noc</span><span class=\"rv\">1h</span></div><div class=\"rgroup-title\">(07:30) - (08:15) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MK9OVB</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1/2h</span></div><div class=\"rrow\"><span class=\"rc\">MB8723</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8725</span><span class=\"rl\">Dsp.Noc</span><span class=\"rv\">1h</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">1h 1/4</span></div>"}, {"fecha": "2026-04-27", "pedido": "116988", "centro": "2599", "tienda": "Mercadona ARCHENA 2599", "dir": "C/ AZALEA", "tel": "968674400", "km": 40, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 990, "trS": 45, "totalMin": 495, "dieta": true, "arr": "09:45", "lea": "16:30", "obs": "Se eliminan latiguillos de anti vibración de una y tres octavos y siete octavos al llegar la presión no había variado se carga con líquido trazador y 10 kilos de gas refrigerante R407 se deja operativa", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1035, "estado": "en-ejecucion", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 80, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.De", "v": 13.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">27/04/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">116988</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona ARCHENA 2599</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/ AZALEA</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968674400</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(09:00) - (09:45) · 40 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">80 km</span></div><div class=\"rgroup-title\">(09:45) - (16:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.De</span><span class=\"rv\">13h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rgroup-title\">(16:30) - (17:15) · 40 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">6h 3/4</span></div>"}, {"fecha": "2026-04-30", "pedido": "120080", "centro": "4497", "tienda": "Mercadona LOS JARDINES 4497", "dir": "C/ ALMUDENA GRANDES", "tel": "968789394", "km": 108, "tr": 90, "job": "Conductos", "roles": ["Oficial", "Oficial"], "fin": 540, "trS": 90, "totalMin": 270, "dieta": false, "arr": "07:30", "lea": "09:00", "obs": "El que se reparó el ducto de salida del aire acondicionado que estaba roto se gastó medio rollo de cinta de aluminio", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 630, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9412", "lab": "Kmje", "v": 216, "u": "km"}, {"cod": "MF9404", "lab": "H.Nor", "v": 2, "u": "h"}, {"cod": "MF9405", "lab": "H.Ext", "v": 1, "u": "h"}, {"cod": "MK9OVB", "lab": "Dsp.Nor", "v": 3, "u": "h"}, {"cod": "MB8723", "lab": "Dsp.Ext", "v": 3, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Conductos</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">30/04/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">120080</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona LOS JARDINES 4497</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/ ALMUDENA GRANDES</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968789394</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(06:00) - (07:30) · 108 km</div><div class=\"rrow\"><span class=\"rc\">MF9412</span><span class=\"rl\">Kmje</span><span class=\"rv\">216 km</span></div><div class=\"rgroup-title\">(07:30) - (09:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9404</span><span class=\"rl\">H.Nor</span><span class=\"rv\">2h</span></div><div class=\"rrow\"><span class=\"rc\">MF9405</span><span class=\"rl\">H.Ext</span><span class=\"rv\">1h</span></div><div class=\"rrow\"><span class=\"rc\">MK9OVB</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">MB8723</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">3h</span></div><div class=\"rgroup-title\">(09:00) - (10:30) · 108 km</div><div class=\"rrow\"><span class=\"rc\">MK9OVB</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">MB8723</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">3h</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">1h</span></div>"}, {"fecha": "2026-05-04", "pedido": "116988", "centro": "2599", "tienda": "Mercadona ARCHENA 2599", "dir": "C/ AZALEA", "tel": "968674400", "km": 40, "tr": 30, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 885, "trS": 30, "totalMin": 405, "dieta": true, "arr": "09:00", "lea": "14:45", "obs": "Se usan cuatro cargas de nitrógeno y se deja presurizado para ver dónde están las fugas", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 915, "estado": "en-ejecucion", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 80, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 11.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 2, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">04/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">116988</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona ARCHENA 2599</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/ AZALEA</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968674400</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:30) - (09:00) · 40 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">80 km</span></div><div class=\"rgroup-title\">(09:00) - (14:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">11h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h</span></div><div class=\"rgroup-title\">(14:45) - (15:15) · 40 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">5h 3/4</span></div>"}, {"fecha": "2026-05-05", "pedido": "119137", "centro": "2721", "tienda": "Mercadona San Javier 2721", "dir": "Avda. del Recuerdo, San Javier (Murcia, 30730)", "tel": "968192448", "km": 45, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 960, "trS": 45, "totalMin": 465, "dieta": true, "arr": "09:45", "lea": "16:00", "obs": "Se observan fuga en las dos válvulas de una ion octava una y un octavo de la máquina AC-1", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1005, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 90, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 12.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">05/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">119137</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona San Javier 2721</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Avda. del Recuerdo, San Javier (Murcia, 30730)</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968192448</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(09:00) - (09:45) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">90 km</span></div><div class=\"rgroup-title\">(09:45) - (16:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">12h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rgroup-title\">(16:00) - (16:45) · 45 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">6h 1/4</span></div>"}, {"fecha": "2026-05-06", "pedido": "119137", "centro": "2721", "tienda": "Mercadona San Javier 2721", "dir": "Avda. del Recuerdo, San Javier (Murcia, 30730)", "tel": "968192448", "km": 45, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 765, "trS": 45, "totalMin": 450, "dieta": true, "arr": "06:45", "lea": "12:45", "obs": "Se cambian tres válvulas de bola de 1⅛", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 810, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 90, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 9.5, "u": "h"}, {"cod": "MF9345", "lab": "H.Ext.Of", "v": 2.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1.5, "u": "h"}, {"cod": "MB8726", "lab": "Dsp.Ext", "v": 1.5, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">06/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">119137</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona San Javier 2721</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Avda. del Recuerdo, San Javier (Murcia, 30730)</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968192448</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(06:00) - (06:45) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">90 km</span></div><div class=\"rgroup-title\">(06:45) - (12:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">9h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MF9345</span><span class=\"rl\">H.Ext.Of</span><span class=\"rv\">2h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rgroup-title\">(12:45) - (13:30) · 45 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">4h 3/4</span></div>"}, {"fecha": "2026-05-07", "pedido": "IRV-0002", "centro": "4657", "tienda": "Mercadona La Noria 4657", "dir": "CC La Noria", "tel": "968605075", "km": 20, "tr": 30, "job": "Obras", "roles": ["Oficial", "Oficial"], "fin": 750, "trS": 45, "totalMin": 330, "dieta": true, "arr": "08:15", "lea": "12:30", "obs": "Se unidad mueve exterior del aire acondicionado de la zona de baños", "linkType": "Sí", "kmDif": 31, "trDif": 15, "horaEnlace": 795, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MA4841", "lab": "Kmje", "v": 71, "u": "km"}, {"cod": "MA4836", "lab": "H.Nor", "v": 8.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 2, "u": "h"}, {"cod": "MB8726", "lab": "Dsp.Ext", "v": 0.5, "u": "h"}, {"cod": "MA4839", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "actObras": "IRV-0002", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Obras</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">07/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Actuación</span><span class=\"rl\">IRV-0002</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona La Noria 4657</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">CC La Noria</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968605075</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(07:45) - (08:15) · 20 km</div><div class=\"rrow\"><span class=\"rc\">MA4841</span><span class=\"rl\">Kmje</span><span class=\"rv\">71 km</span></div><div class=\"rgroup-title\">(08:15) - (12:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MA4836</span><span class=\"rl\">H.Nor</span><span class=\"rv\">8h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1/2h</span></div><div class=\"rgroup-title\">(12:30) - (13:00) · 20 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1/2h</span></div><div class=\"rrow\"><span class=\"rc\">MA4839</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">4h 1/4</span></div>"}, {"fecha": "2026-05-07", "pedido": "119137", "centro": "2721", "tienda": "Mercadona San Javier 2721", "dir": "Avda. del Recuerdo, San Javier (Murcia, 30730)", "tel": "968192448", "km": 45, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 855, "trS": 45, "totalMin": 105, "dieta": false, "arr": "13:15", "lea": "14:15", "obs": "Se completa con 25 barras de nitrógeno", "linkType": "Auto", "kmDif": 0, "trDif": 0, "horaEnlace": 900, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 45, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 2, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1.5, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">07/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">119137</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona San Javier 2721</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Avda. del Recuerdo, San Javier (Murcia, 30730)</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968192448</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(12:30) - (13:15) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">45 km</span></div><div class=\"rgroup-title\">(13:15) - (14:15) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">2h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rgroup-title\">(14:15) - (15:00) · 45 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">1h</span></div>"}, {"fecha": "2026-05-08", "pedido": "IRV-0004", "centro": "4657", "tienda": "Mercadona La Noria 4657", "dir": "CC La Noria", "tel": "968605075", "km": 20, "tr": 30, "job": "Obras", "roles": ["Oficial", "Oficial"], "fin": 585, "trS": 30, "totalMin": 150, "dieta": false, "arr": "08:15", "lea": "09:45", "obs": "Se carga con 200 gr de refrigerante R32", "linkType": "Sí", "kmDif": 0, "trDif": 0, "horaEnlace": 615, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MA4841", "lab": "Kmje", "v": 47, "u": "km"}, {"cod": "MA4836", "lab": "H.Nor", "v": 3, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1.5, "u": "h"}, {"cod": "MB8726", "lab": "Dsp.Ext", "v": 0.5, "u": "h"}], "clienteId": "mercadona", "actObras": "IRV-0004", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Obras</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">08/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Actuación</span><span class=\"rl\">IRV-0004</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona La Noria 4657</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">CC La Noria</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968605075</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(07:45) - (08:15) · 20 km</div><div class=\"rrow\"><span class=\"rc\">MA4841</span><span class=\"rl\">Kmje</span><span class=\"rv\">47 km</span></div><div class=\"rgroup-title\">(08:15) - (09:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MA4836</span><span class=\"rl\">H.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1/2h</span></div><div class=\"rgroup-title\">(09:45) - (10:15) · 20 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1/2h</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">1h 1/2</span></div>"}, {"fecha": "2026-05-08", "pedido": "122610", "centro": "2599", "tienda": "Mercadona ARCHENA 2599", "dir": "C/ AZALEA", "tel": "968674400", "km": 40, "tr": 30, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 810, "trS": 45, "totalMin": 240, "dieta": true, "arr": "10:15", "lea": "13:30", "obs": "Se encontró que perdió la presión en la parte de la unidad interior", "linkType": "Auto", "kmDif": 0, "trDif": 0, "horaEnlace": 855, "estado": "en-ejecucion", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 40, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 6.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1.5, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">08/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">122610</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona ARCHENA 2599</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/ AZALEA</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968674400</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(09:45) - (10:15) · 40 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">40 km</span></div><div class=\"rgroup-title\">(10:15) - (13:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">6h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rgroup-title\">(13:30) - (14:00) · 40 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">3h 1/4</span></div>"}, {"fecha": "2026-05-11", "pedido": "119137", "centro": "2721", "tienda": "Mercadona San Javier 2721", "dir": "Avda. del Recuerdo, San Javier (Murcia, 30730)", "tel": "968192448", "km": 45, "tr": 30, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 615, "trS": 30, "totalMin": 150, "dieta": false, "arr": "08:45", "lea": "10:15", "obs": "Se midió la presión y baja", "linkType": "Si", "kmDif": 22, "trDif": 30, "horaEnlace": 675, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 90, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 3, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 2, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">11/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">119137</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona San Javier 2721</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Avda. del Recuerdo, San Javier (Murcia, 30730)</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968192448</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:15) - (08:45) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">90 km</span></div><div class=\"rgroup-title\">(08:45) - (10:15) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h</span></div><div class=\"rgroup-title\">(10:15) - (10:45) · 45 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">1h 1/2</span></div>"}, {"fecha": "2026-05-11", "pedido": "122610", "centro": "2599", "tienda": "Mercadona ARCHENA 2599", "dir": "C/ AZALEA", "tel": "968674400", "km": 40, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 960, "trS": 45, "totalMin": 360, "dieta": true, "arr": "11:15", "lea": "16:00", "obs": "Al llegar se consigue que la unidad interior había perdido todo el nitrógeno", "linkType": "Auto", "kmDif": 0, "trDif": 0, "horaEnlace": 1005, "estado": "en-ejecucion", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 62, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 9.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 2.5, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">11/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">122610</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona ARCHENA 2599</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/ AZALEA</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968674400</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(10:30) - (11:15) · 40 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">62 km</span></div><div class=\"rgroup-title\">(11:15) - (16:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">9h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h 1/2</span></div><div class=\"rgroup-title\">(16:00) - (16:45) · 40 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">4h 3/4</span></div>"}, {"fecha": "2026-05-12", "pedido": "122610", "centro": "2599", "tienda": "Mercadona ARCHENA 2599", "dir": "C/ AZALEA", "tel": "968674400", "km": 40, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 945, "trS": 45, "totalMin": 495, "dieta": true, "arr": "09:00", "lea": "15:45", "obs": "Se arma el evaporador se corrige fuga en la válvula de expansión", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 990, "estado": "en-ejecucion", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 80, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 13.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">12/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">122610</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona ARCHENA 2599</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/ AZALEA</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968674400</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:15) - (09:00) · 40 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">80 km</span></div><div class=\"rgroup-title\">(09:00) - (15:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">13h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rgroup-title\">(15:45) - (16:30) · 40 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">6h 3/4</span></div>"}, {"fecha": "2026-05-13", "pedido": "IRV-0003", "centro": "3765", "tienda": "Mercadona Av El Príncipe 3765", "dir": "Av del Príncipe Alcantariloa", "tel": "648894739", "km": 17, "tr": 15, "job": "Obras", "roles": ["Oficial", "Oficial"], "fin": 1080, "trS": 15, "totalMin": 420, "dieta": true, "arr": "11:30", "lea": "18:00", "obs": "Se instala aire acondicionado en el área del cgbt", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1095, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MA4841", "lab": "Kmje", "v": 34, "u": "km"}, {"cod": "MA4836", "lab": "H.Nor", "v": 13, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1, "u": "h"}, {"cod": "MA4839", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "actObras": "IRV-0003", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Obras</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">13/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Actuación</span><span class=\"rl\">IRV-0003</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Av El Príncipe 3765</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Av del Príncipe Alcantariloa</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">648894739</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(11:15) - (11:30) · 17 km</div><div class=\"rrow\"><span class=\"rc\">MA4841</span><span class=\"rl\">Kmje</span><span class=\"rv\">34 km</span></div><div class=\"rgroup-title\">(11:30) - (18:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MA4836</span><span class=\"rl\">H.Nor</span><span class=\"rv\">13h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h</span></div><div class=\"rgroup-title\">(18:00) - (18:15) · 17 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h</span></div><div class=\"rrow\"><span class=\"rc\">MA4839</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">6h 1/2</span></div>"}, {"fecha": "2026-05-14", "pedido": "119137", "centro": "2721", "tienda": "Mercadona San Javier 2721", "dir": "Avda. del Recuerdo, San Javier (Murcia, 30730)", "tel": "968192448", "km": 45, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 615, "trS": 45, "totalMin": 285, "dieta": false, "arr": "07:00", "lea": "10:15", "obs": "Se cambian válvulas de cinco octavos dos house completo", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 660, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 90, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 4.5, "u": "h"}, {"cod": "MF9345", "lab": "H.Ext.Of", "v": 2, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1.5, "u": "h"}, {"cod": "MB8726", "lab": "Dsp.Ext", "v": 1.5, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">14/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">119137</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona San Javier 2721</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Avda. del Recuerdo, San Javier (Murcia, 30730)</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968192448</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(06:15) - (07:00) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">90 km</span></div><div class=\"rgroup-title\">(07:00) - (10:15) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">4h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MF9345</span><span class=\"rl\">H.Ext.Of</span><span class=\"rv\">2h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rgroup-title\">(10:15) - (11:00) · 45 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">2h 1/4</span></div>"}, {"fecha": "2026-05-15", "pedido": "123909", "centro": "2125", "tienda": "Mercadona Juan Carlos Primero 2125", "dir": "Calle Estación Cieza", "tel": "968453486", "km": 47, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 525, "trS": 45, "totalMin": 255, "dieta": false, "arr": "06:00", "lea": "08:45", "obs": "Se cambia la turbina de la unidad interior del aire acondicionado del área de las carnes", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 570, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 94, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.De", "v": 1.5, "u": "h"}, {"cod": "MF9345", "lab": "H.Ext.De", "v": 4, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1.5, "u": "h"}, {"cod": "MB8728", "lab": "Dsp.Noc", "v": 1.5, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">15/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">123909</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Juan Carlos Primero 2125</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Calle Estación Cieza</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968453486</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(05:15) - (06:00) · 47 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">94 km</span></div><div class=\"rgroup-title\">(06:00) - (08:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.De</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MF9345</span><span class=\"rl\">H.Ext.De</span><span class=\"rv\">4h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8728</span><span class=\"rl\">Dsp.Noc</span><span class=\"rv\">1h 1/2</span></div><div class=\"rgroup-title\">(08:45) - (09:30) · 47 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8728</span><span class=\"rl\">Dsp.Noc</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">3/4h</span></div>"}, {"fecha": "2026-05-15", "pedido": "124228", "centro": "4288", "tienda": "Mercadona Atalayas 4288", "dir": "Carretera Alicante, Atalayas", "tel": "968788855", "km": 5, "tr": 15, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 765, "trS": 15, "totalMin": 225, "dieta": true, "arr": "09:30", "lea": "12:45", "obs": "Se cambia el aire acondicionado split del área de oficina de ordenadores", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 780, "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 10, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 6.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">15/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">124228</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Atalayas 4288</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Carretera Alicante, Atalayas</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968788855</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(09:15) - (09:30) · 5 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">10 km</span></div><div class=\"rgroup-title\">(09:30) - (12:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">6h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h</span></div><div class=\"rgroup-title\">(12:45) - (13:00) · 5 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">3h 1/4</span></div>"}, {"fecha": "2026-05-17", "pedido": "117650", "centro": "4771", "tienda": "Mercadona FUENTE ÁLAMO 4771", "dir": "C/ RUBI-CORVERICA NORTE", "tel": "968132451", "km": 45, "tr": 45, "job": "Conductos", "roles": ["Oficial", "Oficial", "Oficial"], "fin": 810, "trS": 45, "totalMin": 420, "dieta": true, "arr": "08:00", "lea": "13:30", "obs": "Se cambian tres tramos de Conducto de 120 por 75 por 75", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 855, "tipoDia": "festivo", "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9412", "lab": "Kmje", "v": 90, "u": "km"}, {"cod": "MF9407", "lab": "H.Fes", "v": 16.5, "u": "h"}, {"cod": "MB8724", "lab": "Dsp.Fes", "v": 4.5, "u": "h"}, {"cod": "MF9896", "lab": "½ Dieta", "v": 3, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Conductos</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">17/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">117650</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona FUENTE ÁLAMO 4771</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/ RUBI-CORVERICA NORTE</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968132451</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(07:15) - (08:00) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9412</span><span class=\"rl\">Kmje</span><span class=\"rv\">90 km</span></div><div class=\"rgroup-title\">(08:00) - (13:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9407</span><span class=\"rl\">H.Fes</span><span class=\"rv\">16h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8724</span><span class=\"rl\">Dsp.Fes</span><span class=\"rv\">4h 1/2</span></div><div class=\"rgroup-title\">(13:30) - (14:15) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MB8724</span><span class=\"rl\">Dsp.Fes</span><span class=\"rv\">4h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MF9896</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 3</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">5h 1/2</span></div>"}, {"fecha": "2026-05-18", "pedido": "119137", "centro": "2721", "tienda": "Mercadona San Javier 2721", "dir": "Avda. del Recuerdo, San Javier (Murcia, 30730)", "tel": "968192448", "km": 45, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 1020, "trS": 45, "totalMin": 540, "dieta": true, "arr": "09:30", "lea": "17:00", "obs": "Se separa todas las piezas del la unidad exterior", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1065, "tipoDia": "normal", "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 90, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 15, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">18/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">119137</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona San Javier 2721</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Avda. del Recuerdo, San Javier (Murcia, 30730)</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968192448</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:45) - (09:30) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">90 km</span></div><div class=\"rgroup-title\">(09:30) - (17:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">15h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rgroup-title\">(17:00) - (17:45) · 45 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">7h 1/2</span></div>"}, {"fecha": "2026-05-20", "pedido": "123701", "centro": "2227", "tienda": "Mercadona Cehegín 2227", "dir": "Calle San Telesforo Cehegín ", "tel": "968740376", "km": 70, "tr": 60, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 1005, "trS": 60, "totalMin": 525, "dieta": true, "arr": "10:00", "lea": "16:45", "obs": "Se cambia compresor", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1065, "tipoDia": "normal", "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 140, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 13.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 4, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">20/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">123701</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Cehegín 2227</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Calle San Telesforo Cehegín </span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968740376</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(09:00) - (10:00) · 70 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">140 km</span></div><div class=\"rgroup-title\">(10:00) - (16:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">13h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">4h</span></div><div class=\"rgroup-title\">(16:45) - (17:45) · 70 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">4h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">6h 3/4</span></div>"}, {"fecha": "2026-05-21", "pedido": "124521", "centro": "4691", "tienda": "Mercadona Ronda Norte 4621", "dir": "Gran Vía Ronda Norte", "tel": "968139470", "km": 5, "tr": 15, "job": "Conductos", "roles": ["Oficial", "Oficial"], "fin": 540, "trS": 15, "totalMin": 195, "dieta": false, "arr": "06:15", "lea": "09:00", "obs": "Se observa el trabajo y hay que reemplazar y modificar los conductos", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 555, "tipoDia": "normal", "estado": "en-ejecucion", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9412", "lab": "Kmje", "v": 10, "u": "km"}, {"cod": "MF9404", "lab": "H.Nor", "v": 2, "u": "h"}, {"cod": "MF9405", "lab": "H.Ext", "v": 3.5, "u": "h"}, {"cod": "MK9OVB", "lab": "Dsp.Nor", "v": 0.5, "u": "h"}, {"cod": "MB8723", "lab": "Dsp.Ext", "v": 0.5, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Conductos</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">21/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">124521</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Ronda Norte 4621</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Gran Vía Ronda Norte</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968139470</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(06:00) - (06:15) · 5 km</div><div class=\"rrow\"><span class=\"rc\">MF9412</span><span class=\"rl\">Kmje</span><span class=\"rv\">10 km</span></div><div class=\"rgroup-title\">(06:15) - (09:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9404</span><span class=\"rl\">H.Nor</span><span class=\"rv\">2h</span></div><div class=\"rrow\"><span class=\"rc\">MF9405</span><span class=\"rl\">H.Ext</span><span class=\"rv\">3h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MK9OVB</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1/2h</span></div><div class=\"rrow\"><span class=\"rc\">MB8723</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1/2h</span></div><div class=\"rgroup-title\">(09:00) - (09:15) · 5 km</div><div class=\"rrow\"><span class=\"rc\">MK9OVB</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1/2h</span></div><div class=\"rrow\"><span class=\"rc\">MB8723</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1/2h</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">1h</span></div>"}, {"fecha": "2026-05-21", "pedido": "123701", "centro": "2227", "tienda": "Mercadona Cehegín 2227", "dir": "Calle San Telesforo Cehegín ", "tel": "968740376", "km": 70, "tr": 60, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 990, "trS": 60, "totalMin": 480, "dieta": true, "arr": "10:30", "lea": "16:30", "obs": "Se termina de instalar el compresor y se carga con T-30 kilos de gas", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1050, "tipoDia": "normal", "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 140, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 12, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 4, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">21/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">123701</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Cehegín 2227</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Calle San Telesforo Cehegín </span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968740376</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(09:30) - (10:30) · 70 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">140 km</span></div><div class=\"rgroup-title\">(10:30) - (16:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">12h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">4h</span></div><div class=\"rgroup-title\">(16:30) - (17:30) · 70 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">4h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">6h</span></div>"}, {"fecha": "2026-05-25", "pedido": "122610", "centro": "2599", "tienda": "Mercadona ARCHENA 2599", "dir": "C/ AZALEA", "tel": "968674400", "km": 40, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 750, "trS": 45, "totalMin": 285, "dieta": false, "arr": "09:15", "lea": "12:30", "obs": "Se verifican que no haya perdido presión todo bien se cambia el cabezal de la válvula de expansión y se carga con 13 kilos de refrigerante 438 queda trabajando en frío 50 psi en baja y 230 en alta", "linkType": "Si", "kmDif": 27, "trDif": 15, "horaEnlace": 810, "tipoDia": "normal", "estado": "en-ejecucion", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 80, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 6.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">25/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">122610</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona ARCHENA 2599</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">C/ AZALEA</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968674400</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:30) - (09:15) · 40 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">80 km</span></div><div class=\"rgroup-title\">(09:15) - (12:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">6h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rgroup-title\">(12:30) - (13:15) · 40 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">3h 1/4</span></div>"}, {"fecha": "2026-05-25", "pedido": "119137", "centro": "2721", "tienda": "Mercadona San Javier 2721", "dir": "Avda. del Recuerdo, San Javier (Murcia, 30730)", "tel": "968192448", "km": 45, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 1050, "trS": 45, "totalMin": 345, "dieta": true, "arr": "13:15", "lea": "17:30", "obs": "Se arma toda la tubería de la unidad exterior se presuriza con nitrógeno y queda para ver si hay fuga", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1095, "tipoDia": "normal", "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 90, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 8.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">25/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">119137</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona San Javier 2721</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Avda. del Recuerdo, San Javier (Murcia, 30730)</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968192448</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(12:30) - (13:15) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">90 km</span></div><div class=\"rgroup-title\">(13:15) - (17:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">8h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rgroup-title\">(17:30) - (18:15) · 45 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">3h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">4h 1/4</span></div>"}, {"fecha": "2026-05-25", "pedido": "272589", "actObras": null, "centro": "2227", "tienda": "Mercadona Cehegín 2227", "dir": "Calle San Telesforo Cehegín ", "tel": "968740376", "km": 70, "tr": 60, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 975, "trS": 60, "totalMin": 435, "dieta": true, "arr": "11:00", "lea": "16:15", "obs": "Pendiente por cambiar válvula de expansión", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1035, "tipoDia": "normal", "estado": "en-ejecucion", "materiales": [{"cod": "MM0001", "nombre": "Válvula de bola 1⅛", "cantidad": 2}, {"cod": "MM0002", "nombre": "Válvula 5/8", "cantidad": 2}, {"cod": "MM0015", "nombre": "Oxígeno y Propano", "cantidad": 2}, {"cod": "", "nombre": "grm de Varilla de plata 5%", "cantidad": 50}], "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 140, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 10.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 4, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "cod_v": 0, "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">25/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">272589</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Cehegín 2227</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Calle San Telesforo Cehegín </span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968740376</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(10:00) - (11:00) · 70 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">140 km</span></div><div class=\"rgroup-title\">(11:00) - (16:15) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">5h 1/4 x2= 10h 1/2</span></div><div class=\"rgroup-title\">(16:15) - (17:15) · 70 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h x2= 4h</span></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">10h 1/2</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Diego · Manuel</div>"}, {"fecha": "2026-05-26", "pedido": "119137", "centro": "2721", "tienda": "Mercadona San Javier 2721", "dir": "Avda. del Recuerdo, San Javier (Murcia, 30730)", "tel": "968192448", "km": 45, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "fin": 630, "trS": 45, "totalMin": 255, "dieta": false, "arr": "07:45", "lea": "10:30", "obs": "Se carga con 14 kilos de refrigerante R410 queda con 7.5 bar en baja y 25 bar en alta", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 675, "tipoDia": "normal", "estado": "terminado", "materiales": [], "cod_v": 0, "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 90, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 5, "u": "h"}, {"cod": "MF9345", "lab": "H.Ext.Of", "v": 0.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1.5, "u": "h"}, {"cod": "MB8726", "lab": "Dsp.Ext", "v": 1.5, "u": "h"}], "clienteId": "mercadona", "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">26/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">119137</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona San Javier 2721</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Avda. del Recuerdo, San Javier (Murcia, 30730)</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968192448</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(07:00) - (07:45) · 45 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">90 km</span></div><div class=\"rgroup-title\">(07:45) - (10:30) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">5h</span></div><div class=\"rrow\"><span class=\"rc\">MF9345</span><span class=\"rl\">H.Ext.Of</span><span class=\"rv\">1/2h</span></div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rgroup-title\">(10:30) - (11:15) · 45 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1h 1/2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">2h 1/2</span></div>"}, {"fecha": "2026-05-27", "pedido": "272589", "actObras": null, "centro": "2227", "tienda": "Mercadona Cehegín 2227", "dir": "Calle San Telesforo Cehegín ", "tel": "968740376", "km": 70, "tr": 60, "job": "Climatización", "roles": ["Oficial", "Oficial"], "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">27/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">272589</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona Cehegín 2227</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Calle San Telesforo Cehegín </span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968740376</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:00) - (09:00) · 70 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">140 km</span></div><div class=\"rgroup-title\">(09:00) - (12:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">3h 3/4 x2= 7h 1/2</span></div><div class=\"rgroup-title\">(12:45) - (13:45) · 70 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">2h x2= 4h</span></div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">7h 1/2</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Manuel · Fidel</div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div style=\"font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:8px 0 5px;\">Materiales</div><div class=\"rrow info-row\"><span class=\"rc\" style=\"font-size:.72rem;\">Mat.</span><span class=\"rl\" style=\"flex:1;\">Válvula de expanción 7/8 * 5/8</span><span class=\"rv\" style=\"display:flex;\">1</span></div><div class=\"rrow info-row\"><span class=\"rc\" style=\"font-size:.72rem;\">Mat.</span><span class=\"rl\" style=\"flex:1;\">Filtro bidireccional de 5/8</span><span class=\"rv\" style=\"display:flex;\">1</span></div>", "fin": 765, "trS": 60, "totalMin": 345, "dieta": true, "arr": "09:00", "lea": "12:45", "obs": "Cambia la válvula de expanción de la unidad exterior, filtro de 5/8 se carga con 10 kilos de refrigerante R410. Queda funcionando con 125 psi en baja y 400 PSI en alta en calor y en frío 100 psi en baja y 300 psi en alta.", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 825, "tipoDia": "normal", "estado": "terminado", "materiales": [{"cod": "", "nombre": "Válvula de expanción 7/8 * 5/8", "cantidad": 1}, {"cod": "", "nombre": "Filtro bidireccional de 5/8", "cantidad": 1}], "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 140, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 7.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 4, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "cod_v": 0}, {"fecha": "2026-05-27", "pedido": "126772", "actObras": null, "centro": "2324", "tienda": "Mercadona ABARÁN 2324", "dir": "AVDA. CONSTITUCIÓN", "tel": "968770154", "km": 44, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">27/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">126772</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona ABARÁN 2324</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">AVDA. CONSTITUCIÓN</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968770154</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(13:30) - (14:15) · 44 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">88 km</span></div><div class=\"rgroup-title\">(14:15) - (15:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">1h 1/2 x2= 3h</span></div><div class=\"rgroup-title\">(15:45) - (16:30) · 44 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2 x2= 3h</span></div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div style=\"font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2)\">✅ Media dieta ya aplicada hoy</div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">3h</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Manuel · Fidel</div>", "fin": 945, "trS": 45, "totalMin": 180, "dieta": false, "arr": "14:15", "lea": "15:45", "obs": "", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 990, "tipoDia": "normal", "estado": "en-ejecucion", "materiales": [], "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 88, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 3, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}], "clienteId": "mercadona", "cod_v": 0}, {"fecha": "2026-05-28", "pedido": "126771", "actObras": null, "centro": "2324", "tienda": "Mercadona ABARÁN 2324", "dir": "AVDA. CONSTITUCIÓN", "tel": "968770154", "km": 44, "tr": 45, "job": "Climatización", "roles": ["Oficial", "Oficial"], "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">28/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">126771</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercadona ABARÁN 2324</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">AVDA. CONSTITUCIÓN</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968770154</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:15) - (09:00) · 44 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">88 km</span></div><div class=\"rgroup-title\">(09:00) - (16:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">7h 3/4 x2= 15h 1/2</span></div><div class=\"rgroup-title\">(16:45) - (17:30) · 44 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h 1/2 x2= 3h</span></div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">15h 1/2</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Manuel · Fidel</div>", "fin": 1005, "trS": 45, "totalMin": 555, "dieta": true, "arr": "09:00", "lea": "16:45", "obs": "Se desarmar toda la tubería de la unidad exterior y se presuriza independientemente el condensador y la parte del compresor. Se descubre una fuga en el condensador, se corrige y se deja presurizado.", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1050, "tipoDia": "normal", "estado": "en-ejecucion", "materiales": [], "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 88, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 15.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 3, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "mercadona", "cod_v": 0}, {"fecha": "2026-05-30", "pedido": "IRV-0006", "actObras": null, "centro": "CL0002", "tienda": "Casa de Carlos Flareluc", "dir": "Puente tocino", "tel": "+34 686 96 39 91", "km": 7, "tr": 15, "job": "Climatización", "roles": ["Oficial", "Oficial"], "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">30/05/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">IRV-0006</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Casa de Carlos Flareluc</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Puente tocino</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">+34 686 96 39 91</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:45) - (09:00) &middot; 7 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">14 km</span></div><div class=\"rgroup-title\">(09:00) - (12:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9345</span><span class=\"rl\">H.Ext.Of</span><span class=\"rv\">3h x2= 6h</span></div><div class=\"rgroup-title\">(12:00) - (12:15) &middot; 7 km</div><div class=\"rrow\"><span class=\"rc\">MB8726</span><span class=\"rl\">Dsp.Ext</span><span class=\"rv\">1/2h x2= 1h</span></div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div style=\"font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2)\">&#9203; Acumulado: 3.5 h de 5 h (faltan 1.5 h)</div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">6h</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Manuel &middot; Fidel</div>", "fin": 720, "trS": 15, "totalMin": 210, "dieta": false, "arr": "09:00", "lea": "12:00", "obs": "Se desinstalan aire acondicionado 3 x 1 y se hace barrido con nitrógeno para hacer aceite quemado pero está muy sucio", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 735, "tipoDia": "sabado", "estado": "en-ejecucion", "materiales": [], "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 14, "u": "km"}, {"cod": "MF9345", "lab": "H.Ext.Of", "v": 6, "u": "h"}, {"cod": "MB8726", "lab": "Dsp.Ext", "v": 1, "u": "h"}], "clienteId": "c_1779744364343", "cod_v": 0}, {"fecha": "2026-06-01", "pedido": "IRV-0006", "actObras": null, "centro": "CL0002", "tienda": "Casa de Carlos Flareluc", "dir": "Puente tocino", "tel": "+34 686 96 39 91", "km": 7, "tr": 15, "job": "Climatización", "roles": ["Oficial", "Oficial"], "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">01/06/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">IRV-0006</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Casa de Carlos Flareluc</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Puente tocino</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">+34 686 96 39 91</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(09:45) - (10:00) &middot; 7 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">14 km</span></div><div class=\"rgroup-title\">(10:00) - (18:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">8h x2= 16h</span></div><div class=\"rgroup-title\">(18:00) - (18:15) &middot; 7 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1/2h x2= 1h</span></div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div class=\"rrow\"><span class=\"rc\">MF9895</span><span class=\"rl\">½ Dieta</span><span class=\"rv\">× 2</span></div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">16h</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Manuel &middot; Fidel</div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div style=\"font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:8px 0 5px;\">Materiales</div><div style=\"padding:6px 0;\"><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">40 Varilla de plata 5%</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Carga de nitrógeno</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Dieléctrico limpia tuberia</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">2 Oxígeno y Propano</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Tubería cobre 1/4\" (m)</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Tubería cobre 3/8\" (m)</div></div>", "fin": 1080, "trS": 15, "totalMin": 510, "dieta": true, "arr": "10:00", "lea": "18:00", "obs": "Se gastan para limpiar las tuberías.\n01 botella de nitrógeno\n04 litros de dilectrico\nSe instala A/A Split 3 x 1\nSe instala A/A Split de 3000", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 1095, "tipoDia": "normal", "estado": "terminado", "materiales": [], "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 14, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 16, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1, "u": "h"}, {"cod": "MF9895", "lab": "½ Dieta", "v": 2, "u": "dieta"}], "clienteId": "c_1779744364343", "cod_v": 0}, {"fecha": "2026-06-02", "pedido": "IRV-0007", "actObras": null, "centro": "CL0001", "tienda": "Antonio Redondo", "dir": "Calle Medico Miguel Ramos Alcantarilla ", "tel": "*******", "km": 10, "tr": 30, "job": "Climatización", "roles": ["Oficial", "Oficial", "Oficial", "Oficial"], "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">02/06/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">IRV-0007</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Antonio Redondo</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Calle Medico Miguel Ramos Alcantarilla </span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">*******</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(08:15) - (08:45) &middot; 10 km</div><div class=\"rrow\"><span class=\"rc\">Km</span><span class=\"rl\">Kmje</span><span class=\"rv\">20 km</span></div><div class=\"rgroup-title\">(08:45) - (12:00) Tienda</div><div class=\"rrow\"><span class=\"rc\">H. Normal</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">3h 1/4 x4= 13h</span></div><div class=\"rgroup-title\">(12:00) - (12:30) &middot; 10 km</div><div class=\"rrow\"><span class=\"rc\">D. Normal</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1h x4= 4h</span></div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div style=\"font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2)\">&#9203; Acumulado: 4.25 h de 5 h (faltan 0.75 h)</div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">13h</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Diego &middot; Manuel &middot; Fidel &middot; Aisa</div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div style=\"font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:8px 0 5px;\">Materiales</div><div style=\"padding:6px 0;\"><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Carga de nitrógeno</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Rollo de Cinta de Aluminio</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">10 Metros de Cable de 3 x 2.5 mm</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">10 Metros de Cable de 5 x 1.5 mm</div></div>", "fin": 720, "trS": 30, "totalMin": 255, "dieta": false, "arr": "08:45", "lea": "12:00", "obs": "-Se instala A/A Split se deja operativo\n-Se instala Renovación de aire en los Aseos\n-Se instala control de renovación de aire en la cocina\n- Se instala centralita de Airzone \n- Se instala 3 rejillas motorizadas", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 750, "tipoDia": "normal", "estado": "en-ejecucion", "materiales": [{"cod": "", "nombre": "Carga de nitrógeno", "cantidad": 1}, {"cod": "", "nombre": "Rollo de Cinta de Aluminio", "cantidad": 1}, {"cod": "", "nombre": "Metros de Cable de 3 x 2.5 mm", "cantidad": 10}, {"cod": "", "nombre": "Metros de Cable de 5 x 1.5 mm", "cantidad": 10}], "codigos": [{"cod": "Km", "lab": "Kmje", "v": 20, "u": "km"}, {"cod": "H. Normal", "lab": "H.Nor.Of", "v": 13, "u": "h"}, {"cod": "D. Normal", "lab": "Dsp.Nor", "v": 4, "u": "h"}], "clienteId": "c_1779618649261", "cod_v": 3}, {"fecha": "2026-06-02", "pedido": "124903", "actObras": null, "centro": "2487", "tienda": "Mercado Gran Vía 2487", "dir": "Gran Vía Escultor Salzillo ", "tel": "968214599", "km": 6, "tr": 15, "job": "Climatización", "roles": ["Oficial", "Oficial"], "detalle": "<div class=\"rrow tipo-row\"><span class=\"rc\">Tipo</span><span class=\"rl\">Climatización</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">Datos generales</div><div class=\"rrow info-row\"><span class=\"rc\">Fecha</span><span class=\"rl\">02/06/2026</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Nº orden</span><span class=\"rl\">124903</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Tienda</span><span class=\"rl\">Mercado Gran Vía 2487</span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Dirección</span><span class=\"rl\">Gran Vía Escultor Salzillo </span><span class=\"rv\"></span></div><div class=\"rrow info-row\"><span class=\"rc\">Teléfono</span><span class=\"rl\">968214599</span><span class=\"rv\"></span></div><div class=\"rgroup-title\">(13:15) - (13:30) &middot; 6 km</div><div class=\"rrow\"><span class=\"rc\">MF9352</span><span class=\"rl\">Kmje</span><span class=\"rv\">12 km</span></div><div class=\"rgroup-title\">(13:30) - (15:45) Tienda</div><div class=\"rrow\"><span class=\"rc\">MF9344</span><span class=\"rl\">H.Nor.Of</span><span class=\"rv\">2h 1/4 x2= 4h 1/2</span></div><div class=\"rgroup-title\">(15:45) - (16:00) &middot; 6 km</div><div class=\"rrow\"><span class=\"rc\">M71077</span><span class=\"rl\">Dsp.Nor</span><span class=\"rv\">1/2h x2= 1h</span></div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div style=\"font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2)\">&#9203; Acumulado: 2.75 h de 5 h (faltan 2.25 h)</div><div class=\"rrow total-row\"><span class=\"rc\">TOTAL</span><span class=\"rl\"></span><span class=\"rv\">4h 1/2</span></div><div style=\"text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em\">Manuel &middot; Fidel</div><div style=\"height:1px;background:var(--border);margin:10px 0\"></div><div style=\"font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:8px 0 5px;\">Materiales</div><div style=\"padding:6px 0;\"><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">4 Tubo de PVC  de 25mm x 3 Metros</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">5 Manguitos de PVC de 25mm</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Te de PVC de 25mm</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Codo de PVC de 25mm</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Tapa de PVC de 25mm</div><div style=\"font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);\">1 Hidro Tubo 25 mm (m)</div></div>", "fin": 945, "trS": 15, "totalMin": 165, "dieta": false, "arr": "13:30", "lea": "15:45", "obs": "Se cambia drenaje del A/A del área de Listo para Comer", "linkType": "No", "kmDif": 0, "trDif": 0, "horaEnlace": 960, "tipoDia": "normal", "estado": "terminado", "materiales": [{"cod": "", "nombre": "Tubo de PVC  de 25mm x 3 Metros", "cantidad": 4}, {"cod": "", "nombre": "Manguitos de PVC de 25mm", "cantidad": 5}, {"cod": "", "nombre": "Te de PVC de 25mm", "cantidad": 1}, {"cod": "", "nombre": "Codo de PVC de 25mm", "cantidad": 1}, {"cod": "", "nombre": "Tapa de PVC de 25mm", "cantidad": 1}, {"cod": "", "nombre": "Hidro Tubo 25 mm (m)", "cantidad": 1}], "codigos": [{"cod": "MF9352", "lab": "Kmje", "v": 12, "u": "km"}, {"cod": "MF9344", "lab": "H.Nor.Of", "v": 4.5, "u": "h"}, {"cod": "M71077", "lab": "Dsp.Nor", "v": 1, "u": "h"}], "clienteId": "mercadona", "cod_v": 3}];
+
 
 
 
@@ -4500,130 +4523,74 @@ function mostrarDialogoEstado(){
 function pdfOrden(){
   var o=window._ordenActual; if(!o) return;
   if(!window.jspdf){ alert('PDF no disponible.'); return; }
-  var jsPDF=window.jspdf.jsPDF;
-  var doc=new jsPDF({unit:'mm',format:'a4',orientation:'portrait'});
-  var W=doc.internal.pageSize.getWidth();
-  var vd=[26,107,58],vl=[232,245,238],gr=[247,249,251],bg=[214,220,229],tx=[24,32,46],mu=[75,85,99],amb=[180,83,9],ambl=[255,251,235];
-  var y=10,mg=20,cW=W-mg*2;
-  var rH=6.5;
+  var doc=pdfNuevo();
+  var y=12;
 
-  function checkPage(need){ if(y+need>278){ doc.addPage(); y=10; } }
+  var ordenTitle=o.actObras?o.actObras+' \u00b7 '+o.job:'Orden '+o.pedido+' \u00b7 '+o.job;
+  y=pdfHdr(doc,y,o.tienda+' \u00b7 '+ordenTitle);
+  y+=2;
 
-  // CABECERA
-  doc.setFillColor(vd[0],vd[1],vd[2]); doc.roundedRect(mg,y,cW,16,3,3,'F');
-  doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-  doc.text('Resumen Orden de Servicio',mg+4,y+7);
-  doc.setFontSize(7); doc.setFont('helvetica','normal');
-  doc.text('Partes IRV-10',mg+4,y+12.5);
-  var hoy2=new Date().toLocaleDateString('es-ES'); doc.text(hoy2,mg+cW-2,y+7,{align:'right'});
-  y+=22;
+  // Info orden
+  y=pdfGroupTitle(doc,y,'Datos generales');
+  y=pdfInfoRow(doc,y,'CENTRO',o.centro||'');
+  y=pdfInfoRow(doc,y,'FECHAS',o.fechas.join(' \u00b7 '));
+  y=pdfInfoRow(doc,y,'PARTES',o.partes.length+' parte'+(o.partes.length===1?'':'s'));
+  y=pdfInfoRow(doc,y,'ESTADO',o.estado==='en-ejecucion'?'En ejecuci\u00f3n':'Finalizado');
+  y+=3;
 
-  // INFO ORDEN
-  var ordenTitle=o.actObras?o.actObras+' · '+o.job:'Orden '+o.pedido+' · '+o.job;
-  doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(tx[0],tx[1],tx[2]); doc.text(o.tienda,mg,y); y+=6;
-  doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(mu[0],mu[1],mu[2]);
-  doc.text(ordenTitle+' · Centro '+o.centro,mg,y); y+=5;
-  doc.text(o.fechas.join(' · ')+' · '+o.partes.length+' partes',mg,y); y+=5;
-  var estTxt=o.estado==='en-ejecucion'?'⏳ En ejecución':'✅ Finalizado';
-  doc.setFontSize(7.5); doc.text(estTxt,mg,y); y+=8;
-  doc.setDrawColor(vd[0],vd[1],vd[2]); doc.setLineWidth(.5); doc.line(mg,y,mg+cW,y); y+=6;
-
-  // PARTES (desglose)
+  // Partes individuales
   o.partes.forEach(function(p,pi){
     var r=p.r;
     var fF=r.fecha.split('-').reverse().join('/');
-    checkPage(12);
-
-    // Cabecera parte
-    doc.setFillColor(240,242,245); doc.rect(mg,y,cW,7,'F');
-    doc.setDrawColor(vd[0],vd[1],vd[2]); doc.setLineWidth(.3);
-    doc.line(mg,y,mg,y+7);
-    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(vd[0],vd[1],vd[2]);
-    doc.text('Parte '+(pi+1)+' — '+fF,mg+3,y+5);
     var dur=fmtH(((r.lea?tm(r.lea):r.fin)-(r.arr?tm(r.arr):0))/60);
-    doc.setFont('helvetica','normal'); doc.setTextColor(mu[0],mu[1],mu[2]);
-    doc.setFontSize(7); doc.text((r.arr||'--')+' – '+(r.lea||'--')+' · '+dur,mg+cW-2,y+5,{align:'right'});
+
+    y=pdfCheck(doc,y,10);
+    // Mini cabecera parte
+    doc.setFillColor(_PDF.bgSurf[0],_PDF.bgSurf[1],_PDF.bgSurf[2]);
+    doc.rect(_PDF.mg,y,_PDF.cW,7,'F');
+    doc.setDrawColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+    doc.setLineWidth(0.5);
+    doc.line(_PDF.mg,y,_PDF.mg,y+7);
+    doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+    doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+    doc.text('Parte '+(pi+1)+' \u2014 '+fF,_PDF.mg+3,y+5);
+    doc.setFont('helvetica','normal'); doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+    doc.setFontSize(6.5);
+    doc.text((r.arr||'--')+' \u2013 '+(r.lea||'--')+' \u00b7 '+dur,_PDF.mg+_PDF.cW-3,y+5,{align:'right'});
     y+=9;
 
-    // Códigos del parte
-    var cods=r.codigos||parsearCodigos(r.detalle||'',r.roles||[]);
+    var cods=r.codigos||[];
     cods.forEach(function(c){
-      checkPage(rH+1);
-      var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?''+Math.round(c.v):fmtH(c.v);
-      doc.setFillColor(vd[0],vd[1],vd[2]); doc.rect(mg,y,22,rH,'F');
-      doc.setFillColor(vl[0],vl[1],vl[2]); doc.rect(mg+22,y,30,rH,'F');
-      doc.setFillColor(gr[0],gr[1],gr[2]); doc.rect(mg+52,y,cW-52,rH,'F');
-      doc.setDrawColor(bg[0],bg[1],bg[2]); doc.rect(mg,y,cW,rH);
-      doc.setFontSize(6.5); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-      doc.text(c.cod,mg+11,y+4.5,{align:'center'});
-      doc.setTextColor(vd[0],vd[1],vd[2]); doc.setFontSize(7); doc.text(c.lab,mg+23,y+4.5);
-      doc.setTextColor(tx[0],tx[1],tx[2]); doc.setFont('helvetica','bold'); doc.setFontSize(7.5);
-      doc.text(val,mg+cW-2,y+4.5,{align:'right'});
-      y+=rH+0.4;
+      var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?'\u00d7 '+Math.round(c.v):fmtH(c.v);
+      y=pdfCodeRow(doc,y,c.cod,c.lab,val);
     });
 
-    // Materiales del parte
-    var usados=(r.materiales||[]).filter(function(m){ return m.cantidad&&+m.cantidad>0; });
+    var usados=(r.materiales||[]).filter(function(m){return m.cantidad&&+m.cantidad>0;});
     if(usados.length){
-      checkPage(6);
-      doc.setFillColor(250,250,250); doc.rect(mg,y,cW,5.5,'F');
-      doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(mu[0],mu[1],mu[2]);
-      doc.text('MATERIALES',mg+2,y+4); y+=6.5;
-      usados.forEach(function(m){
-        checkPage(rH+1);
-        doc.setFillColor(gr[0],gr[1],gr[2]); doc.rect(mg,y,cW,rH,'F');
-        doc.setDrawColor(bg[0],bg[1],bg[2]); doc.rect(mg,y,cW,rH);
-        doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(tx[0],tx[1],tx[2]);
-        doc.text(m.nombre,mg+2,y+4.5);
-        doc.setFont('helvetica','bold'); doc.text(''+m.cantidad,mg+cW-2,y+4.5,{align:'right'});
-        y+=rH+0.4;
-      });
+      y=pdfGroupTitle(doc,y,'Materiales');
+      usados.forEach(function(m){ y=pdfMatRow(doc,y,m.nombre,m.cantidad); });
     }
     y+=4;
   });
 
-  // TOTAL ACUMULADO
-  checkPage(20);
-  doc.setDrawColor(vd[0],vd[1],vd[2]); doc.setLineWidth(.5); doc.line(mg,y,mg+cW,y); y+=6;
-  doc.setFontSize(8.5); doc.setFont('helvetica','bold'); doc.setTextColor(vd[0],vd[1],vd[2]);
-  doc.text('TOTAL ACUMULADO',mg,y); y+=7;
-
+  // Total acumulado
+  y=pdfDivider(doc,y);
+  y=pdfGroupTitle(doc,y,'Total acumulado');
   Object.values(o.codAcum).forEach(function(c){
-    checkPage(rH+1);
-    var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?''+Math.round(c.v):fmtH(c.v);
-    doc.setFillColor(vd[0],vd[1],vd[2]); doc.rect(mg,y,22,rH,'F');
-    doc.setFillColor(vl[0],vl[1],vl[2]); doc.rect(mg+22,y,30,rH,'F');
-    doc.setFillColor(232,245,238); doc.rect(mg+52,y,cW-52,rH,'F');
-    doc.setDrawColor(bg[0],bg[1],bg[2]); doc.rect(mg,y,cW,rH);
-    doc.setFontSize(6.5); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
-    doc.text(c.rc,mg+11,y+4.5,{align:'center'});
-    doc.setTextColor(vd[0],vd[1],vd[2]); doc.setFontSize(7); doc.text(c.rl,mg+23,y+4.5);
-    doc.setTextColor(tx[0],tx[1],tx[2]); doc.setFont('helvetica','bold'); doc.setFontSize(8);
-    doc.text(val,mg+cW-2,y+4.5,{align:'right'});
-    y+=rH+0.4;
+    var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?'\u00d7 '+Math.round(c.v):fmtH(c.v);
+    y=pdfCodeRow(doc,y,c.rc,c.rl,val);
   });
 
   if(Object.keys(o.matAcum).length){
-    y+=5; checkPage(12);
-    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(vd[0],vd[1],vd[2]);
-    doc.text('MATERIALES TOTALES',mg,y); y+=6;
+    y+=3;
+    y=pdfGroupTitle(doc,y,'Materiales totales');
     Object.keys(o.matAcum).forEach(function(n){
-      checkPage(rH+1);
-      doc.setFillColor(gr[0],gr[1],gr[2]); doc.rect(mg,y,cW,rH,'F');
-      doc.setDrawColor(bg[0],bg[1],bg[2]); doc.rect(mg,y,cW,rH);
-      doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(tx[0],tx[1],tx[2]);
-      doc.text(n,mg+2,y+4.5);
-      doc.setFont('helvetica','bold'); doc.text(''+o.matAcum[n],mg+cW-2,y+4.5,{align:'right'});
-      y+=rH+0.4;
+      y=pdfMatRow(doc,y,n,o.matAcum[n]);
     });
   }
 
-  var pdfBlob=doc.output('blob');
-  var pdfUrl=URL.createObjectURL(pdfBlob);
-  var a=document.createElement('a'); a.href=pdfUrl;
-  var fname='resumen_'+(o.actObras||o.pedido)+'_'+o.centro+'.pdf';
-  a.download=fname; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(function(){ URL.revokeObjectURL(pdfUrl); },10000);
+  pdfFooter(doc,y+4);
+  pdfGuardar(doc,'IRV_resumen_'+(o.actObras||o.pedido)+'_'+o.centro);
 }
 
 
@@ -5180,12 +5147,19 @@ function agregarMatEdit(){
 
 function avisoCruzado(referencia,nombreCliente,idx){
   $('acCentro').classList.remove('show');
-  var msg='"'+referencia+'" no existe en '+curCliente.nombre+' pero est\u00e1 activa en '+nombreCliente+'.\n\n\u00bfQuieres ir a esa orden?';
-  var confirmar=confirm(msg);
-  if(confirmar){
-    var cl=getClientes().find(function(c){ return c.nombre===nombreCliente; });
-    if(cl){ seleccionarCliente(cl.id); goTo('w-hist'); }
+  window._avisoCruzadoCliente=nombreCliente;
+  var dlg=$('dlgAvisoCruzado');
+  if(dlg){
+    document.getElementById('dlgAvisoCruzadoTxt').textContent=
+      '"'+referencia+'" est\u00e1 activa en '+nombreCliente+'. \u00bfIr a esa orden?';
+    dlg.classList.add('show');
   }
+}
+function _confirmarAvisoCruzado(){
+  $('dlgAvisoCruzado').classList.remove('show');
+  var nombreCliente=window._avisoCruzadoCliente;
+  var cl=getClientes().find(function(c){ return c.nombre===nombreCliente; });
+  if(cl){ seleccionarCliente(cl.id); goTo('w-hist'); }
 }
 
 function avisoCruzadoIdx(idx){
@@ -5632,6 +5606,26 @@ function iniciarSplash() {
 iniciarSplash();
 
 initApp();
+
+// Limpieza automática: borrar partes finalizados con más de 24 meses
+(function(){
+  var h = getH();
+  var hoy = new Date();
+  var limite = new Date(hoy.getFullYear()-2, hoy.getMonth(), hoy.getDate());
+  var limiteStr = limite.toISOString().slice(0,10);
+  var antes = h.length;
+  h = h.filter(function(r){
+    // Nunca borrar los en ejecución
+    if((r.estado||'terminado')==='en-ejecucion') return true;
+    // Borrar solo finalizados con fecha anterior al límite
+    return !r.fecha || r.fecha >= limiteStr;
+  });
+  if(h.length < antes){
+    setH(h);
+    console.log('IRV: '+( antes - h.length)+' partes antiguos eliminados (>24 meses)');
+  }
+})();
+
 renderClientes();
 // Lanzar splash al cargar
 iniciarSplash();
@@ -5690,6 +5684,17 @@ if('caches' in window){
   </div>
 </div>
 
+
+<div class="dialogo" id="dlgAvisoCruzado">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo">&#9888;&#65039; Orden en otro cliente</div>
+    <div class="dialogo-sub" id="dlgAvisoCruzadoTxt"></div>
+    <div class="brow">
+      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="_confirmarAvisoCruzado()">&#8594; Ir a esa orden</button>
+      <button class="btn btn-s" style="flex:1;justify-content:center" onclick="$('dlgAvisoCruzado').classList.remove('show')">Cancelar</button>
+    </div>
+  </div>
+</div>
 
 <div class="dialogo" id="dlgNocturno">
   <div class="dialogo-box">
