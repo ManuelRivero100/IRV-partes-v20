@@ -590,8 +590,8 @@ textarea{resize:vertical;min-height:72px}
     <div style="margin-top:14px">
       <div class="card"><div class="card-title">&#128269; Buscar</div>
         <div class="g2">
-          <div class="field"><label>Centro / tienda / pedido</label><input id="busca" oninput="refreshCounts();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);" placeholder="Filtrar&hellip;"></div>
-          <div class="field"><label>Fecha</label><input id="buscaF" type="date" oninput="refreshCounts();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);"></div>
+          <div class="field"><label>Centro / tienda / pedido</label><input id="busca" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);" placeholder="Filtrar&hellip;"></div>
+          <div class="field"><label>Fecha</label><input id="buscaF" type="date" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);"></div>
         </div>
         <div class="brow">
           <button class="btn btn-d btn-sm" onclick="pedirBorrarHist()">&#128465;&#65039; Borrar historial</button>
@@ -605,6 +605,7 @@ textarea{resize:vertical;min-height:72px}
         <div class="brow" style="margin-top:6px">
           <button class="btn btn-s btn-sm" onclick="importarDesdeTexto()">&#128203; Importar desde texto pegado</button>
         </div>
+        <div id="searchResults" style="display:none;margin-top:10px;"></div>
         <div id="confirmBorrar" style="display:none;margin-top:10px;padding:12px;background:var(--red-light);border:1px solid rgba(192,57,43,.2);border-radius:var(--r-sm)">
           <div style="font-size:.88rem;font-weight:600;color:var(--red);margin-bottom:8px">&#9888;&#65039; &iquest;Borrar todo el historial?</div>
           <div style="display:flex;gap:8px"><button class="btn btn-d btn-sm" onclick="borrarHistConfirm(true)">S&iacute;, borrar</button><button class="btn btn-s btn-sm" onclick="borrarHistConfirm(false)">Cancelar</button></div>
@@ -4512,7 +4513,52 @@ function leer(){
 
 // ===== HISTORIAL =====
 
-function limpiarFiltros(){ $('busca').value=''; $('buscaF').value=''; refreshCounts(); }
+function renderSearchResults(){
+  var q=($('busca')?($('busca').value||''):'').toLowerCase();
+  var qf=$('buscaF')?($('buscaF').value||''):'';
+  var el=$('searchResults'); if(!el) return;
+  if(!q&&!qf){ el.style.display='none'; el.innerHTML=''; return; }
+  var ords=getOrdenes(); // sin filtro de estado — muestra todos
+  if(!ords.length){
+    el.style.display='block';
+    el.innerHTML='<div class="empty"><div class="empty-ico">🔍</div><div>Sin resultados para "'+q+'"</div></div>';
+    return;
+  }
+  var html='<div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px;">'+ords.length+' resultado'+(ords.length===1?'':'s')+'</div>';
+  html+=ords.map(function(g,gi){
+    var f1=g.fechaMin.split('-').reverse().join('/');
+    var f2=g.fechaMax.split('-').reverse().join('/');
+    var fr=f1===f2?f1:f1+' → '+f2;
+    var dot='<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(g.estado==='en-ejecucion'?'var(--amber)':'var(--green)')+';margin-right:6px;flex-shrink:0;"></span>';
+    var badge=g.estado==='en-ejecucion'?'<span class="badge badge-a">En ejecución</span>':'<span class="badge badge-g">Finalizado</span>';
+    var enc=encodeURIComponent(g.pedido)+'||'+encodeURIComponent(g.centro);
+    var subTitle=g.actObras?g.actObras+' · '+g.job:'Orden '+g.pedido+' · '+g.job;
+    return '<div class="hist-item" data-enc="'+enc+'" data-idx="'+gi+'">'+
+      '<div><div class="hi-title">'+dot+g.tienda+'</div>'+
+      '<div class="hi-sub">'+subTitle+' · '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+badge+'</div>'+
+      '<div class="hi-date">'+fr+'</div></div>';
+  }).join('');
+  el.style.display='block';
+  el.innerHTML=html;
+  // Añadir eventos click después de insertar en DOM
+  el.querySelectorAll('.hist-item[data-enc]').forEach(function(item){
+    item.addEventListener('click', function(){
+      verOrdenDesdeSearch(this.getAttribute('data-enc'));
+    });
+  });
+  return;
+}
+
+function verOrdenDesdeSearch(enc){
+  // Ocultar resultados y mostrar la orden
+  var el=$('searchResults'); if(el) el.style.display='none';
+  var pp=enc.split('||');
+  verOrden(pp[0]+'||'+pp[1]);
+  $('histOpts').style.display='none';
+  $('ordenView').style.display='block';
+}
+
+function limpiarFiltros(){ $('busca').value=''; $('buscaF').value=''; refreshCounts(); renderSearchResults(); }
 
 function mostrarDialogoEstado(){
   if(!window.recTmp){ showMsg('msgRes','Genera el parte primero.','warn'); return; }
@@ -5371,7 +5417,7 @@ function verCentros(){
     var k2=r.pedido+'||'+(r.centro||'');
     if(ordenEstado[k2]!=='terminado') return;
     var k=r.centro||'sin-centro';
-    if(!centrosMap[k])centrosMap[k]={centro:k,tienda:r.tienda,partes:0,ordenes:{},fechaMax:''};
+    if(!centrosMap[k])centrosMap[k]={centro:k,tienda:r.tienda,partes:0,ordenes:{},fechaMax:r.fecha};
     centrosMap[k].tienda=r.tienda;centrosMap[k].partes++;
     centrosMap[k].ordenes[r.pedido+'||'+k]=1;
     if(!centrosMap[k].fechaMax||r.fecha>centrosMap[k].fechaMax)centrosMap[k].fechaMax=r.fecha;
