@@ -4722,7 +4722,19 @@ function leer(){
   if(/conducto|ventilac/i.test(t)){ var btns=document.querySelectorAll('#jobTgl button'); btns.forEach(function(b){ if(b.textContent==='Conductos') setJob('Conductos',b); }); }
   else if(/climatizaci[oó]n|fuga|refriger/i.test(t)){ var btns2=document.querySelectorAll('#jobTgl button'); btns2.forEach(function(b){ if(b.textContent==='Climatización') setJob('Climatización',b); }); }
   else if(/obra/i.test(t)){ var btns3=document.querySelectorAll('#jobTgl button'); btns3.forEach(function(b){ if(b.textContent==='Obras') setJob('Obras',b); }); }
-  if(centro) buscarPorCentroORef(centro);
+  if(centro){
+    buscarPorCentroORef(centro);
+    // Rellenar km y desplazamiento desde el último parte conocido de este centro
+    var _h=getH();
+    for(var _i=_h.length-1;_i>=0;_i--){
+      var _r=_h[_i];
+      if((_r.centro||'')===(centro+'').trim()&&_r.km){
+        if(!$('km').value) $('km').value=_r.km;
+        if(!$('tr').value) $('tr').value=_r.tr||'';
+        break;
+      }
+    }
+  }
   var n=[pedido,centro,denom,dir,tel].filter(Boolean).length;
   showMsg('msgForm',n?n+' campo(s) autocompletados.':'No se encontraron datos.',n?'success':'warn');
 }
