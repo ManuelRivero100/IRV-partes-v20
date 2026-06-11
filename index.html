@@ -4725,15 +4725,18 @@ function leer(){
   if(centro){
     buscarPorCentroORef(centro);
     // Rellenar km y desplazamiento desde el último parte conocido de este centro
-    var _h=getH();
-    for(var _i=_h.length-1;_i>=0;_i--){
-      var _r=_h[_i];
-      if((_r.centro||'')===(centro+'').trim()&&_r.km){
-        if(!$('km').value) $('km').value=_r.km;
-        if(!$('tr').value) $('tr').value=_r.tr||'';
-        break;
+    var _centroVal=(centro+'').trim();
+    setTimeout(function(){
+      var _h=getH();
+      for(var _i=_h.length-1;_i>=0;_i--){
+        var _r=_h[_i];
+        if((_r.centro||'')=== _centroVal&&_r.km){
+          $('km').value=_r.km;
+          $('tr').value=_r.tr||'';
+          break;
+        }
       }
-    }
+    },100);
   }
   var n=[pedido,centro,denom,dir,tel].filter(Boolean).length;
   showMsg('msgForm',n?n+' campo(s) autocompletados.':'No se encontraron datos.',n?'success':'warn');
