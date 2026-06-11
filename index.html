@@ -142,6 +142,11 @@ textarea{resize:vertical;min-height:72px}
 .rrow.obs-row .rc{background:var(--amber);color:#fff;font-family:sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .rrow.obs-row .rl{background:var(--amber-light);color:var(--amber);font-family:sans-serif;font-size:.85rem;white-space:normal;word-break:break-word;flex:1}
 .rrow.obs-row .rv{display:none}
+.rrow .rp{background:#0a1e12;color:#4ade80;padding:7px 10px;text-align:right;flex-shrink:0;font-weight:700;display:flex;align-items:center;justify-content:flex-end;white-space:nowrap;font-size:.82rem;border-left:1px solid var(--border2);}
+.rrow.subtotal-row .rc{background:#1a3a2a;color:#4ade80;font-family:sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
+.rrow.subtotal-row .rl{background:#0f2a1a;color:#4ade80;font-family:sans-serif;font-size:.75rem;font-weight:600;}
+.rrow.subtotal-row .rv{background:#0f2a1a;color:#4ade80;font-weight:700;font-size:.85rem;}
+.rrow.total-row .rp{background:#155a30;color:#4ade80;font-weight:700;font-size:.9rem;border-left:1px solid rgba(255,255,255,.15);}
 .rrow.tipo-row .rc{background:var(--purple);color:#fff;font-family:sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase}
 .rrow.tipo-row .rl{background:var(--purple-light);color:var(--purple);font-family:sans-serif;font-size:.85rem;flex:1;font-weight:700}
 .rrow.tipo-row .rv{display:none}
@@ -2366,6 +2371,43 @@ function totRow(v){ return '<div class="rrow total-row"><span class="rc">TOTAL</
 function gt(t){ return '<div class="rgroup-title">'+t+'</div>'; }
 
 // ===== GENERAR =====
+// Mapeo cod genérico → label largo del catálogo
+var _COD_A_LAB={
+  'H. Normal':   {Oficial:'H. Normal (Oficial)',Peón:'H. Normal (Peón)','':'H. Normal'},
+  'H. Extra':    {Oficial:'H. Extra (Oficial)', Peón:'H. Extra (Peón)', '':'H. Extra'},
+  'H. Nocturna': {Oficial:'H. Nocturna (Oficial)',Peón:'H. Nocturna (Peón)','':'H. Nocturna'},
+  'H. Festiva':  {Oficial:'H. Festiva (Oficial)', Peón:'H. Festiva (Peón)','':'H. Festiva'},
+  'D. Normal':   {'':'Despl. Normal'},'D. Extra':{'':'Despl. Extra'},
+  'D. Nocturno': {'':'Despl. Nocturno'},'D. Festivo':{'':'Despl. Festivo'},
+  'Km':{'':'Kilometraje'},'Dieta':{'':'½ Dieta'}
+};
+
+function getPrecioPorCod(codStr,labStr,job){
+  if(!codStr) return 0;
+  var cat=getCat(); var conceptos=cat.conceptos||[];
+  var jobNorm=job||curJob||'';
+  // 1. Buscar por código exacto (Mercadona: MF9344, etc.)
+  var c=conceptos.find(function(x){ return x.cod===codStr&&x.precio&&+x.precio>0; });
+  if(c) return parseFloat(c.precio)||0;
+  // 2. Buscar por tipo+label mapeado (clientes sin código)
+  var mapEntry=_COD_A_LAB[codStr];
+  if(mapEntry){
+    var rol='';
+    if((labStr||'').indexOf('.Of')>=0) rol='Oficial';
+    else if((labStr||'').indexOf('.Pn')>=0) rol='Peón';
+    var labLargo=mapEntry[rol]||mapEntry['']||'';
+    if(labLargo){
+      var c2=conceptos.find(function(x){
+        return x.tipo===jobNorm&&x.lab===labLargo&&x.precio&&+x.precio>0;
+      });
+      if(c2) return parseFloat(c2.precio)||0;
+    }
+  }
+  return 0;
+}
+
+function fmtPrecio(v){ return v.toFixed(2).replace('.',',')+' €'; }
+
 function generar(){
   $('msgForm').className='msg';
 
@@ -2506,7 +2548,10 @@ function generarCore(){
   html+=iRow('Tel\u00e9fono',$('tel').value);
 
   if(tlK) html+=gt(tlK);
-  html+=cRow(gc(curJob,'Km',''),'Kmje',fmt(kmT)+' km');
+  var conPrecios=curCliente&&curCliente.precios===true;
+  var _kmCod=gc(curJob,'Km',''); var _kmPr=conPrecios?getPrecioPorCod(_kmCod,'Kmje',curJob):0;
+  if(conPrecios&&_kmPr>0){ html+='<div class="rrow"><span class="rc">'+_kmCod+'</span><span class="rl">Kmje</span><span class="rv">'+fmt(kmT)+' km</span><span class="rp">'+fmtPrecio(_kmPr*kmT)+'</span></div>'; }
+  else { html+=cRow(_kmCod,'Kmje',fmt(kmT)+' km'); }
   html+=gt(tlT);
   var hMin;
   if(esNocturno){
@@ -2520,10 +2565,20 @@ function generarCore(){
   ['H. Normal','H. Extra','H. Nocturna','H. Festiva'].forEach(function(lab){
     var tipo=lab.replace('H. ',''); var min=hMin[tipo]; if(!min) return;
     var h=min/60; var ab=lA[lab]||lab;
-    if(!nr){ var t=h*w; html+=cRow(gc(curJob,lab,''),ab,w>1?fmtH(h)+' x'+w+'= '+fmtH(t):fmtH(h)); }
-    else {
-      if(nOf>0){ var tO=h*nOf; html+=cRow(gc(curJob,lab,'Oficial'),ab+'.Of',nOf>1?fmtH(h)+' x'+nOf+'= '+fmtH(tO):fmtH(h)); }
-      if(nPe>0){ var tP=h*nPe; html+=cRow(gc(curJob,lab,'Peón'),ab+'.Pn',nPe>1?fmtH(h)+' x'+nPe+'= '+fmtH(tP):fmtH(h)); }
+    if(!nr){
+      var t=h*w; var _hCod=gc(curJob,lab,''); var _hPr=conPrecios?getPrecioPorCod(_hCod,ab,curJob):0;
+      var _hVal=w>1?fmtH(h)+' x'+w+'= '+fmtH(t):fmtH(h);
+      if(conPrecios&&_hPr>0){ html+='<div class="rrow"><span class="rc">'+_hCod+'</span><span class="rl">'+ab+'</span><span class="rv">'+_hVal+'</span><span class="rp">'+fmtPrecio(_hPr*t)+'</span></div>'; }
+      else { html+=cRow(_hCod,ab,_hVal); }
+    } else {
+      if(nOf>0){ var tO=h*nOf; var _hCodOf=gc(curJob,lab,'Oficial'); var _hPrOf=conPrecios?getPrecioPorCod(_hCodOf,ab+'.Of',curJob):0; var _hValOf=nOf>1?fmtH(h)+' x'+nOf+'= '+fmtH(tO):fmtH(h);
+        if(conPrecios&&_hPrOf>0){ html+='<div class="rrow"><span class="rc">'+_hCodOf+'</span><span class="rl">'+ab+'.Of</span><span class="rv">'+_hValOf+'</span><span class="rp">'+fmtPrecio(_hPrOf*tO)+'</span></div>'; }
+        else { html+=cRow(_hCodOf,ab+'.Of',_hValOf); }
+      }
+      if(nPe>0){ var tP=h*nPe; var _hCodPn=gc(curJob,lab,'Peón'); var _hPrPn=conPrecios?getPrecioPorCod(_hCodPn,ab+'.Pn',curJob):0; var _hValPn=nPe>1?fmtH(h)+' x'+nPe+'= '+fmtH(tP):fmtH(h);
+        if(conPrecios&&_hPrPn>0){ html+='<div class="rrow"><span class="rc">'+_hCodPn+'</span><span class="rl">'+ab+'.Pn</span><span class="rv">'+_hValPn+'</span><span class="rp">'+fmtPrecio(_hPrPn*tP)+'</span></div>'; }
+        else { html+=cRow(_hCodPn,ab+'.Pn',_hValPn); }
+      }
     }
   });
   html+=gt(tlS);
@@ -2540,7 +2595,10 @@ function generarCore(){
   var dA={Normal:'Dsp.Nor',Extra:'Dsp.Ext',Nocturna:'Dsp.Noc',Festiva:'Dsp.Fes'};
   ['Normal','Extra','Nocturna','Festiva'].forEach(function(k){
     if(!gD[k]) return; var h=gD[k]/60; var t=h*w;
-    html+=cRow(gc(curJob,dL[k],''),dA[k],w>1?fmtH(h)+' x'+w+'= '+fmtH(t):fmtH(h));
+    var _dCod=gc(curJob,dL[k],''); var _dPr=conPrecios?getPrecioPorCod(_dCod,dA[k],curJob):0;
+    var _dVal=w>1?fmtH(h)+' x'+w+'= '+fmtH(t):fmtH(h);
+    if(conPrecios&&_dPr>0){ html+='<div class="rrow"><span class="rc">'+_dCod+'</span><span class="rl">'+dA[k]+'</span><span class="rv">'+_dVal+'</span><span class="rp">'+fmtPrecio(_dPr*t)+'</span></div>'; }
+    else { html+=cRow(_dCod,dA[k],_dVal); }
   });
   var totMin=trI+(esNocturno?(1440-arr+lea):(lea-arr))+trO;
   var clienteIdActual=curCliente?curCliente.id:'mercadona';
@@ -2549,25 +2607,86 @@ function generarCore(){
   var acum=sameCliente.reduce(function(z,r){ return z+(r.totalMin||0); },0)+totMin;
   var dieta=acum>=300&&!dietaYa;
   html+='<div style="height:1px;background:var(--border);margin:10px 0"></div>';
-  if(dieta){ html+=cRow(gc(curJob,'Dieta',''),'\u00bd Dieta',w>1?'\u00d7 '+w:'\u00d7 1'); }
+  var subtotalServicio=0;
+  if(dieta){
+    var dCod=gc(curJob,'Dieta',''); var dVal=w>1?'\u00d7 '+w:'\u00d7 1';
+    var dPrecio=conPrecios?getPrecioPorCod(dCod,'\u00bd Dieta',curJob):0;
+    var dTotal=dPrecio*w;
+    if(conPrecios&&dTotal>0){ subtotalServicio+=dTotal; html+='<div class="rrow"><span class="rc">'+dCod+'</span><span class="rl">\u00bd Dieta</span><span class="rv">'+dVal+'</span><span class="rp">'+fmtPrecio(dTotal)+'</span></div>'; }
+    else { html+=cRow(dCod,'\u00bd Dieta',dVal); }
+  }
   else { var info=dietaYa?'&#9989; Media dieta ya aplicada hoy':'&#9203; Acumulado: '+fmt(acum/60)+' h de 5 h (faltan '+fmt(Math.max(0,300-acum)/60)+' h)'; html+='<div style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2)">'+info+'</div>'; }
   if(autoObs){ html+=gt('Enlace'); html+=oRow('Auto',autoObs); }
   var durTotal=esNocturno?(1440-arr+lea):(lea-arr);
-  html+=totRow(fmtH(durTotal/60*w));
   var noms=wNames.filter(function(n){ return n&&n.trim(); });
-  if(noms.length) html+='<div style="text-align:center;padding:8px 10px;font-size:.88rem;font-weight:600;color:var(--text2);letter-spacing:.03em">'+noms.map(function(n){ return n.trim(); }).join(' &middot; ')+'</div>';
+
+  // Calcular subtotal servicio (km+horas+despl+dieta)
+  if(conPrecios){
+    // km
+    var kmCod=gc(curJob,'Km',''); var kmPr=getPrecioPorCod(kmCod,'Kmje',curJob); subtotalServicio+=kmPr*kmT;
+    // horas
+    ['H. Normal','H. Extra','H. Nocturna','H. Festiva'].forEach(function(lab){
+      var tipo=lab.replace('H. ',''); var min=hMin[tipo]; if(!min) return; var h=min/60;
+      if(!nr){ subtotalServicio+=getPrecioPorCod(gc(curJob,lab,''),lA[lab]||lab,curJob)*h*w; }
+      else {
+        if(nOf>0) subtotalServicio+=getPrecioPorCod(gc(curJob,lab,'Oficial'),(lA[lab]||lab)+'.Of',curJob)*h*nOf;
+        if(nPe>0) subtotalServicio+=getPrecioPorCod(gc(curJob,lab,'Peón'),(lA[lab]||lab)+'.Pn',curJob)*h*nPe;
+      }
+    });
+    // desplazamiento
+    ['Normal','Extra','Nocturna','Festiva'].forEach(function(k){
+      if(!gD[k]) return; var h=gD[k]/60;
+      subtotalServicio+=getPrecioPorCod(gc(curJob,dL[k],''),dA[k],curJob)*h*w;
+    });
+  }
+
+  if(conPrecios&&subtotalServicio>0){
+    html+='<div class="rrow subtotal-row" style="margin-top:6px;"><span class="rc">Sub.</span><span class="rl">Subtotal servicio</span><span class="rv">'+fmtPrecio(subtotalServicio)+'</span></div>';
+    html+='<div style="height:1px;background:var(--border);margin:8px 0"></div>';
+  }
 
   var matsUsados=msGetSel();
+  var subtotalMats=0;
   if(matsUsados.length){
-    html+='<div style="height:1px;background:var(--border);margin:10px 0"></div>';
     html+='<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:8px 0 5px;">Materiales</div>';
     html+='<div style="padding:6px 0;">';
     matsUsados.forEach(function(m){
-      var cant=m.cantidad;
-      var cantStr=Number.isInteger(cant)?cant:cant;
-      html+='<div style="font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);">'+cantStr+' '+m.nombre+'</div>';
+      var cant=m.cantidad; var cantStr=Number.isInteger(cant)?cant:cant;
+      if(conPrecios){
+        // buscar precio del material en el catálogo
+        var cat=getCat(); var grupoId=null;
+        var g=catGetGrupoParaJob(curJob); if(g) grupoId=g.id;
+        var matPrecio=0;
+        if(grupoId){
+          var allSecs=(cat.grupos.find(function(x){return x.id===grupoId;})||{}).secciones||[];
+          allSecs.forEach(function(sec){
+            (sec.mats||[]).forEach(function(mat){if(mat.nom===m.nombre&&mat.precio&&+mat.precio>0) matPrecio=parseFloat(mat.precio);});
+            (sec.subsecs||[]).forEach(function(ss){(ss.mats||[]).forEach(function(mat){if(mat.nom===m.nombre&&mat.precio&&+mat.precio>0) matPrecio=parseFloat(mat.precio);});});
+          });
+        }
+        if(matPrecio>0){
+          var matTotal=matPrecio*cant; subtotalMats+=matTotal;
+          html+='<div style="font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;"><span>'+cantStr+' '+m.nombre+'</span><span style="color:#4ade80;font-weight:700;font-size:.82rem;">'+fmtPrecio(matTotal)+'</span></div>';
+        } else {
+          html+='<div style="font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);">'+cantStr+' '+m.nombre+'</div>';
+        }
+      } else {
+        html+='<div style="font-size:.88rem;padding:4px 0;border-bottom:1px solid var(--border2);">'+cantStr+' '+m.nombre+'</div>';
+      }
     });
     html+='</div>';
+    if(conPrecios&&subtotalMats>0){
+      html+='<div class="rrow subtotal-row" style="margin-top:6px;"><span class="rc">Sub.</span><span class="rl">Subtotal materiales</span><span class="rv">'+fmtPrecio(subtotalMats)+'</span></div>';
+      html+='<div style="height:1px;background:var(--border);margin:8px 0"></div>';
+    }
+  }
+
+  // Fila TOTAL con horas y precio total si aplica
+  var totalPrecio=subtotalServicio+subtotalMats;
+  if(conPrecios&&totalPrecio>0){
+    html+='<div class="rrow total-row"><span class="rc">TOTAL</span><span class="rl"></span><span class="rv">'+fmtH(durTotal/60*w)+'</span><span class="rp">'+fmtPrecio(totalPrecio)+'</span></div>';
+  } else {
+    html+=totRow(fmtH(durTotal/60*w));
   }
   _nocturnoConfirmado=false;
   $('out').innerHTML=html;
@@ -2903,6 +3022,58 @@ function pdfGuardar(doc,nombre){
   doc.save(nombre+'.pdf');
 }
 
+function pdfSubtotalRow(doc,y,label,precio){
+  y=pdfCheck(doc,y,_PDF.RH+2);
+  doc.setFillColor(15,42,26);
+  doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+1,'F');
+  doc.setDrawColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+1);
+  doc.setFontSize(6.5); doc.setFont('helvetica','bold');
+  doc.setTextColor(74,222,128);
+  doc.text((label||'Subtotal').toUpperCase(),_PDF.mg+4,y+5.5);
+  if(precio){ doc.setFontSize(8); doc.text(precio,_PDF.mg+_PDF.cW-3,y+5.5,{align:'right'}); }
+  return y+_PDF.RH+3;
+}
+
+function pdfCodeRowConPrecio(doc,y,cod,lab,val,precio){
+  y=pdfCheck(doc,y,_PDF.RH+1);
+  var rvW=precio?Math.round(_PDF.RV*0.52):_PDF.RV;
+  var rpW=precio?(_PDF.RV-rvW):0;
+  doc.setFillColor(_PDF.greenDk[0],_PDF.greenDk[1],_PDF.greenDk[2]);
+  doc.rect(_PDF.mg,y,_PDF.RC,_PDF.RH,'F');
+  doc.setFillColor(_PDF.greenLt[0],_PDF.greenLt[1],_PDF.greenLt[2]);
+  doc.rect(_PDF.mg+_PDF.RC,y,_PDF.RL,_PDF.RH,'F');
+  doc.setFillColor(_PDF.bgSurf2[0],_PDF.bgSurf2[1],_PDF.bgSurf2[2]);
+  doc.rect(_PDF.mg+_PDF.RC+_PDF.RL,y,rvW,_PDF.RH,'F');
+  if(precio){ doc.setFillColor(10,30,18); doc.rect(_PDF.mg+_PDF.RC+_PDF.RL+rvW,y,rpW,_PDF.RH,'F'); }
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH);
+  doc.setFontSize(6.5); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+  doc.text(cod,_PDF.mg+_PDF.RC/2,y+5,{align:'center'});
+  doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]); doc.setFontSize(7);
+  doc.text(lab,_PDF.mg+_PDF.RC+3,y+5);
+  doc.setTextColor(_PDF.textW[0],_PDF.textW[1],_PDF.textW[2]); doc.setFont('helvetica','bold'); doc.setFontSize(8);
+  doc.text(val,_PDF.mg+_PDF.RC+_PDF.RL+rvW-2,y+5,{align:'right'});
+  if(precio){ doc.setTextColor(74,222,128); doc.setFontSize(7.5); doc.text(precio,_PDF.mg+_PDF.cW-2,y+5,{align:'right'}); }
+  return y+_PDF.RH+0.5;
+}
+
+function pdfTotalRowConPrecio(doc,y,horas,precio){
+  y=pdfCheck(doc,y,_PDF.RH+3);
+  doc.setFillColor(_PDF.greenDk[0],_PDF.greenDk[1],_PDF.greenDk[2]);
+  doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+2,'F');
+  doc.setDrawColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+  doc.setLineWidth(0.3); doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+2);
+  doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255);
+  doc.text('TOTAL',_PDF.mg+4,y+6);
+  if(horas){
+    var midX=precio?(_PDF.mg+_PDF.cW*0.48):(_PDF.mg+_PDF.cW-4);
+    doc.setFontSize(9); doc.text(horas,midX,y+6,{align:precio?'center':'right'});
+  }
+  if(precio){ doc.setTextColor(74,222,128); doc.setFontSize(10); doc.text(precio,_PDF.mg+_PDF.cW-3,y+6,{align:'right'}); }
+  return y+_PDF.RH+3;
+}
+
 function pdfDesde(r){
   if(!window.jspdf){ alert('PDF no disponible.'); return; }
   var doc=pdfNuevo();
@@ -2924,24 +3095,67 @@ function pdfDesde(r){
   if(r.tel)      y=pdfInfoRow(doc,y,'TEL\u00c9FONO',r.tel);
   y+=3;
 
-  var codigos=r.codigos||[];
-  if(codigos.length){
-    y=pdfGroupTitle(doc,y,'C\u00f3digos de facturaci\u00f3n');
-    codigos.forEach(function(c){
-      var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?'\u00d7 '+Math.round(c.v):fmtH(c.v);
-      y=pdfCodeRow(doc,y,c.cod,c.lab,val);
+  // Parsear detalle HTML para mostrar rgroup-title (franjas horarias) en orden
+  if(r.detalle){
+    var _tmp=document.createElement('div'); _tmp.innerHTML=r.detalle;
+    var _nodos=Array.from(_tmp.childNodes).filter(function(n){
+      return n.nodeType===1&&(n.classList.contains('rgroup-title')||n.classList.contains('rrow'));
+    });
+    var hTotal=0;
+    _nodos.forEach(function(el){
+      if(el.classList.contains('rgroup-title')){
+        var txt=el.textContent.trim();
+        if(txt&&txt!=='Datos generales') y=pdfGroupTitle(doc,y,txt);
+      } else if(el.classList.contains('info-row')||el.classList.contains('tipo-row')){
+        // ya mostradas arriba
+      } else if(el.classList.contains('total-row')){
+        var _rv=el.querySelector('.rv')?el.querySelector('.rv').textContent.trim():'';
+        var _rp=el.querySelector('.rp')?el.querySelector('.rp').textContent.trim():'';
+        if(_rp) y=pdfTotalRowConPrecio(doc,y,_rv,_rp);
+        else y=pdfTotalRow(doc,y,_rv);
+        y+=2;
+      } else if(el.classList.contains('subtotal-row')){
+        var _rl=el.querySelector('.rl')?el.querySelector('.rl').textContent.trim():'';
+        var _rv2=el.querySelector('.rv')?el.querySelector('.rv').textContent.trim():'';
+        y=pdfSubtotalRow(doc,y,_rl,_rv2);
+      } else if(!el.classList.contains('obs-row')){
+        var _rc=el.querySelector('.rc')?el.querySelector('.rc').textContent.trim():'';
+        var _rl2=el.querySelector('.rl')?el.querySelector('.rl').textContent.trim():'';
+        var _rv3=el.querySelector('.rv')?el.querySelector('.rv').textContent.trim():'';
+        var _rp2=el.querySelector('.rp')?el.querySelector('.rp').textContent.trim():'';
+        if(_rc&&_rl2&&_rv3){
+          if(_rp2) y=pdfCodeRowConPrecio(doc,y,_rc,_rl2,_rv3,_rp2);
+          else y=pdfCodeRow(doc,y,_rc,_rl2,_rv3);
+        }
+      }
     });
     y+=2;
-    var hTotal=0;
-    codigos.forEach(function(c){ if(c.u==='h'&&(c.lab||'').indexOf('Dsp')===-1) hTotal+=c.v; });
-    if(hTotal>0){ y=pdfTotalRow(doc,y,fmtH(hTotal)); y+=2; }
+  } else {
+    // Fallback: usar r.codigos[] sin franjas (partes antiguos)
+    var codigos=r.codigos||[];
+    if(codigos.length){
+      y=pdfGroupTitle(doc,y,'Códigos de facturación');
+      codigos.forEach(function(c){
+        var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?'× '+Math.round(c.v):fmtH(c.v);
+        y=pdfCodeRow(doc,y,c.cod,c.lab,val);
+      });
+      y+=2;
+      var hTotal=0;
+      codigos.forEach(function(c){ if(c.u==='h'&&(c.lab||'').indexOf('Dsp')===-1) hTotal+=c.v; });
+      if(hTotal>0){ y=pdfTotalRow(doc,y,fmtH(hTotal)); y+=2; }
+    }
   }
 
-  var mats=(r.materiales||[]).filter(function(m){return m.cantidad&&+m.cantidad>0;});
-  if(mats.length){
-    y=pdfGroupTitle(doc,y,'Materiales');
-    mats.forEach(function(m){ y=pdfMatRow(doc,y,m.nombre,m.cantidad); });
-    y+=2;
+  // Materiales desde r.materiales (partes guardados antes del nuevo sistema)
+  // Los nuevos partes ya incluyen materiales en el detalle HTML
+  var _matsEnDetalle=r.detalle&&r.detalle.indexOf('Mat.')>=0;
+  if(!_matsEnDetalle){
+    var mats=(r.materiales||[]).filter(function(m){return m.cantidad&&+m.cantidad>0;});
+    if(mats.length){
+      y=pdfGroupTitle(doc,y,'Materiales');
+      mats.forEach(function(m){ y=pdfMatRow(doc,y,m.nombre,m.cantidad); });
+      y+=2;
+    }
   }
 
   if(r.obs) y=pdfObsRow(doc,y,r.obs);
@@ -4485,6 +4699,7 @@ function guardarConEstado(estado){
   _finalizarGuardado(estado);
 }
 
+function cap(re,t){ var m=t.match(re); return m?m[1]:null; }
 function ocultarLectura(){var c=$('cardLectura');if(c)c.style.display='none';}
 function mostrarLectura(){var c=$('cardLectura');if(c)c.style.display='block';}
 function leer(){
