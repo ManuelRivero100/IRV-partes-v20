@@ -4382,6 +4382,20 @@ function verOrden(enc){
   var codHTML=Object.values(codAcum).length
     ?Object.values(codAcum).map(function(c){ return '<div class="acum-row"><span>'+c.rc+' &middot; '+c.rl+'</span><span style="font-weight:600;">'+fmtVal(c.v,c.u)+'</span></div>'; }).join('')
     :'<div style="font-size:.82rem;color:var(--text3);padding:6px 0;">Sin datos.</div>';
+  // Añadir TOTAL con precio si cliente de cobro
+  var _conPrecios=curCliente&&curCliente.precios===true;
+  if(_conPrecios&&Object.values(codAcum).length){
+    var _hTot=0,_precioTot=0;
+    Object.values(codAcum).forEach(function(c){
+      if(c.u==='h'&&c.rl.indexOf('Dsp')===-1) _hTot+=c.v;
+      _precioTot+=getPrecioPorCod(c.rc,c.rl,g.job)*c.v;
+    });
+    if(_precioTot>0){
+      codHTML+='<div class="acum-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-weight:700;color:#4ade80;">'+
+        '<span>TOTAL</span>'+
+        '<span>'+(_hTot>0?fmtH(_hTot)+'&nbsp;&nbsp;':'')+fmtPrecio(_precioTot)+'</span></div>';
+    }
+  }
 
   var matHTML=Object.keys(matAcum).length
     ?Object.keys(matAcum).map(function(n){ return '<div class="acum-row"><span>'+n+'</span><span style="font-weight:600;">'+matAcum[n]+'</span></div>'; }).join('')
