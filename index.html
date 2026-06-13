@@ -432,10 +432,29 @@ textarea{resize:vertical;min-height:72px}
   <div class="cat-tabs">
     <button class="cat-tab active" onclick="catTab('materiales',this)">&#128295; Materiales</button>
     <button class="cat-tab" onclick="catTab('conceptos',this)">&#9201; Conceptos</button>
+    <button class="cat-tab" onclick="catTab('tecnicos',this)">&#128119; T&eacute;cnicos</button>
   </div>
   <div id="catTabMat">
     <div id="catFamiliasList"></div>
     
+  </div>
+  <div id="catTabTec" style="display:none">
+    <div id="catTecnicosList"></div>
+    <div class="card" style="margin-top:10px;">
+      <div class="card-title">&#43; Nuevo t&eacute;cnico</div>
+      <div class="field"><label>Nombre</label><input id="tec-nombre" placeholder="Ej: Manuel"></div>
+      <div class="field"><label>Tel&eacute;fono</label><input id="tec-tel" placeholder="Ej: 666123456" type="tel"></div>
+      <div class="field"><label>Tipo de trabajo</label>
+        <div id="tec-jobs-tgl" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
+          <button onclick="tecToggleJob('Climatización',this)" style="padding:5px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.8rem;font-family:inherit;cursor:pointer;">Climatización</button>
+          <button onclick="tecToggleJob('Conductos',this)" style="padding:5px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.8rem;font-family:inherit;cursor:pointer;">Conductos</button>
+          <button onclick="tecToggleJob('Obras',this)" style="padding:5px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.8rem;font-family:inherit;cursor:pointer;">Obras</button>
+          <button onclick="tecToggleJob('Electricidad',this)" style="padding:5px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.8rem;font-family:inherit;cursor:pointer;">Electricidad</button>
+        </div>
+      </div>
+      <div class="brow"><button class="btn btn-p btn-sm" onclick="tecGuardar()">&#128190; Guardar t&eacute;cnico</button></div>
+      <div id="msgTec" class="msg"></div>
+    </div>
   </div>
   <div id="catTabConc" style="display:none">
     <div style="font-size:.78rem;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--amber-light);border-radius:var(--r-sm);">&#9432; Los precios solo se aplican en clientes <strong>con precio</strong>.</div>
@@ -1251,14 +1270,60 @@ function catFlotantesCount(){
 // ===== FUNCIONES CATÁLOGO — JERÁRQUICO =====
 var _catState={grupoAb:null,secAb:null,subAb:null,addCtx:null,addMode:null};
 
+// ===== TÉCNICOS =====
+var _tecJobs=[];
+
+function getTecnicos(){ var cat=getCat(); return cat.tecnicos||[]; }
+function setTecnicos(arr){ var cat=getCat(); cat.tecnicos=arr; setCat(cat); }
+
+function tecToggleJob(job,btn){
+  var idx=_tecJobs.indexOf(job);
+  if(idx>=0){ _tecJobs.splice(idx,1); btn.style.background='var(--surface2)'; btn.style.color='var(--text2)'; btn.style.borderColor='var(--border)'; }
+  else { _tecJobs.push(job); btn.style.background='var(--green)'; btn.style.color='#fff'; btn.style.borderColor='var(--green)'; }
+}
+
+function tecGuardar(){
+  var nom=$('tec-nombre').value.trim();
+  if(!nom){ showMsg('msgTec','Introduce el nombre.','error'); return; }
+  var tecs=getTecnicos();
+  if(tecs.find(function(t){return t.nombre.toLowerCase()===nom.toLowerCase();})){
+    showMsg('msgTec','Ya existe un técnico con ese nombre.','warn'); return;
+  }
+  tecs.push({id:'tec_'+Date.now(), nombre:nom, tel:$('tec-tel').value.trim(), jobs:_tecJobs.slice()});
+  setTecnicos(tecs);
+  $('tec-nombre').value=''; $('tec-tel').value=''; _tecJobs=[];
+  document.querySelectorAll('#tec-jobs-tgl button').forEach(function(b){
+    b.style.background='var(--surface2)'; b.style.color='var(--text2)'; b.style.borderColor='var(--border)';
+  });
+  showMsg('msgTec','Técnico guardado.','success');
+  renderCatTecnicos();
+}
+
+function tecEliminar(id){
+  if(!confirm('¿Eliminar este técnico?')) return;
+  setTecnicos(getTecnicos().filter(function(t){return t.id!==id;}));
+  renderCatTecnicos();
+}
+
+function renderCatTecnicos(){
+  var el=$('catTecnicosList'); if(!el) return;
+  var tecs=getTecnicos();
+  if(!tecs.length){ el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay técnicos registrados.</div>'; return; }
+  el.innerHTML=tecs.map(function(t){
+    return '<div class="card" style="margin-bottom:8px;">'      +'<div style="display:flex;justify-content:space-between;align-items:center;">'      +'<span style="font-weight:700;font-size:.9rem;">'+t.nombre+'</span>'      +'<button onclick="tecEliminar(\''+t.id+'\')" style="background:var(--red-light);color:var(--red);border:none;border-radius:var(--r-sm);padding:4px 10px;font-size:.8rem;cursor:pointer;">Eliminar</button>'      +'</div>'      +(t.tel?'<div style="font-size:.8rem;color:var(--text2);margin-top:4px;">📞 '+t.tel+'</div>':'')      +(t.jobs&&t.jobs.length?'<div style="font-size:.78rem;color:var(--green);margin-top:4px;">'+t.jobs.join(' · ')+'</div>':'')      +'</div>';
+  }).join('');
+}
+
 function catTab(tab,btn){
   document.querySelectorAll('.cat-tab').forEach(function(b){b.classList.remove('active');});
   btn.classList.add('active');
-  var m=$('catTabMat'),c=$('catTabConc'),f=$('catFamiliaView');
+  var m=$('catTabMat'),c=$('catTabConc'),f=$('catFamiliaView'),tc=$('catTabTec');
   m.style.display=tab==='materiales'?'block':'none';
   c.style.display=tab==='conceptos'?'block':'none';
+  if(tc) tc.style.display=tab==='tecnicos'?'block':'none';
   if(f) f.style.display='none';
   if(tab==='materiales') renderCatGrupos();
+  else if(tab==='tecnicos') renderCatTecnicos();
   else renderCatConceptos();
 }
 
@@ -2688,6 +2753,7 @@ function generarCore(){
   } else {
     html+=totRow(fmtH(durTotal/60*w));
   }
+  if(noms.length) html+='<div class="rrow info-row"><span class="rc" style="font-family:sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;">Técnicos</span><span class="rl" style="font-family:sans-serif;font-size:.85rem;color:var(--text);">'+noms.map(function(n){return n.trim();}).join(' · ')+'</span></div>';
   _nocturnoConfirmado=false;
   $('out').innerHTML=html;
   $('gbtn').textContent='&#128190; Guardar parte'; $('gbtn').disabled=false; $('gbtn').style.opacity='1';
@@ -4097,14 +4163,22 @@ function renderWorkers(){
   while(wNames.length<w) wNames.push('');
   wNames=wNames.slice(0,w);
   var html='';
+  // Técnicos disponibles filtrados por job activo
+  var _allTecs=getTecnicos().filter(function(t){
+    return !t.jobs||!t.jobs.length||t.jobs.indexOf(curJob)>=0;
+  });
   for(var i=0;i<w;i++){
+    var _usados=wNames.filter(function(n,ni){return ni!==i&&n&&n.trim();});
+    var _tDisp=_allTecs.filter(function(t){return _usados.indexOf(t.nombre)<0;});
+    var _dlId='tecDl'+i;
+    var _dlHtml='<datalist id="'+_dlId+'">'+_tDisp.map(function(t){return '<option value="'+t.nombre+'">';}).join('')+'</datalist>';
     if(nr&&i===0){
-      html+='<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador 1<span class="wbadge wbadge-auto">Oficial</span></span><input type="text" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem" value="'+(wNames[0]||'')+'" oninput="wNames[0]=this.value"></div>';
+      html+=_dlHtml+'<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador 1<span class="wbadge wbadge-auto">Oficial</span></span><input type="text" list="'+_dlId+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem" value="'+(wNames[0]||'')+'" oninput="wNames[0]=this.value;renderWorkers()"></div>';
     } else if(nr){
       var rol=wRoles[i]||'Oficial';
-      html+='<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador '+(i+1)+'<span class="wbadge wbadge-sel" id="wb'+i+'">'+rol+'</span></span><input type="text" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value"><div class="worker-tgl"><button onclick="setWR('+i+',\'Oficial\',this)" class="'+(rol==='Oficial'?'active':'')+'">Oficial</button><button onclick="setWR('+i+',\'Pe\u00f3n\',this)" class="'+(rol==='Peón'?'active':'')+'">Pe&oacute;n</button></div></div>';
+      html+=_dlHtml+'<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador '+(i+1)+'<span class="wbadge wbadge-sel" id="wb'+i+'">'+rol+'</span></span><input type="text" list="'+_dlId+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value;renderWorkers()"><div class="worker-tgl"><button onclick="setWR('+i+',\'Oficial\',this)" class="'+(rol==='Oficial'?'active':'')+'">Oficial</button><button onclick="setWR('+i+',\'Pe\u00f3n\',this)" class="'+(rol==='Peón'?'active':'')+'">Pe&oacute;n</button></div></div>';
     } else {
-      html+='<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador '+(i+1)+'</span><input type="text" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value"></div>';
+      html+=_dlHtml+'<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador '+(i+1)+'</span><input type="text" list="'+_dlId+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value;renderWorkers()"></div>';
     }
   }
   $('workersList').innerHTML=html;
@@ -4831,6 +4905,21 @@ function leer(){
       msInitSel(matsFormato);
       msRender('parteMatCard');
     },200);
+  }
+
+  // Extraer técnicos desde línea "Nombre1 · Nombre2" entre TOTAL y fin/OBS/MATERIALES
+  var _tecLine=t.match(/TOTAL[^\n]*\n([^\n]+?)\n(?:OBS\.?|Partes IRV|MATERIALES)/i);
+  if(_tecLine){
+    var _nomsTxt=_tecLine[1].trim();
+    if(_nomsTxt&&!/^\d|^MAT\./.test(_nomsTxt)){
+      var _noms=_nomsTxt.split(/\s*[·•]\s*/).map(function(n){return n.trim();}).filter(Boolean);
+      if(_noms.length){
+        var _wInp=$('w'); if(_wInp&&+_wInp.value!==_noms.length){ _wInp.value=_noms.length; }
+        wNames=_noms.slice();
+        setTimeout(function(){ renderWorkers(); },150);
+        n+=_noms.length;
+      }
+    }
   }
 
   // Rellenar km desde historial si no vino en el texto
