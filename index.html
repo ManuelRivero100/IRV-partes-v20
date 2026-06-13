@@ -3158,6 +3158,24 @@ function pdfDesde(r){
     }
   }
 
+  // Trabajadores — extraer del detalle HTML
+  if(r.detalle){
+    var _tmpW=document.createElement('div'); _tmpW.innerHTML=r.detalle;
+    var _nomDiv=Array.from(_tmpW.querySelectorAll('div')).find(function(d){
+      return d.style&&d.style.textAlign==='center'&&d.textContent.indexOf('·')>=0;
+    });
+    if(_nomDiv){
+      var _nomTxt=_nomDiv.textContent.trim();
+      if(_nomTxt){
+        y=pdfCheck(doc,y,8);
+        doc.setFontSize(7); doc.setFont('helvetica','normal');
+        doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+        doc.text(_nomTxt,_PDF.mg+_PDF.cW/2,y+4,{align:'center'});
+        y+=8;
+      }
+    }
+  }
+
   if(r.obs) y=pdfObsRow(doc,y,r.obs);
 
   pdfFooter(doc,y+4);
@@ -4718,45 +4736,123 @@ function ocultarLectura(){var c=$('cardLectura');if(c)c.style.display='none';}
 function mostrarLectura(){var c=$('cardLectura');if(c)c.style.display='block';}
 function leer(){
   var t=$('raw').value; if(!t.trim()){ showMsg('msgForm','Pega el texto primero.','warn'); return; }
-  var pedido=cap(/PEDIDO DE SERVICIO\s+N[º°ª]?[:\s]+(\d+)/i,t)||cap(/(\d{6,})/,t);
+
+  // Extraer campos básicos
+  var pedido=cap(/PEDIDO DE SERVICIO\s+N[º°ª]?[:\s]+(\d+)/i,t)||cap(/N[º°ª]\s*ORDEN[:\s]+(\S+)/i,t)||cap(/(\d{6,})/,t);
   var centro=cap(/N[º°ª]?\s*de\s*Centro[:\s]+(\d+)/i,t)||cap(/Centro[:\s-]+(\d+)/i,t);
-  var denom=cap(/Denominaci[oó]n[:\s]+([^\n]+)/i,t);
-  var tel=cap(/Tel[eé]fono[^:]*:\s*(\+?[\d][\d\s\-]{6,})/i,t);
-  var dir=''; var dm=t.match(/Direcci[oó]n[:\s]+([^\n]+)/i);
-  if(dm){ dir=dm[1].trim().replace(/\s+/g,' ').replace(/\s*(Persona|Tel[eé]fono|Contacto)[:\s].*/i,'').trim(); }
-  if(pedido&&!$('pedido').value) $('pedido').value=pedido.trim();
-  setTimeout(ocultarLectura, 600);
-  if(centro&&!$('centro').value) $('centro').value=centro.trim();
-  if(!$('tienda').value){
-    var dl=denom?denom.replace(/\s*(Direcci[oó]n|Tel[eé]fono|Calle|Avda|Plaza)[:\s].*/i,'').trim():'';
-    $('tienda').value=dl&&centro?'Mercadona '+dl+' '+centro.trim():dl?'Mercadona '+dl:centro?'Mercadona '+centro.trim():'';
+  var denom=cap(/(?:TIENDA|Denominaci[oó]n)[:\s]+([^\n]+)/i,t);
+  // Centro desde número final del nombre de tienda si no vino explícito
+  if(!centro&&denom){ var cm=denom.trim().match(/(\d{3,5})\s*$/); if(cm) centro=cm[1]; }
+  var tel=cap(/TEL[EÉ]FONO[^:]*[:\s]+(\+?\d[\d\s\-]{6,})/i,t);
+  var dir=cap(/DIRECCI[OÓ]N[:\s]+([^\n]+)/i,t);
+  var job=cap(/TIPO[:\s]+([^\n]+)/i,t);
+  var fecha=cap(/FECHA[:\s]+(\d{2}\/\d{2}\/\d{4})/i,t);
+  var arr=cap(/LLEGADA[:\s]+(\d{1,2}:\d{2})/i,t);
+  var lea=cap(/SALIDA[:\s]+(\d{1,2}:\d{2})/i,t);
+
+  // Si no hay LLEGADA/SALIDA explícitas, extraer de primera y última franja
+  if(!arr||!lea){
+    var franjas=t.match(/\((\d{1,2}:\d{2})\)\s*-\s*\((\d{1,2}:\d{2})\)/g)||[];
+    if(franjas.length>=1){
+      var pF=franjas[0].match(/\((\d{1,2}:\d{2})\)\s*-\s*\((\d{1,2}:\d{2})\)/);
+      var uF=franjas[franjas.length-1].match(/\((\d{1,2}:\d{2})\)\s*-\s*\((\d{1,2}:\d{2})\)/);
+      if(!arr&&pF) arr=pF[2]; // llegada = fin de franja ida
+      if(!lea&&uF) lea=uF[1]; // salida = inicio de franja vuelta
+      // Si solo hay una franja es tienda
+      if(franjas.length===1&&pF){ arr=pF[1]; lea=pF[2]; }
+    }
   }
-  if(dir&&!$('dir').value) $('dir').value=dir;
-  if(tel&&!$('tel').value) $('tel').value=tel.replace(/\s+/g,'').trim();
-  if(/conducto|ventilac/i.test(t)){ var btns=document.querySelectorAll('#jobTgl button'); btns.forEach(function(b){ if(b.textContent==='Conductos') setJob('Conductos',b); }); }
-  else if(/climatizaci[oó]n|fuga|refriger/i.test(t)){ var btns2=document.querySelectorAll('#jobTgl button'); btns2.forEach(function(b){ if(b.textContent==='Climatización') setJob('Climatización',b); }); }
-  else if(/obra/i.test(t)){ var btns3=document.querySelectorAll('#jobTgl button'); btns3.forEach(function(b){ if(b.textContent==='Obras') setJob('Obras',b); }); }
+
+  // Extraer km desde franja · X KM
+  var kmM=t.match(/·\s*([\d\.]+)\s*KM/i);
+  var kmVal=kmM?parseFloat(kmM[1]):null;
+
+  // Extraer desplazamiento desde duración de franja km (primera franja)
+  var trVal=null;
+  var franjaKm=t.match(/\((\d{1,2}:\d{2})\)\s*-\s*\((\d{1,2}:\d{2})\)\s*·\s*[\d\.]+\s*KM/i);
+  if(franjaKm){
+    var fkM=franjaKm[0].match(/\((\d{1,2}:\d{2})\)\s*-\s*\((\d{1,2}:\d{2})\)/);
+    if(fkM){
+      var t1=fkM[1].split(':'); var t2=fkM[2].split(':');
+      var min1=+t1[0]*60+ +t1[1]; var min2=+t2[0]*60+ +t2[1];
+      var diff=min2-min1; if(diff<0) diff+=1440;
+      trVal=diff;
+    }
+  }
+
+  // Extraer materiales MAT. nombre xN
+  var matsExtraidos=[];
+  var matLines=t.match(/MAT\.\s+(.+?)\s+x(\d+)/gi)||[];
+  matLines.forEach(function(ml){
+    var mm=ml.match(/MAT\.\s+(.+?)\s+x(\d+)/i);
+    if(mm) matsExtraidos.push({nombre:mm[1].trim(), cantidad:+mm[2]});
+  });
+
+  // Extraer observaciones (bloque OBS. hasta fin o MATERIALES)
+  var obsM=t.match(/OBS\.?\n([\s\S]+?)(?=\nMATERIALES|\nPartes IRV|$)/i);
+  var obsVal=obsM?obsM[1].replace(/^\s+|\s+$/g,''):'';
+
+  // Rellenar campos
+  var n=0;
+  if(pedido&&!$('pedido').value){ $('pedido').value=pedido.trim(); n++; }
+  if(centro){ $('centro').value=centro.trim(); n++; }
+  if(denom){ $('tienda').value=denom.trim(); n++; }
+  if(dir){ $('dir').value=dir.trim(); n++; }
+  if(tel){ $('tel').value=tel.trim(); n++; }
+  if(fecha){
+    var fp=fecha.split('/'); if(fp.length===3){ $('fecha').value=fp[2]+'-'+fp[1]+'-'+fp[0]; n++; }
+  }
+  if(arr){ $('arr').value=arr; n++; }
+  if(lea){ $('lea').value=lea; n++; }
+  if(kmVal){ $('km').value=kmVal; n++; }
+  if(trVal){ $('tr').value=trVal; n++; }
+  if(obsVal){ $('obs').value=obsVal; n++; }
+
+  // Tipo de trabajo — primero activar el botón, luego cargar materiales en setTimeout
+  // para que setJob() termine antes de que msInitSel() lea curJob
+  var _matsParaCargar=matsExtraidos.slice();
+  if(job){
+    var jobT=job.trim();
+    ['Climatización','Conductos','Obras','Electricidad'].forEach(function(j){
+      if(jobT.toLowerCase()===j.toLowerCase()){
+        document.querySelectorAll('[onclick*="setJob"]').forEach(function(btn){
+          if(btn.textContent.trim()===j){ btn.click(); }
+        });
+        n++;
+      }
+    });
+  }
+
+  // Materiales — cargar después de que setJob() haya terminado
+  if(_matsParaCargar.length){
+    n+=_matsParaCargar.length;
+    setTimeout(function(){
+      var matsFormato=_matsParaCargar.map(function(m){ return {nombre:m.nombre,cantidad:m.cantidad}; });
+      msInitSel(matsFormato);
+      msRender('parteMatCard');
+    },200);
+  }
+
+  // Rellenar km desde historial si no vino en el texto
   if(centro){
     buscarPorCentroORef(centro);
-    // Rellenar km y desplazamiento desde el último parte conocido de este centro
     var _centroVal=(centro+'').trim();
     setTimeout(function(){
       var _h=getH();
       for(var _i=_h.length-1;_i>=0;_i--){
         var _r=_h[_i];
         if((_r.centro||'')=== _centroVal&&_r.km){
-          $('km').value=_r.km;
-          $('tr').value=_r.tr||'';
+          if(!$('km').value){ $('km').value=_r.km; $('tr').value=_r.tr||''; }
           break;
         }
       }
     },100);
   }
-  var n=[pedido,centro,denom,dir,tel].filter(Boolean).length;
+
+  setTimeout(ocultarLectura,600);
   showMsg('msgForm',n?n+' campo(s) autocompletados.':'No se encontraron datos.',n?'success':'warn');
 }
 
-// ===== HISTORIAL =====
 
 function renderSearchResults(){
   var q=($('busca')?($('busca').value||''):'').toLowerCase();
@@ -5220,7 +5316,18 @@ function _finalizarGuardado(estado){
     setTimeout(function(){ goTo('w-menu'); },1200);
     return;
   }
-  if(exists(r,h)){ showMsg('msgRes','Este parte ya est\u00e1 guardado.','warn'); return; }
+  if(exists(r,h)){
+    var _idxDup=h.findIndex(function(x){ return x.fecha===r.fecha&&x.pedido===r.pedido&&x.centro===r.centro; });
+    if(confirm('Ya existe un parte con la misma fecha, centro y orden.\n¿Reemplazar el parte existente?\n(Cancela para descartar el nuevo)')){
+      h[_idxDup]=r; setH(h);
+      showMsg('msgRes','Parte reemplazado.','success');
+      $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
+      setTimeout(function(){ goTo('w-menu'); },1200);
+    } else {
+      showMsg('msgRes','Parte descartado.','warn');
+    }
+    return;
+  }
   h.push(r); setH(h);
   showMsg('msgRes','Guardado correctamente.','success');
   $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
