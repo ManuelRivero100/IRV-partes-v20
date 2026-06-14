@@ -5413,17 +5413,27 @@ function _finalizarGuardado(estado){
   var r=window.recTmp; if(!r) return;
   r.estado=estado;
   var h=getH();
-  if(_editIdx!==null){
-    h[_editIdx]=r;
-    setH(h);
-    _editIdx=null;
-    showMsg('msgRes','Parte actualizado.','success');
-    $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
-    setTimeout(function(){ goTo('w-menu'); },1200);
-    return;
+  // Recuperar _editIdx desde backup si se perdió durante generarCore
+  if(_editIdx===null&&window._editIdxBackup!==null&&window._editIdxBackup!==undefined){
+    _editIdx=window._editIdxBackup;
   }
-  if(exists(r,h)){
-    var _idxDup=h.findIndex(function(x){ return x.fecha===r.fecha&&x.pedido===r.pedido&&x.centro===r.centro; });
+  if(_editIdx!==null){
+    var orig=h[_editIdx];
+    var mismoId=orig&&orig.fecha===r.fecha&&orig.pedido===r.pedido&&orig.centro===r.centro;
+    if(mismoId){
+      // Misma fecha+centro+orden → reemplazar sin preguntar
+      h[_editIdx]=r; setH(h); _editIdx=null; window._editIdxBackup=null;
+      showMsg('msgRes','Parte actualizado.','success');
+      $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
+      setTimeout(function(){ goTo('w-menu'); },1200);
+      return;
+    }
+    // Cambió fecha/centro/orden → tratar como parte distinto
+    _editIdx=null; window._editIdxBackup=null;
+  }
+  // Verificar si coincide con un parte existente
+  var _idxDup=h.findIndex(function(x){ return x.fecha===r.fecha&&x.pedido===r.pedido&&x.centro===r.centro; });
+  if(_idxDup>=0){
     if(confirm('Ya existe un parte con la misma fecha, centro y orden.\n¿Reemplazar el parte existente?\n(Cancela para descartar el nuevo)')){
       h[_idxDup]=r; setH(h);
       showMsg('msgRes','Parte reemplazado.','success');
@@ -5577,6 +5587,7 @@ function abrirEdicionParte(idx){
   nuevo();
   // Restaurar _editIdx después de nuevo()
   _editIdx=editIdxTemp;
+  window._editIdxBackup=editIdxTemp;
   // Número de trabajadores y roles/nombres
   var nW=(r.roles||[]).length||2;
   $('w').value=nW;
