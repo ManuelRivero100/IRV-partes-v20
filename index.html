@@ -4922,16 +4922,18 @@ function leer(){
     },200);
   }
 
-  // Extraer técnicos desde línea "Nombre1 · Nombre2" entre TOTAL y fin/OBS/MATERIALES
-  var _tecLine=t.match(/TOTAL[^\n]*\n([^\n]+?)\n(?:OBS\.?|Partes IRV|MATERIALES)/i);
+  // Extraer técnicos: línea justo antes de "Partes IRV-10"
+  var _tecLine=t.match(/([^\n]+)\nPartes IRV/i);
   if(_tecLine){
     var _nomsTxt=_tecLine[1].trim();
-    if(_nomsTxt&&!/^\d|^MAT\./.test(_nomsTxt)){
+    if(_nomsTxt&&!/^MAT\.|^\d|^MF|^MB|^MK|^M[A-Z]/.test(_nomsTxt)){
       var _noms=_nomsTxt.split(/\s*[·•]\s*/).map(function(n){return n.trim();}).filter(Boolean);
       if(_noms.length){
-        var _wInp=$('w'); if(_wInp&&+_wInp.value!==_noms.length){ _wInp.value=_noms.length; }
         wNames=_noms.slice();
-        setTimeout(function(){ renderWorkers(); },150);
+        setTimeout(function(){
+          var _wInp=$('w'); if(_wInp) _wInp.value=_noms.length;
+          renderWorkers();
+        },300);
         n+=_noms.length;
       }
     }
