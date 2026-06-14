@@ -4349,7 +4349,7 @@ function onFechaChange(){
     var dom=new Date(f+'T12:00:00').getDay()===0; var fn=esFN(f);
     if(dom||fn){
       esFestivo=true;
-      document.querySelectorAll('#festivoTgl button').forEach(function(b,i){ b.classList.toggle('active',i===1); b.disabled=true; b.style.opacity='.5'; b.style.cursor='not-allowed'; });
+      document.querySelectorAll('#festivoTgl button').forEach(function(b,i){ b.classList.toggle('active',i===1); b.disabled=false; b.style.opacity='1'; b.style.cursor='pointer'; });
     } else {
       esFestivo=false;
       document.querySelectorAll('#festivoTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); b.disabled=false; b.style.opacity='1'; b.style.cursor='pointer'; });
@@ -5849,6 +5849,14 @@ function abrirEdicionParte(idx){
   if(curJob) msRender('parteMatCard');
   // Observaciones (en w-result, no w-form)
   $('obs').value=r.obs||'';
+  // Restaurar tipoDia del parte
+  if(r.tipoDia==='festivo'){
+    esFestivo=true;
+    document.querySelectorAll('#festivoTgl button').forEach(function(b,i){ b.classList.toggle('active',i===1); b.disabled=false; b.style.opacity='1'; b.style.cursor='pointer'; });
+  } else {
+    esFestivo=false;
+    document.querySelectorAll('#festivoTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); b.disabled=false; b.style.opacity='1'; b.style.cursor='pointer'; });
+  }
   // Ocultar lectura
   ocultarLectura();
   // Ir al formulario
