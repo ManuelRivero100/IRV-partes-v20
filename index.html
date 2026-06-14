@@ -5790,6 +5790,8 @@ function abrirEdicionParte(idx){
   var h=getH(); var r=h[idx]; if(!r) return;
   // Guardar idx ANTES de nuevo() que lo resetea
   var editIdxTemp=idx;
+  // Marcar que no debe abrir el diálogo de inicio de orden
+  _keepForm=true;
   // Limpiar formulario
   nuevo();
   // Restaurar _editIdx después de nuevo()
