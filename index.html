@@ -1274,6 +1274,44 @@ var _catState={grupoAb:null,secAb:null,subAb:null,addCtx:null,addMode:null};
 var _tecJobs=[];
 
 function getTecnicos(){ var cat=getCat(); return cat.tecnicos||[]; }
+
+function migrarTecnicos(){
+  // Relacionar nombres de partes antiguos con catálogo
+  var tecs=getTecnicos(); if(!tecs.length) return;
+  var h=getH(); var changed=false;
+  h.forEach(function(r){
+    // Extraer nombres si no tiene campo tecnicos
+    if(!r.tecnicos||!r.tecnicos.length){
+      var noms=[];
+      // Intentar extraer del detalle HTML (fila Técnicos o div de nombres)
+      if(r.detalle){
+        var m1=r.detalle.match(/T[eé]cnicos<\/span><span[^>]*>([^<]+)<\/span>/i);
+        var m2=r.detalle.match(/letter-spacing:[^>]*>([^<]+)<\/div>/);
+        var raw=(m1&&m1[1])||(m2&&m2[1])||'';
+        if(raw) noms=raw.split(/\s*[·•&]middot;\s*/).map(function(n){return n.trim();}).filter(Boolean);
+      }
+      if(noms.length){
+        r.tecnicos=noms.map(function(nom){
+          var nomL=nom.toLowerCase();
+          var match=tecs.find(function(t){return t.nombre.toLowerCase()===nomL;})
+            ||tecs.find(function(t){return t.nombre.toLowerCase().indexOf(nomL)===0||nomL.indexOf(t.nombre.toLowerCase().split(' ')[0])===0;});
+          return match?match.nombre:nom;
+        });
+        changed=true;
+      }
+    } else {
+      // Ya tiene tecnicos: intentar enriquecer con nombre completo del catálogo
+      var updated=r.tecnicos.map(function(nom){
+        var nomL=nom.toLowerCase();
+        var match=tecs.find(function(t){return t.nombre.toLowerCase()===nomL;})
+          ||tecs.find(function(t){return t.nombre.toLowerCase().indexOf(nomL)===0||nomL.indexOf(t.nombre.toLowerCase().split(' ')[0])===0;});
+        return match?match.nombre:nom;
+      });
+      if(updated.join()!==r.tecnicos.join()){ r.tecnicos=updated; changed=true; }
+    }
+  });
+  if(changed) setH(h);
+}
 function setTecnicos(arr){ var cat=getCat(); cat.tecnicos=arr; setCat(cat); }
 
 function tecToggleJob(job,btn){
@@ -2784,7 +2822,17 @@ function generarCore(){
     arr:$('arr').value, lea:$('lea').value, obs:'', linkType:curLink,
     kmDif:kmDG, trDif:trDG, horaEnlace:heG, tipoDia:td,
     estado:'en-ejecucion', materiales:msGetSel(), codigos:codigos,
-    clienteId:curCliente?curCliente.id:'mercadona', cod_v:3
+    clienteId:curCliente?curCliente.id:'mercadona', cod_v:3,
+    tecnicos:(function(){
+      var tecs=getTecnicos();
+      return wNames.filter(function(n){return n&&n.trim();}).map(function(nom){
+        var nomL=nom.trim().toLowerCase();
+        // Buscar coincidencia exacta primero, luego parcial
+        var match=tecs.find(function(t){return t.nombre.toLowerCase()===nomL;})
+          ||tecs.find(function(t){return t.nombre.toLowerCase().indexOf(nomL)===0||nomL.indexOf(t.nombre.toLowerCase().split(' ')[0])===0;});
+        return match?match.nombre:nom.trim();
+      });
+    })()
   };
   document.querySelectorAll('.win').forEach(function(win){ win.classList.remove('active'); });
   $('w-result').classList.add('active');
@@ -5948,6 +5996,8 @@ function volverMatList(){ $('matListView').style.display='block'; $('matEditView
 function volverMatOpts(){ $('matOpts').style.display='block'; $('matListView').style.display='none'; $('matEditView').style.display='none'; }
 
 function initApp(){
+  // Migrar técnicos de partes antiguos al cargar
+  setTimeout(migrarTecnicos, 500);
   if(localStorage.getItem('pm_mats_v')!=='4'){ setMats(MATS_DEF); localStorage.setItem('pm_mats_v','4'); }
   // Inicializar catálogo ms* — forzar versión actual
   var MS_VER='ms_v2';
