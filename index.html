@@ -142,6 +142,39 @@ textarea{resize:vertical;min-height:72px}
 .rrow.obs-row .rc{background:var(--amber);color:#fff;font-family:sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .rrow.obs-row .rl{background:var(--amber-light);color:var(--amber);font-family:sans-serif;font-size:.85rem;white-space:normal;word-break:break-word;flex:1}
 .rrow.obs-row .rv{display:none}
+.tec-card-s{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px;overflow:hidden;}
+.tec-sum{padding:14px 16px;}
+.tec-sum-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.tec-sum-name{font-size:.9rem;font-weight:700;}
+.tec-sum-badge{font-size:.74rem;font-weight:700;background:var(--green-light);color:var(--green);padding:3px 10px;border-radius:20px;}
+.tec-hgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:10px;}
+.tec-hcell{background:var(--surface2);border-radius:var(--r-sm);padding:7px 8px;text-align:center;}
+.tec-hlbl{font-size:.6rem;text-transform:uppercase;color:var(--text3);letter-spacing:.05em;margin-bottom:2px;}
+.tec-hval{font-size:.82rem;font-weight:700;color:var(--text);}
+.tec-hval.dim{color:var(--text3);}
+.tec-htotal{grid-column:span 4;background:var(--green-light);border-radius:var(--r-sm);padding:7px 12px;display:flex;justify-content:space-between;align-items:center;}
+.tec-htval{font-size:.9rem;font-weight:700;color:var(--green);}
+.tec-mmeta{font-size:.74rem;color:var(--text2);display:flex;justify-content:space-between;}
+.tec-btn-ver{width:100%;padding:10px;background:var(--surface2);border:none;border-top:1px solid var(--border);color:var(--text2);font-size:.82rem;font-weight:600;font-family:inherit;cursor:pointer;}
+.tec-btn-ver.tec-open{color:var(--green);background:var(--green-light);}
+.tec-detalle-body{display:none;border-top:1px solid var(--border);}
+.tec-detalle-body.tec-open{display:block;}
+.tec-tienda-item{border-bottom:1px solid var(--border);}
+.tec-tienda-hdr{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;cursor:pointer;background:var(--surface);}
+.tec-tienda-name{font-size:.84rem;font-weight:600;}
+.tec-tienda-sub{font-size:.71rem;color:var(--text3);margin-top:2px;}
+.tec-tienda-body{display:none;background:var(--surface2);}
+.tec-tienda-body.tec-open{display:block;}
+.tec-orden-item{border-bottom:1px solid var(--border2);}
+.tec-orden-hdr{display:flex;justify-content:space-between;align-items:center;padding:9px 24px;cursor:pointer;}
+.tec-orden-num{font-size:.8rem;font-weight:600;color:var(--text2);}
+.tec-orden-count{font-size:.7rem;color:var(--text3);}
+.tec-orden-body{display:none;background:#1a1e2e;}
+.tec-orden-body.tec-open{display:block;}
+.tec-parte-row{display:flex;justify-content:space-between;align-items:center;padding:9px 32px;border-bottom:1px solid var(--border2);cursor:pointer;}
+.tec-parte-label{font-size:.8rem;color:var(--text2);}
+.tec-parte-fecha{font-size:.8rem;font-weight:600;color:var(--green);}
+.tec-chev{color:var(--text3);font-size:.7rem;transition:transform .15s;}
 .rrow .rp{background:#0a1e12;color:#4ade80;padding:7px 10px;text-align:right;flex-shrink:0;font-weight:700;display:flex;align-items:center;justify-content:flex-end;white-space:nowrap;font-size:.82rem;border-left:1px solid var(--border2);}
 .rrow.subtotal-row .rc{background:#1a3a2a;color:#4ade80;font-family:sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;}
 .rrow.subtotal-row .rl{background:#0f2a1a;color:#4ade80;font-family:sans-serif;font-size:.75rem;font-weight:600;}
@@ -732,6 +765,10 @@ textarea{resize:vertical;min-height:72px}
     </div>
   </div>
   <div class="card"><div id="statsResumen"></div></div>
+  <div id="statsTecSection" style="margin-top:16px;display:none;">
+    <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px;">&#128119; Por t&eacute;cnico</div>
+    <div id="statsTecList"></div>
+  </div>
   <div class="brow">
     <button class="btn btn-p btn-sm" onclick="statsExportarPDF()">&#128196; Exportar PDF</button>
     <button class="btn btn-s btn-sm" onclick="statsCompartir()">&#128228; Compartir</button>
@@ -2091,6 +2128,127 @@ var _periodo = 'todo';
 var _statsPeriodo = 'todo';
 var _statsVista = 'concepto';
 
+function fmtHStats(h){
+  if(!h) return '-';
+  var w=Math.floor(h); var d=Math.round((h-w)*4)/4;
+  if(d===0) return w+'h';
+  if(d===0.25) return w+'h 1/4';
+  if(d===0.5) return w+'h 1/2';
+  if(d===0.75) return w+'h 3/4';
+  return h+'h';
+}
+
+function statsRenderTecnicos(datos){
+  var sec=$('statsTecSection'); var list=$('statsTecList');
+  if(!sec||!list) return;
+  if(!datos||!datos.length){ sec.style.display='none'; return; }
+  var tecMap={};
+  datos.forEach(function(p){
+    var tecs=p.tecnicos||[]; if(!tecs.length) return;
+    var n=tecs.length; var codigos=p.codigos||[];
+    var hNor=codigos.filter(function(c){return c.u==='h'&&c.lab.indexOf('Nor')>=0&&c.lab.indexOf('Dsp')<0;}).reduce(function(a,c){return a+c.v;},0);
+    var hExt=codigos.filter(function(c){return c.u==='h'&&c.lab.indexOf('Ext')>=0&&c.lab.indexOf('Dsp')<0;}).reduce(function(a,c){return a+c.v;},0);
+    var hNoc=codigos.filter(function(c){return c.u==='h'&&c.lab.indexOf('Noc')>=0&&c.lab.indexOf('Dsp')<0;}).reduce(function(a,c){return a+c.v;},0);
+    var hFes=codigos.filter(function(c){return c.u==='h'&&c.lab.indexOf('Fes')>=0&&c.lab.indexOf('Dsp')<0;}).reduce(function(a,c){return a+c.v;},0);
+    tecs.forEach(function(tec){
+      if(!tecMap[tec]) tecMap[tec]={partes:[],nor:0,ext:0,noc:0,fes:0,fechas:[]};
+      var s=tecMap[tec];
+      s.partes.push(p); s.nor+=hNor/n; s.ext+=hExt/n; s.noc+=hNoc/n; s.fes+=hFes/n;
+      s.fechas.push(p.fecha||'');
+    });
+  });
+  var tecs=Object.keys(tecMap);
+  if(!tecs.length){ sec.style.display='none'; return; }
+  sec.style.display='block';
+  list.innerHTML=tecs.sort().map(function(tec){
+    var s=tecMap[tec]; var total=s.nor+s.ext+s.noc+s.fes;
+    var fechas=s.fechas.filter(Boolean).sort();
+    var f1=fechas[0]?fechas[0].split('-').reverse().join('/').slice(0,5):'';
+    var f2=fechas[fechas.length-1]?fechas[fechas.length-1].split('-').reverse().join('/'):'';
+    var tiendaMap={};
+    s.partes.forEach(function(p){
+      var tienda=p.tienda||'Sin tienda';
+      if(!tiendaMap[tienda]) tiendaMap[tienda]={ordenes:{}};
+      var ord=p.pedido||p.actObras||'S/N';
+      if(!tiendaMap[tienda].ordenes[ord]) tiendaMap[tienda].ordenes[ord]=[];
+      tiendaMap[tienda].ordenes[ord].push(p);
+    });
+    var tecId='tec_'+tec.replace(/[^a-zA-Z0-9]/g,'_');
+    var nClientes=Object.keys(tiendaMap).length;
+    var tiendaHTML=Object.keys(tiendaMap).sort().map(function(tienda,ti){
+      var ordenes=tiendaMap[tienda].ordenes;
+      var nOrd=Object.keys(ordenes).length;
+      var nParts=Object.values(ordenes).reduce(function(a,b){return a+b.length;},0);
+      var tId=tecId+'_t'+ti;
+      var ordenHTML=Object.keys(ordenes).sort().map(function(ord,oi){
+        var ps=ordenes[ord].slice().sort(function(a,b){return (a.fecha||'').localeCompare(b.fecha||'');});
+        var oId=tId+'_o'+oi;
+        var h=getH();
+        var partesHTML=ps.map(function(p,pi){
+          var realIdx=-1;
+          for(var k=0;k<h.length;k++){if(h[k].fecha===p.fecha&&h[k].pedido===p.pedido&&h[k].centro===p.centro){realIdx=k;break;}}
+          var fP=p.fecha?p.fecha.split('-').reverse().join('/'):'--';
+          return '<div class="tec-parte-row" onclick="'+(realIdx>=0?'verParte('+realIdx+')':'')+'">'+
+            '<span class="tec-parte-label">Parte '+(pi+1)+'</span>'+
+            '<span class="tec-parte-fecha">'+fP+'</span>'+
+            '<span style="color:var(--text3);font-size:.75rem;">&#8250;</span></div>';
+        }).join('');
+        return '<div class="tec-orden-item">'+
+          '<div class="tec-orden-hdr" onclick="tecToggleOrden(this,\''+oId+'\')">'+
+          '<div><div class="tec-orden-num">N&#186; '+ord+'</div><div class="tec-orden-count">'+ps.length+' parte'+(ps.length>1?'s':'')+'</div></div>'+
+          '<span class="tec-chev" id="chev_o_'+oId+'">&#9660;</span></div>'+
+          '<div class="tec-orden-body" id="'+oId+'">'+partesHTML+'</div></div>';
+      }).join('');
+      return '<div class="tec-tienda-item">'+
+        '<div class="tec-tienda-hdr" onclick="tecToggleTienda(this,\''+tId+'\')">'+
+        '<div><div class="tec-tienda-name">'+tienda+'</div>'+
+        '<div class="tec-tienda-sub">'+nOrd+' incidencia'+(nOrd>1?'s':'')+' &middot; '+nParts+' parte'+(nParts>1?'s':'')+'</div></div>'+
+        '<span class="tec-chev" id="chev_t_'+tId+'">&#9660;</span></div>'+
+        '<div class="tec-tienda-body" id="'+tId+'">'+ordenHTML+'</div></div>';
+    }).join('');
+    return '<div class="tec-card-s">'+
+      '<div class="tec-sum">'+
+        '<div class="tec-sum-hdr"><span class="tec-sum-name">'+tec+'</span><span class="tec-sum-badge">'+s.partes.length+' parte'+(s.partes.length>1?'s':'')+'</span></div>'+
+        '<div class="tec-hgrid">'+
+          '<div class="tec-hcell"><div class="tec-hlbl">Normal</div><div class="tec-hval'+(s.nor?'':' dim')+'">'+fmtHStats(s.nor)+'</div></div>'+
+          '<div class="tec-hcell"><div class="tec-hlbl">Extra</div><div class="tec-hval'+(s.ext?'':' dim')+'">'+fmtHStats(s.ext)+'</div></div>'+
+          '<div class="tec-hcell"><div class="tec-hlbl">Nocturna</div><div class="tec-hval'+(s.noc?'':' dim')+'">'+fmtHStats(s.noc)+'</div></div>'+
+          '<div class="tec-hcell"><div class="tec-hlbl">Festiva</div><div class="tec-hval'+(s.fes?'':' dim')+'">'+fmtHStats(s.fes)+'</div></div>'+
+          '<div class="tec-htotal"><span style="font-size:.72rem;color:var(--green);">Total horas</span><span class="tec-htval">'+fmtHStats(total)+'</span></div>'+
+        '</div>'+
+        '<div class="tec-mmeta"><span>&#128205; '+nClientes+' cliente'+(nClientes>1?'s':'')+'</span><span>&#128197; '+f1+' &rarr; '+f2+'</span></div>'+
+      '</div>'+
+      '<button class="tec-btn-ver" onclick="tecToggleDetalle(this,\''+tecId+'\')">&#9660; Ver partes trabajados</button>'+
+      '<div class="tec-detalle-body" id="'+tecId+'">'+tiendaHTML+'</div>'+
+    '</div>';
+  }).join('');
+}
+
+function tecToggleDetalle(btn,id){
+  var body=document.getElementById(id); if(!body) return;
+  var open=body.classList.toggle('tec-open');
+  btn.classList.toggle('tec-open',open);
+  btn.innerHTML=open?'&#9650; Ocultar partes trabajados':'&#9660; Ver partes trabajados';
+}
+function tecToggleTienda(hdr,id){
+  var parent=hdr.closest('.tec-detalle-body');
+  parent.querySelectorAll('.tec-tienda-body.tec-open').forEach(function(b){
+    if(b.id!==id){b.classList.remove('tec-open');var ch=document.getElementById('chev_t_'+b.id);if(ch)ch.innerHTML='&#9660;';}
+  });
+  var body=document.getElementById(id); if(!body) return;
+  var open=body.classList.toggle('tec-open');
+  var chev=document.getElementById('chev_t_'+id); if(chev) chev.innerHTML=open?'&#9650;':'&#9660;';
+}
+function tecToggleOrden(hdr,id){
+  var parent=hdr.closest('.tec-tienda-body');
+  parent.querySelectorAll('.tec-orden-body.tec-open').forEach(function(b){
+    if(b.id!==id){b.classList.remove('tec-open');var ch=document.getElementById('chev_o_'+b.id);if(ch)ch.innerHTML='&#9660;';}
+  });
+  var body=document.getElementById(id); if(!body) return;
+  var open=body.classList.toggle('tec-open');
+  var chev=document.getElementById('chev_o_'+id); if(chev) chev.innerHTML=open?'&#9650;':'&#9660;';
+}
+
 function statsInit(){
   var sel=$('statsCliente');
   if(!sel) return;
@@ -2173,6 +2331,7 @@ function statsActualizar(){
   } else { if(banner) banner.style.display='none'; }
   statsRenderKPIs(datos,_os);
   statsRenderResumen(datos);
+  statsRenderTecnicos(datos);
 }
 
 function statsRenderKPIs(datos,_os){
