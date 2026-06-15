@@ -429,7 +429,7 @@ textarea{resize:vertical;min-height:72px}
 </style>
 </head>
 <body>
-<div id="splash">
+<div id="splash" onclick="this.classList.add('fade-out');var s=this;setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},600);">
   <div id="coin-wrap">
     <div id="coin"></div>
   </div>
@@ -5593,7 +5593,7 @@ function volverAlForm(){
 
 function volverCentros(){histShow(['centrosView']);}
 
-function volverHistOpts(){ $('histOpts').style.display='block'; $('secView').style.display='none'; $('ordenView').style.display='none'; $('parteView').style.display='none'; refreshCounts(); }
+function volverHistOpts(){ if(_secActual){ verSec(_secActual); } else { $('histOpts').style.display='block'; $('secView').style.display='none'; } $('ordenView').style.display='none'; $('parteView').style.display='none'; refreshCounts(); }
 
 function volverIncidencias(){histShow(['incidenciasView']);}
 
@@ -5797,6 +5797,13 @@ function abrirEdicionParte(idx){
   // Restaurar _editIdx después de nuevo()
   _editIdx=editIdxTemp;
   window._editIdxBackup=editIdxTemp;
+  // Restaurar actuación Obras si aplica
+  if(r.actObras){
+    _actObrasSeleccionada=r.actObras;
+    var ad=$('actObrasDisplay'); if(ad){ad.textContent=r.actObras;ad.style.display='block';}
+    var fp=$('fieldPedido'); if(fp) fp.style.display='none';
+    var fa=$('fieldActObras'); if(fa) fa.style.display='block';
+  }
   // Número de trabajadores y roles/nombres
   var nW=(r.roles||[]).length||2;
   $('w').value=nW;
