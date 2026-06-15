@@ -429,7 +429,7 @@ textarea{resize:vertical;min-height:72px}
 </style>
 </head>
 <body>
-<div id="splash" onclick="this.classList.add('fade-out');var s=this;setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},600);">
+<div id="splash" onclick="this.style.pointerEvents='none';document.body.style.overflow='';this.classList.add('fade-out');var s=this;setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},600);">
   <div id="coin-wrap">
     <div id="coin"></div>
   </div>
