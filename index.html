@@ -3379,6 +3379,10 @@ function pdfDesde(r){
       if(el.classList.contains('rgroup-title')){
         var txt=el.textContent.trim();
         if(txt&&txt!=='Datos generales') y=pdfGroupTitle(doc,y,txt);
+      } else if(el.classList.contains('info-row')&&el.querySelector('.rc')&&el.querySelector('.rc').textContent.trim()==='Técnicos'){
+        var _rcT=el.querySelector('.rc').textContent.trim();
+        var _rlT=el.querySelector('.rl')?el.querySelector('.rl').textContent.trim():'';
+        y=pdfInfoRow(doc,y,_rcT.toUpperCase(),_rlT);
       } else if(el.classList.contains('info-row')||el.classList.contains('tipo-row')){
         // ya mostradas arriba
       } else if(el.classList.contains('total-row')){
