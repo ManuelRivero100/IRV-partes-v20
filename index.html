@@ -490,30 +490,6 @@ textarea{resize:vertical;min-height:72px}
       <div class="app-icon-img ico-stats">&#128202;</div>
       <span class="app-icon-label">Estad&iacute;sticas</span>
     </div>
-    <div class="app-icon" id="iconUsuarios" style="display:none" onclick="abrirUsuarios()">
-      <div class="app-icon-img">&#128101;</div>
-      <span class="app-icon-label">Usuarios</span>
-    </div>
-  </div>
-</div>
-<div id="w-usuarios" class="win" style="display:none">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
-  <div class="card">
-    <div class="card-title">&#128101; Gestión de usuarios</div>
-    <div id="usuariosLista" style="margin-top:8px;"></div>
-  </div>
-  <div class="card" id="cardNuevoUsuario">
-    <div class="card-title">&#43; Nuevo usuario</div>
-    <div class="field"><label>Nombre completo</label><input id="nuNombre" placeholder="Ej: Fidel Suarez" autocomplete="off"></div>
-    <div class="field"><label>PIN (4 dígitos)</label><input id="nuPin" type="password" inputmode="numeric" maxlength="4" placeholder="0000"></div>
-    <div class="field" id="nuRolField"><label>Rol</label>
-      <div class="tgl" id="nuRolTgl">
-        <button class="active" onclick="setNuRol('tecnico',this)">Técnico</button>
-        <button onclick="setNuRol('admin',this)">Admin</button>
-      </div>
-    </div>
-    <div class="brow"><button class="btn btn-p btn-sm" onclick="guardarNuevoUsuario()">&#128190; Guardar</button></div>
-    <div id="nuMsg" class="msg"></div>
   </div>
 </div>
 <div id="w-catalogo" class="win">
@@ -1441,8 +1417,43 @@ function renderCatTecnicos(){
   var tecs=getTecnicos();
   if(!tecs.length){ el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay técnicos registrados.</div>'; return; }
   el.innerHTML=tecs.map(function(t){
-    return '<div class="card" style="margin-bottom:8px;">'      +'<div style="display:flex;justify-content:space-between;align-items:center;">'      +'<span style="font-weight:700;font-size:.9rem;">'+t.nombre+'</span>'      +'<button onclick="tecEliminar(\''+t.id+'\')" style="background:var(--red-light);color:var(--red);border:none;border-radius:var(--r-sm);padding:4px 10px;font-size:.8rem;cursor:pointer;">Eliminar</button>'      +'</div>'      +(t.tel?'<div style="font-size:.8rem;color:var(--text2);margin-top:4px;">📞 '+t.tel+'</div>':'')      +(t.jobs&&t.jobs.length?'<div style="font-size:.78rem;color:var(--green);margin-top:4px;">'+t.jobs.join(' · ')+'</div>':'')      +'</div>';
+    var inactivo = t.activo === false;
+    return '<div class="card" style="margin-bottom:8px;opacity:'+(inactivo?'0.5':'1')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+      +'<input value="'+t.nombre+'" style="font-weight:700;font-size:.9rem;border:none;background:transparent;color:var(--text);font-family:inherit;flex:1;padding:0;" onchange="tecEditarNombre(\''+t.id+'\',this.value)">'
+      +'<button onclick="tecEliminar(\''+t.id+'\')" style="background:var(--red-light);color:var(--red);border:none;border-radius:var(--r-sm);padding:4px 10px;font-size:.8rem;cursor:pointer;">&#128465;</button>'
+      +'</div>'
+      +(t.tel?'<div style="font-size:.8rem;color:var(--text2);margin-top:4px;">📞 '+t.tel+'</div>':'')
+      +(t.jobs&&t.jobs.length?'<div style="font-size:.78rem;color:var(--green);margin-top:4px;">'+t.jobs.join(' · ')+'</div>':'')
+      +'<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">'
+      +'<label style="font-size:.75rem;color:var(--text2);font-weight:700;">PIN</label>'
+      +'<input type="password" inputmode="numeric" maxlength="4" value="'+(t.pin||'')+'" placeholder="0000" style="width:80px;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.9rem;letter-spacing:.2em;text-align:center;background:var(--surface2);color:var(--text);font-family:inherit;" onchange="tecEditarPin(\''+t.id+'\',this.value)">'
+      +'<button onclick="tecToggleActivo(\''+t.id+'\','+inactivo+')" style="margin-left:auto;padding:4px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.78rem;font-family:inherit;cursor:pointer;">'+(inactivo?'✅ Activar':'⛔ Desactivar')+'</button>'
+      +'</div>'
+      +'</div>';
   }).join('');
+}
+
+function tecEditarNombre(id, nuevoNombre){
+  nuevoNombre = nuevoNombre.trim();
+  if(!nuevoNombre) return;
+  var tecs=getTecnicos();
+  var t=tecs.find(function(t){return t.id===id;});
+  if(t){ t.nombre=nuevoNombre; setTecnicos(tecs); }
+}
+
+function tecEditarPin(id, pin){
+  pin = pin.trim();
+  if(pin.length !== 4) return;
+  var tecs=getTecnicos();
+  var t=tecs.find(function(t){return t.id===id;});
+  if(t){ t.pin=pin; setTecnicos(tecs); }
+}
+
+function tecToggleActivo(id, activarAhora){
+  var tecs=getTecnicos();
+  var t=tecs.find(function(t){return t.id===id;});
+  if(t){ t.activo=activarAhora; setTecnicos(tecs); renderCatTecnicos(); }
 }
 
 function catTab(tab,btn){
@@ -6540,9 +6551,25 @@ function _iniciarSesion() {
   var msgEl = document.getElementById('loginMsg');
   msgEl.textContent = '';
   if (!nombre || pin.length !== 4) { msgEl.textContent = 'Introduce nombre y PIN de 4 dígitos.'; return; }
+
+  // Creador hardcodeado
   if (nombre.toLowerCase() === CREADOR.nombre && pin === CREADOR.pin) {
     _mostrarSelectorRol(nombre, ['tecnico', 'creador']); return;
   }
+
+  // Buscar en técnicos localStorage
+  try {
+    var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
+    var tecs = cat.tecnicos || [];
+    var tec = tecs.find(function(t){ return t.nombre.toLowerCase() === nombre.toLowerCase(); });
+    if (tec) {
+      if (tec.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+      if (tec.pin && tec.pin === pin) { _entrarConRol(tec.nombre, 'tecnico'); return; }
+      if (tec.pin && tec.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
+    }
+  } catch(e) {}
+
+  // Buscar en Firestore (admins)
   msgEl.textContent = 'Verificando...';
   var docId = nombre.toLowerCase().replace(/ /g,'_');
   _db.collection('usuario').doc(docId).get().then(function(snap) {
