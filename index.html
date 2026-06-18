@@ -6548,11 +6548,18 @@ function _mostrarSelectorRol(nombre, roles) {
 
 function _entrarConRol(nombre, rol) {
   window._sesion = { nombre: nombre, rol: rol };
+  try { localStorage.setItem('irv_sesion', JSON.stringify({ nombre: nombre, rol: rol })); } catch(e) {}
   document.getElementById('w-login').style.display = 'none';
   document.querySelector('.app').style.display = 'block';
   var sub = document.getElementById('hdr-sub');
   if (sub) sub.textContent = nombre + ' · ' + rol;
 }
+
+// Comprobar sesión guardada al arrancar
+try {
+  var _s = localStorage.getItem('irv_sesion');
+  if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _entrarConRol(_ses.nombre, _ses.rol); }
+} catch(e) {}
 </script>
 </body>
 </html>
