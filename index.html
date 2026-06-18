@@ -473,6 +473,8 @@ textarea{resize:vertical;min-height:72px}
 <div class="app" style="display:none;"><div class="hdr">
   <div class="hdr-ico">&#127978;</div>
   <div><h1>Partes IRV-10</h1><p id="hdr-sub">Selecciona un cliente</p></div>
+  <button id="btnCambiarRol" style="display:none;margin-left:auto;padding:6px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.75rem;font-family:inherit;cursor:pointer;" onclick="pedirPinCambioRol()">&#8645; Rol</button>
+  <button style="margin-left:8px;padding:6px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.75rem;font-family:inherit;cursor:pointer;" onclick="cerrarSesion()">&#128275; Salir</button>
 </div>
 <div id="w-clientes" class="win active">
   <div class="section-label">Clientes</div>
@@ -488,6 +490,30 @@ textarea{resize:vertical;min-height:72px}
       <div class="app-icon-img ico-stats">&#128202;</div>
       <span class="app-icon-label">Estad&iacute;sticas</span>
     </div>
+    <div class="app-icon" id="iconUsuarios" style="display:none" onclick="abrirUsuarios()">
+      <div class="app-icon-img">&#128101;</div>
+      <span class="app-icon-label">Usuarios</span>
+    </div>
+  </div>
+</div>
+<div id="w-usuarios" class="win" style="display:none">
+  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="card">
+    <div class="card-title">&#128101; Gestión de usuarios</div>
+    <div id="usuariosLista" style="margin-top:8px;"></div>
+  </div>
+  <div class="card" id="cardNuevoUsuario">
+    <div class="card-title">&#43; Nuevo usuario</div>
+    <div class="field"><label>Nombre completo</label><input id="nuNombre" placeholder="Ej: Fidel Suarez" autocomplete="off"></div>
+    <div class="field"><label>PIN (4 dígitos)</label><input id="nuPin" type="password" inputmode="numeric" maxlength="4" placeholder="0000"></div>
+    <div class="field" id="nuRolField"><label>Rol</label>
+      <div class="tgl" id="nuRolTgl">
+        <button class="active" onclick="setNuRol('tecnico',this)">Técnico</button>
+        <button onclick="setNuRol('admin',this)">Admin</button>
+      </div>
+    </div>
+    <div class="brow"><button class="btn btn-p btn-sm" onclick="guardarNuevoUsuario()">&#128190; Guardar</button></div>
+    <div id="nuMsg" class="msg"></div>
   </div>
 </div>
 <div id="w-catalogo" class="win">
@@ -6553,6 +6579,27 @@ function _entrarConRol(nombre, rol) {
   document.querySelector('.app').style.display = 'block';
   var sub = document.getElementById('hdr-sub');
   if (sub) sub.textContent = nombre + ' · ' + rol;
+  setTimeout(_mostrarIconoUsuarios, 0);
+  // Mostrar splash tras login
+  var sp = document.getElementById('splash');
+  if (sp) {
+    sp.style.display = 'flex';
+    sp.style.opacity = '1';
+    sp.style.pointerEvents = 'auto';
+    sp.classList.remove('fade-out');
+  }
+}
+
+function cerrarSesion() {
+  try { localStorage.removeItem('irv_sesion'); } catch(e) {}
+  window._sesion = null;
+  document.querySelector('.app').style.display = 'none';
+  document.getElementById('loginForm').style.display = 'block';
+  document.getElementById('loginRolSel').style.display = 'none';
+  document.getElementById('loginNombre').value = '';
+  document.getElementById('loginPin').value = '';
+  document.getElementById('loginMsg').textContent = '';
+  document.getElementById('w-login').style.display = 'flex';
 }
 
 // Comprobar sesión guardada al arrancar
@@ -6560,6 +6607,146 @@ try {
   var _s = localStorage.getItem('irv_sesion');
   if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _entrarConRol(_ses.nombre, _ses.rol); }
 } catch(e) {}
+
+// ---- MÓDULO USUARIOS ----
+var _nuRol = 'tecnico';
+function setNuRol(r, el) { _nuRol = r; document.querySelectorAll('#nuRolTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
+
+function abrirUsuarios() {
+  document.querySelectorAll('.win').forEach(function(w){w.style.display='none';});
+  document.getElementById('w-usuarios').style.display='block';
+  cargarUsuarios();
+}
+
+function cargarUsuarios() {
+  var lista = document.getElementById('usuariosLista');
+  lista.innerHTML = '<div style="color:var(--text2);font-size:.85rem;">Cargando...</div>';
+  var esSesionCreador = window._sesion && window._sesion.rol === 'creador';
+  _db.collection('usuario').get().then(function(snap) {
+    if (snap.empty) { lista.innerHTML = '<div style="color:var(--text2);font-size:.85rem;">No hay usuarios.</div>'; return; }
+    lista.innerHTML = '';
+    snap.forEach(function(d) {
+      var u = d.data();
+      var esCreador = d.id === 'manuel_rivero';
+      // Admin no ve al creador como creador, lo ve como técnico
+      var rolMostrado = (esCreador && !esSesionCreador) ? 'técnico' : (u.roles ? u.roles.join('/') : 'técnico');
+      var puedeTocar = esSesionCreador ? true : !esCreador;
+      var color = u.activo === false ? 'var(--text2)' : 'var(--text)';
+      var el = document.createElement('div');
+      el.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);';
+      el.innerHTML = '<div><div style="font-weight:600;color:'+color+'">'+u.nombre+'</div><div style="font-size:.78rem;color:var(--text2);">'+rolMostrado+(u.activo===false?' · Desactivado':'')+'</div></div>'
+        + (puedeTocar ? '<button class="btn btn-s btn-sm" onclick="toggleUsuario(\''+d.id+'\','+!!u.activo+')">'+(u.activo===false?'Activar':'Desactivar')+'</button>' : '');
+      lista.appendChild(el);
+    });
+  }).catch(function() { lista.innerHTML = '<div style="color:var(--red);">Error al cargar.</div>'; });
+}
+
+function toggleUsuario(docId, activo) {
+  _db.collection('usuario').doc(docId).update({ activo: !activo }).then(function() { cargarUsuarios(); });
+}
+
+function guardarNuevoUsuario() {
+  var nombre = document.getElementById('nuNombre').value.trim();
+  var pin = document.getElementById('nuPin').value.trim();
+  var msg = document.getElementById('nuMsg');
+  msg.textContent = '';
+  if (!nombre || pin.length !== 4) { msg.textContent = 'Nombre y PIN de 4 dígitos obligatorios.'; return; }
+  var docId = nombre.toLowerCase().replace(/ /g,'_');
+  var roles = window._sesion && window._sesion.rol === 'creador' ? [_nuRol] : ['tecnico'];
+  _db.collection('usuario').doc(docId).set({ nombre: nombre, pin: pin, roles: roles, activo: true })
+    .then(function() {
+      document.getElementById('nuNombre').value = '';
+      document.getElementById('nuPin').value = '';
+      msg.textContent = '✓ Usuario guardado.';
+      cargarUsuarios();
+    }).catch(function() { msg.textContent = 'Error al guardar.'; });
+}
+
+// Mostrar icono usuarios si es admin o creador
+// Mostrar icono usuarios y botón cambiar rol si corresponde
+function _mostrarIconoUsuarios() {
+  var rol = window._sesion && window._sesion.rol;
+  if (rol === 'admin' || rol === 'creador') {
+    var ic = document.getElementById('iconUsuarios');
+    if (ic) ic.style.display = '';
+    if (rol === 'admin') { var rf = document.getElementById('nuRolField'); if(rf) rf.style.display='none'; }
+  }
+  // Mostrar botón cambiar rol solo si tiene múltiples roles posibles
+  var nombre = window._sesion && window._sesion.nombre;
+  var esCreador = nombre && nombre.toLowerCase() === 'manuel rivero';
+  if (esCreador || rol === 'admin') {
+    var btn = document.getElementById('btnCambiarRol');
+    if (btn) btn.style.display = '';
+  }
+}
+
+function pedirPinCambioRol() {
+  document.getElementById('dlgCambioRolPin').value = '';
+  document.getElementById('dlgCambioRolMsg').textContent = '';
+  document.getElementById('dlgCambioRol').classList.add('show');
+  setTimeout(function(){ document.getElementById('dlgCambioRolPin').focus(); }, 100);
+}
+
+function confirmarCambioRol() {
+  var pin = document.getElementById('dlgCambioRolPin').value.trim();
+  var msg = document.getElementById('dlgCambioRolMsg');
+  var sesion = window._sesion;
+  var esCreador = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
+  var pinCorrecto = esCreador ? (pin === '1212') : false;
+
+  if (!pinCorrecto && !esCreador) {
+    // Verificar en Firestore para admin
+    var docId = sesion.nombre.toLowerCase().replace(/ /g,'_');
+    _db.collection('usuario').doc(docId).get().then(function(snap) {
+      if (snap.exists && snap.data().pin === pin) {
+        _lanzarSelectorRol();
+      } else {
+        msg.textContent = 'PIN incorrecto.';
+      }
+    });
+    return;
+  }
+  if (pinCorrecto) { _lanzarSelectorRol(); return; }
+  msg.textContent = 'PIN incorrecto.';
+}
+
+function _lanzarSelectorRol() {
+  document.getElementById('dlgCambioRol').classList.remove('show');
+  document.getElementById('dlgCambioRolPin').value = '';
+  var sesion = window._sesion;
+  var esCreador = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
+  var roles = esCreador ? ['tecnico','creador'] : ['tecnico','admin'];
+  // Mostrar selector sobre la app
+  document.getElementById('w-login').style.display = 'flex';
+  document.querySelector('.app').style.display = 'none';
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('loginRolSel').style.display = 'block';
+  document.getElementById('loginRolNombre').textContent = sesion.nombre;
+  var btns = document.getElementById('loginRolBtns');
+  btns.innerHTML = '';
+  var labels = { tecnico: '🔧 Técnico', admin: '⚙️ Administrador', creador: '👑 Creador' };
+  roles.forEach(function(r) {
+    var b = document.createElement('button');
+    b.className = 'btn btn-p btn-full';
+    b.style.marginBottom = '8px';
+    b.textContent = labels[r] || r;
+    b.onclick = function() { _entrarConRol(sesion.nombre, r); };
+    btns.appendChild(b);
+  });
+}
 </script>
+<!-- DIÁLOGO PIN CAMBIO ROL -->
+<div class="dlg" id="dlgCambioRol">
+  <div class="dlg-box" style="max-width:320px;">
+    <div class="dlg-title">&#8645; Cambiar rol</div>
+    <div style="font-size:.85rem;color:var(--text2);margin:8px 0 12px;">Introduce tu PIN para confirmar</div>
+    <input id="dlgCambioRolPin" type="password" inputmode="numeric" maxlength="4" placeholder="4 dígitos" style="width:100%;padding:10px;text-align:center;font-size:1.4rem;letter-spacing:.4em;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-family:inherit;" onkeydown="if(event.key==='Enter')confirmarCambioRol()">
+    <div id="dlgCambioRolMsg" style="min-height:18px;font-size:.82rem;color:var(--red);margin-top:8px;"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn btn-p" onclick="confirmarCambioRol()">Confirmar</button>
+      <button class="btn btn-s" onclick="document.getElementById('dlgCambioRol').classList.remove('show');document.getElementById('dlgCambioRolPin').value='';">Cancelar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
