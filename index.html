@@ -6519,7 +6519,7 @@ function _iniciarSesion() {
   }
   msgEl.textContent = 'Verificando...';
   var docId = nombre.toLowerCase().replace(/ /g,'_');
-  _db.collection('usuarios').doc(docId).get().then(function(snap) {
+  _db.collection('usuario').doc(docId).get().then(function(snap) {
     if (!snap.exists) { msgEl.textContent = 'Usuario no encontrado.'; return; }
     var u = snap.data();
     if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
