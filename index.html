@@ -6557,28 +6557,30 @@ function _iniciarSesion() {
     _mostrarSelectorRol(nombre, ['tecnico', 'creador']); return;
   }
 
-  // Buscar en técnicos localStorage
-  try {
-    var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
-    var tecs = cat.tecnicos || [];
-    var tec = tecs.find(function(t){ return t.nombre.toLowerCase() === nombre.toLowerCase(); });
-    if (tec) {
-      if (tec.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
-      if (tec.pin && tec.pin === pin) { _entrarConRol(tec.nombre, 'tecnico'); return; }
-      if (tec.pin && tec.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
-    }
-  } catch(e) {}
-
-  // Buscar en Firestore (admins)
+  // Buscar primero en Firestore (admins con multi-rol)
   msgEl.textContent = 'Verificando...';
   var docId = nombre.toLowerCase().replace(/ /g,'_');
   _db.collection('usuario').doc(docId).get().then(function(snap) {
-    if (!snap.exists) { msgEl.textContent = 'Usuario no encontrado.'; return; }
-    var u = snap.data();
-    if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
-    if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
-    var roles = u.roles || ['tecnico'];
-    if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
+    if (snap.exists) {
+      var u = snap.data();
+      if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
+      if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+      var roles = u.roles || ['tecnico'];
+      if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
+      return;
+    }
+    // No está en Firestore: buscar en técnicos localStorage
+    try {
+      var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
+      var tecs = cat.tecnicos || [];
+      var tec = tecs.find(function(t){ return t.nombre.toLowerCase() === nombre.toLowerCase(); });
+      if (tec) {
+        if (tec.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+        if (tec.pin && tec.pin === pin) { _entrarConRol(tec.nombre, 'tecnico'); return; }
+        msgEl.textContent = 'PIN incorrecto.'; return;
+      }
+    } catch(e) {}
+    msgEl.textContent = 'Usuario no encontrado.';
   }).catch(function() { msgEl.textContent = 'Error de conexión.'; });
 }
 
