@@ -481,7 +481,7 @@ textarea{resize:vertical;min-height:72px}
   <div id="clientesGrid" class="app-grid"></div>
   <div class="section-label">Herramientas</div>
   <div class="app-grid">
-    <div class="app-icon" onclick="goTo('w-catalogo')" style="position:relative;">
+    <div class="app-icon" onclick="abrirCatalogo()" style="position:relative;">
       <div class="app-icon-img ico-catalogo">&#128218;</div>
       <span data-cat-badge style="display:none;position:absolute;top:-4px;right:2px;background:#f59e0b;color:#fff;font-size:.62rem;font-weight:700;padding:2px 6px;border-radius:20px;min-width:18px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.3);">0</span>
       <span class="app-icon-label">Cat&aacute;logo</span>
@@ -1427,7 +1427,7 @@ function renderCatTecnicos(){
       +(t.jobs&&t.jobs.length?'<div style="font-size:.78rem;color:var(--green);margin-top:4px;">'+t.jobs.join(' · ')+'</div>':'')
       +'<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">'
       +'<label style="font-size:.75rem;color:var(--text2);font-weight:700;">PIN</label>'
-      +'<input type="password" inputmode="numeric" maxlength="4" value="'+(t.pin||'')+'" placeholder="0000" style="width:80px;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.9rem;letter-spacing:.2em;text-align:center;background:var(--surface2);color:var(--text);font-family:inherit;" onchange="tecEditarPin(\''+t.id+'\',this.value)">'
+      +'<input type="text" inputmode="numeric" maxlength="4" value="'+(t.pin||'')+'" placeholder="0000" style="width:80px;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.9rem;letter-spacing:.2em;text-align:center;background:var(--surface2);color:var(--text);font-family:inherit;" onchange="tecEditarPin(\''+t.id+'\',this.value)">'
       +'<button onclick="tecToggleActivo(\''+t.id+'\','+inactivo+')" style="margin-left:auto;padding:4px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.78rem;font-family:inherit;cursor:pointer;">'+(inactivo?'✅ Activar':'⛔ Desactivar')+'</button>'
       +'</div>'
       +'</div>';
@@ -6761,6 +6761,44 @@ function _lanzarSelectorRol() {
     btns.appendChild(b);
   });
 }
+
+function abrirCatalogo() {
+  var rol = window._sesion && window._sesion.rol;
+  if (rol !== 'admin' && rol !== 'creador') {
+    alert('Sin acceso. Solo administrador o creador.'); return;
+  }
+  document.getElementById('dlgPinCatalogoPin').value = '';
+  document.getElementById('dlgPinCatalogoMsg').textContent = '';
+  document.getElementById('dlgPinCatalogo').classList.add('show');
+  setTimeout(function(){ document.getElementById('dlgPinCatalogoPin').focus(); }, 100);
+}
+
+function confirmarPinCatalogo() {
+  var pin = document.getElementById('dlgPinCatalogoPin').value.trim();
+  var msg = document.getElementById('dlgPinCatalogoMsg');
+  var sesion = window._sesion;
+  var esCreador = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
+  // Verificar PIN
+  var pinOk = false;
+  if (esCreador && pin === '1212') { pinOk = true; }
+  if (!pinOk) {
+    // Buscar en Firestore para admin
+    var docId = sesion.nombre.toLowerCase().replace(/ /g,'_');
+    _db.collection('usuario').doc(docId).get().then(function(snap) {
+      if (snap.exists && snap.data().pin === pin) {
+        document.getElementById('dlgPinCatalogo').classList.remove('show');
+        document.getElementById('dlgPinCatalogoPin').value = '';
+        goTo('w-catalogo');
+      } else {
+        msg.textContent = 'PIN incorrecto.';
+      }
+    });
+    return;
+  }
+  document.getElementById('dlgPinCatalogo').classList.remove('show');
+  document.getElementById('dlgPinCatalogoPin').value = '';
+  goTo('w-catalogo');
+}
 </script>
 <!-- DIÁLOGO PIN CAMBIO ROL -->
 <div class="dlg" id="dlgCambioRol">
@@ -6772,6 +6810,19 @@ function _lanzarSelectorRol() {
     <div style="display:flex;gap:8px;margin-top:12px;">
       <button class="btn btn-p" onclick="confirmarCambioRol()">Confirmar</button>
       <button class="btn btn-s" onclick="document.getElementById('dlgCambioRol').classList.remove('show');document.getElementById('dlgCambioRolPin').value='';">Cancelar</button>
+    </div>
+  </div>
+</div>
+<!-- DIÁLOGO PIN CATÁLOGO -->
+<div class="dlg" id="dlgPinCatalogo">
+  <div class="dlg-box" style="max-width:320px;">
+    <div class="dlg-title">&#128218; Catálogo</div>
+    <div style="font-size:.85rem;color:var(--text2);margin:8px 0 12px;">Introduce tu PIN para acceder</div>
+    <input id="dlgPinCatalogoPin" type="password" inputmode="numeric" maxlength="4" placeholder="4 dígitos" style="width:100%;padding:10px;text-align:center;font-size:1.4rem;letter-spacing:.4em;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-family:inherit;" onkeydown="if(event.key==='Enter')confirmarPinCatalogo()">
+    <div id="dlgPinCatalogoMsg" style="min-height:18px;font-size:.82rem;color:var(--red);margin-top:8px;"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn btn-p" onclick="confirmarPinCatalogo()">Entrar</button>
+      <button class="btn btn-s" onclick="document.getElementById('dlgPinCatalogo').classList.remove('show');document.getElementById('dlgPinCatalogoPin').value='';">Cancelar</button>
     </div>
   </div>
 </div>
