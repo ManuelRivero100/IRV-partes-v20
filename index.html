@@ -429,6 +429,36 @@ textarea{resize:vertical;min-height:72px}
 </style>
 </head>
 <body>
+<!-- PANTALLA LOGIN -->
+<div id="w-login" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;">
+  <div style="width:100%;max-width:340px;">
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="font-size:2.5rem;margin-bottom:8px;">🔧</div>
+      <div style="font-size:1.3rem;font-weight:700;color:var(--text);">Partes IRV-10</div>
+      <div style="font-size:.82rem;color:var(--text2);margin-top:4px;">Soluciones a tu Medida</div>
+    </div>
+    <div id="loginForm">
+      <div class="field" style="margin-bottom:14px;">
+        <label>Nombre</label>
+        <input id="loginNombre" placeholder="Tu nombre completo" autocomplete="off" style="font-size:1rem;" onkeydown="if(event.key==='Enter')document.getElementById('loginPin').focus()">
+      </div>
+      <div class="field" style="margin-bottom:20px;">
+        <label>PIN</label>
+        <input id="loginPin" type="password" inputmode="numeric" maxlength="4" placeholder="4 dígitos" style="font-size:1.4rem;letter-spacing:.4em;text-align:center;" onkeydown="if(event.key==='Enter')_iniciarSesion()">
+      </div>
+      <button class="btn btn-p btn-full" onclick="_iniciarSesion()" style="padding:13px;font-size:1rem;">Entrar</button>
+      <div id="loginMsg" style="margin-top:12px;text-align:center;font-size:.85rem;color:var(--red);min-height:20px;"></div>
+    </div>
+    <div id="loginRolSel" style="display:none;">
+      <div style="text-align:center;margin-bottom:16px;">
+        <div style="font-size:.85rem;color:var(--text2);">Bienvenido,</div>
+        <div id="loginRolNombre" style="font-size:1.1rem;font-weight:700;color:var(--text);margin-top:4px;"></div>
+        <div style="font-size:.82rem;color:var(--text2);margin-top:6px;">¿Cómo entras hoy?</div>
+      </div>
+      <div id="loginRolBtns"></div>
+    </div>
+  </div>
+</div>
 <div id="splash" onclick="this.style.pointerEvents='none';document.body.style.overflow='';this.classList.add('fade-out');var s=this;setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},600);">
   <div id="coin-wrap">
     <div id="coin"></div>
@@ -440,7 +470,7 @@ textarea{resize:vertical;min-height:72px}
   </div>
 </div>
 
-<div class="app"><div class="hdr">
+<div class="app" style="display:none;"><div class="hdr">
   <div class="hdr-ico">&#127978;</div>
   <div><h1>Partes IRV-10</h1><p id="hdr-sub">Selecciona un cliente</p></div>
 </div>
@@ -6461,6 +6491,67 @@ if('serviceWorker' in navigator){
       console.log('SW error:', err);
     });
   });
+}
+</script>
+<!-- Firebase compat — al final para garantizar carga -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+firebase.initializeApp({
+  apiKey: "AIzaSyCYQTHbtfp5MJwv34knrhVOPmHZDUQzuiQ",
+  authDomain: "irv-grup.firebaseapp.com",
+  projectId: "irv-grup",
+  storageBucket: "irv-grup.firebasestorage.app",
+  messagingSenderId: "179090613524",
+  appId: "1:179090613524:web:c8116a87bce66719d68e01"
+});
+var _db = firebase.firestore();
+var CREADOR = { nombre: 'manuel rivero', pin: '1212' };
+
+function _iniciarSesion() {
+  var nombre = document.getElementById('loginNombre').value.trim();
+  var pin = document.getElementById('loginPin').value.trim();
+  var msgEl = document.getElementById('loginMsg');
+  msgEl.textContent = '';
+  if (!nombre || pin.length !== 4) { msgEl.textContent = 'Introduce nombre y PIN de 4 dígitos.'; return; }
+  if (nombre.toLowerCase() === CREADOR.nombre && pin === CREADOR.pin) {
+    _mostrarSelectorRol(nombre, ['tecnico', 'creador']); return;
+  }
+  msgEl.textContent = 'Verificando...';
+  var docId = nombre.toLowerCase().replace(/ /g,'_');
+  _db.collection('usuarios').doc(docId).get().then(function(snap) {
+    if (!snap.exists) { msgEl.textContent = 'Usuario no encontrado.'; return; }
+    var u = snap.data();
+    if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
+    if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+    var roles = u.roles || ['tecnico'];
+    if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
+  }).catch(function() { msgEl.textContent = 'Error de conexión.'; });
+}
+
+function _mostrarSelectorRol(nombre, roles) {
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('loginRolSel').style.display = 'block';
+  document.getElementById('loginRolNombre').textContent = nombre;
+  var btns = document.getElementById('loginRolBtns');
+  btns.innerHTML = '';
+  var labels = { tecnico: '🔧 Técnico', admin: '⚙️ Administrador', creador: '👑 Creador' };
+  roles.forEach(function(r) {
+    var b = document.createElement('button');
+    b.className = 'btn btn-p btn-full';
+    b.style.marginBottom = '8px';
+    b.textContent = labels[r] || r;
+    b.onclick = function() { _entrarConRol(nombre, r); };
+    btns.appendChild(b);
+  });
+}
+
+function _entrarConRol(nombre, rol) {
+  window._sesion = { nombre: nombre, rol: rol };
+  document.getElementById('w-login').style.display = 'none';
+  document.querySelector('.app').style.display = 'block';
+  var sub = document.getElementById('hdr-sub');
+  if (sub) sub.textContent = nombre + ' · ' + rol;
 }
 </script>
 </body>
