@@ -3089,7 +3089,8 @@ function copiar(){
 function resetearEstadoCompleto(){
   _editIdx=null; _actObrasSeleccionada=null; _pedidoNoMerc=null;
   aeData=null; esFestivo=false; _nocturnoConfirmado=false;
-  curJob=''; curLink='No'; wRoles=[]; wNames=[];
+  curJob=''; curLink='No'; wRoles=[];
+  wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
   _MS.sel={}; _MS.extras={}; _MS.secAbierta=null;
   _keepForm=false;
   ['pedido','tienda','dir','tel','centro','raw','obs','km','tr',
@@ -3135,7 +3136,9 @@ function nuevo(){
   _editIdx=null;
   ['pedido','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
   $('w').value='2'; $('job').value=''; $('link').value='No';
-  curJob=''; curLink='No'; wRoles=[]; wNames=[]; esFestivo=false; _cAC=null; _oAC=null; aeData=null;
+  curJob=''; curLink='No'; wRoles=[];
+  wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
+  esFestivo=false; _cAC=null; _oAC=null; aeData=null;
   _actObrasSeleccionada=null;
   _pedidoNoMerc=null;
   $('actObrasDisplay').style.display='none'; $('actObrasDisplay').textContent='';
