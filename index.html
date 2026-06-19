@@ -429,6 +429,36 @@ textarea{resize:vertical;min-height:72px}
 </style>
 </head>
 <body>
+<!-- PANTALLA LOGIN -->
+<div id="w-login" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;">
+  <div style="width:100%;max-width:340px;">
+    <div style="text-align:center;margin-bottom:28px;">
+      <div style="font-size:2.5rem;margin-bottom:8px;">🔧</div>
+      <div style="font-size:1.3rem;font-weight:700;color:var(--text);">Partes IRV-10</div>
+      <div style="font-size:.82rem;color:var(--text2);margin-top:4px;">Soluciones a tu Medida</div>
+    </div>
+    <div id="loginForm">
+      <div class="field" style="margin-bottom:14px;">
+        <label>Nombre</label>
+        <input id="loginNombre" placeholder="Tu nombre completo" autocomplete="off" style="font-size:1rem;" onkeydown="if(event.key==='Enter')document.getElementById('loginPin').focus()">
+      </div>
+      <div class="field" style="margin-bottom:20px;">
+        <label>PIN</label>
+        <input id="loginPin" type="password" inputmode="numeric" maxlength="4" placeholder="4 dígitos" style="font-size:1.4rem;letter-spacing:.4em;text-align:center;" onkeydown="if(event.key==='Enter')_iniciarSesion()">
+      </div>
+      <button class="btn btn-p btn-full" onclick="_iniciarSesion()" style="padding:13px;font-size:1rem;">Entrar</button>
+      <div id="loginMsg" style="margin-top:12px;text-align:center;font-size:.85rem;color:var(--red);min-height:20px;"></div>
+    </div>
+    <div id="loginRolSel" style="display:none;">
+      <div style="text-align:center;margin-bottom:16px;">
+        <div style="font-size:.85rem;color:var(--text2);">Bienvenido,</div>
+        <div id="loginRolNombre" style="font-size:1.1rem;font-weight:700;color:var(--text);margin-top:4px;"></div>
+        <div style="font-size:.82rem;color:var(--text2);margin-top:6px;">¿Cómo entras hoy?</div>
+      </div>
+      <div id="loginRolBtns"></div>
+    </div>
+  </div>
+</div>
 <div id="splash" onclick="this.style.pointerEvents='none';document.body.style.overflow='';this.classList.add('fade-out');var s=this;setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},600);">
   <div id="coin-wrap">
     <div id="coin"></div>
@@ -440,16 +470,18 @@ textarea{resize:vertical;min-height:72px}
   </div>
 </div>
 
-<div class="app"><div class="hdr">
+<div class="app" style="display:none;"><div class="hdr">
   <div class="hdr-ico">&#127978;</div>
   <div><h1>Partes IRV-10</h1><p id="hdr-sub">Selecciona un cliente</p></div>
+  <button id="btnCambiarRol" style="display:none;margin-left:auto;padding:6px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.75rem;font-family:inherit;cursor:pointer;" onclick="pedirPinCambioRol()">&#8645; Rol</button>
+  <button style="margin-left:8px;padding:6px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.75rem;font-family:inherit;cursor:pointer;" onclick="cerrarSesion()">&#128275; Salir</button>
 </div>
 <div id="w-clientes" class="win active">
   <div class="section-label">Clientes</div>
   <div id="clientesGrid" class="app-grid"></div>
   <div class="section-label">Herramientas</div>
   <div class="app-grid">
-    <div class="app-icon" onclick="goTo('w-catalogo')" style="position:relative;">
+    <div class="app-icon" id="iconCatalogo" onclick="abrirCatalogo()" style="position:relative;">
       <div class="app-icon-img ico-catalogo">&#128218;</div>
       <span data-cat-badge style="display:none;position:absolute;top:-4px;right:2px;background:#f59e0b;color:#fff;font-size:.62rem;font-weight:700;padding:2px 6px;border-radius:20px;min-width:18px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.3);">0</span>
       <span class="app-icon-label">Cat&aacute;logo</span>
@@ -518,6 +550,30 @@ textarea{resize:vertical;min-height:72px}
 <div id="w-menu" class="win">
   <button class="back" onclick="goTo('w-clientes')">&#8592; Clientes</button>
   <div id="menuGrid" class="app-grid"></div>
+</div>
+<div id="w-asignar" class="win">
+  <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
+  <div class="card">
+    <div class="card-title">&#128229; Asignar incidencia</div>
+    <div class="field"><label id="asgLabelPedido">N&ordm; orden</label><input id="asgPedido" inputmode="numeric" placeholder="Ej: 119137"></div>
+    <div class="field" id="asgFieldCentro"><label>N&ordm; centro</label><input id="asgCentro" inputmode="numeric" placeholder="Ej: 2721"></div>
+    <div class="field"><label>Tienda <span class="req">*</span></label><input id="asgTienda" placeholder="Mercadona SAN JAVIER 2721"></div>
+    <div class="field"><label>Direcci&oacute;n <span class="req">*</span></label><input id="asgDir"></div>
+    <div class="field"><label>Tel&eacute;fono <span class="req">*</span></label><input id="asgTel" type="tel" inputmode="numeric"></div>
+    <div class="field"><label>Tipo de trabajo <span class="req">*</span></label>
+      <div class="tgl" id="asgJobTgl"></div>
+      <input type="hidden" id="asgJob">
+    </div>
+    <div class="field"><label>T&eacute;cnico principal <span class="req">*</span></label>
+      <div class="tgl" id="asgTecTgl"></div>
+    </div>
+    <div class="brow"><button class="btn btn-p btn-full" onclick="guardarAsignacion()">&#128190; Asignar</button></div>
+    <div id="asgMsg" class="msg"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">&#128203; Incidencias asignadas</div>
+    <div id="asgLista" style="margin-top:8px;"></div>
+  </div>
 </div>
 <div id="w-form" class="win">
   <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
@@ -650,6 +706,7 @@ textarea{resize:vertical;min-height:72px}
           <div class="field"><label>Centro / tienda / pedido</label><input id="busca" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);" placeholder="Filtrar&hellip;"></div>
           <div class="field"><label>Fecha</label><input id="buscaF" type="date" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);"></div>
         </div>
+        <div id="histAdminTools">
         <div class="brow">
           <button class="btn btn-d btn-sm" onclick="pedirBorrarHist()">&#128465;&#65039; Borrar historial</button>
           <button class="btn btn-s btn-sm" onclick="limpiarFiltros()">&#10005; Limpiar filtros</button>
@@ -661,6 +718,7 @@ textarea{resize:vertical;min-height:72px}
         </div>
         <div class="brow" style="margin-top:6px">
           <button class="btn btn-s btn-sm" onclick="importarDesdeTexto()">&#128203; Importar desde texto pegado</button>
+        </div>
         </div>
         <div id="searchResults" style="display:none;margin-top:10px;"></div>
         <div id="confirmBorrar" style="display:none;margin-top:10px;padding:12px;background:var(--red-light);border:1px solid rgba(192,57,43,.2);border-radius:var(--r-sm)">
@@ -1062,9 +1120,12 @@ function renderMenu(){
     {ico:'&#128203;',cls:'ico-other',title:'Historial',id:'w-hist'},
     {ico:'&#128295;',cls:'ico-catalogo',title:'Materiales',id:'w-mat'}
   ];
+  if(_esAdminOCreador()){
+    items.push({ico:'&#128229;',cls:'ico-other',title:'Asignar incidencia',id:'w-asignar'});
+  }
   var html='';
   items.forEach(function(item){
-    html+='<div class="app-icon" onclick="goTo(\''+item.id+'\')">'
+    html+='<div class="app-icon" onclick="'+(item.id==='w-asignar'?'abrirAsignar()':'goTo(\''+item.id+'\')')+'">'
       +'<div class="app-icon-img '+item.cls+'">'+item.ico+'</div>'
       +'<span class="app-icon-label">'+item.title+'</span>'
       +'</div>';
@@ -1385,8 +1446,43 @@ function renderCatTecnicos(){
   var tecs=getTecnicos();
   if(!tecs.length){ el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay técnicos registrados.</div>'; return; }
   el.innerHTML=tecs.map(function(t){
-    return '<div class="card" style="margin-bottom:8px;">'      +'<div style="display:flex;justify-content:space-between;align-items:center;">'      +'<span style="font-weight:700;font-size:.9rem;">'+t.nombre+'</span>'      +'<button onclick="tecEliminar(\''+t.id+'\')" style="background:var(--red-light);color:var(--red);border:none;border-radius:var(--r-sm);padding:4px 10px;font-size:.8rem;cursor:pointer;">Eliminar</button>'      +'</div>'      +(t.tel?'<div style="font-size:.8rem;color:var(--text2);margin-top:4px;">📞 '+t.tel+'</div>':'')      +(t.jobs&&t.jobs.length?'<div style="font-size:.78rem;color:var(--green);margin-top:4px;">'+t.jobs.join(' · ')+'</div>':'')      +'</div>';
+    var inactivo = t.activo === false;
+    return '<div class="card" style="margin-bottom:8px;opacity:'+(inactivo?'0.5':'1')+'">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">'
+      +'<input value="'+t.nombre+'" style="font-weight:700;font-size:.9rem;border:none;background:transparent;color:var(--text);font-family:inherit;flex:1;padding:0;" onchange="tecEditarNombre(\''+t.id+'\',this.value)">'
+      +'<button onclick="tecEliminar(\''+t.id+'\')" style="background:var(--red-light);color:var(--red);border:none;border-radius:var(--r-sm);padding:4px 10px;font-size:.8rem;cursor:pointer;">&#128465;</button>'
+      +'</div>'
+      +(t.tel?'<div style="font-size:.8rem;color:var(--text2);margin-top:4px;">📞 '+t.tel+'</div>':'')
+      +(t.jobs&&t.jobs.length?'<div style="font-size:.78rem;color:var(--green);margin-top:4px;">'+t.jobs.join(' · ')+'</div>':'')
+      +'<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">'
+      +'<label style="font-size:.75rem;color:var(--text2);font-weight:700;">PIN</label>'
+      +'<input type="text" inputmode="numeric" maxlength="4" value="'+(t.pin||'')+'" placeholder="0000" style="width:80px;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.9rem;letter-spacing:.2em;text-align:center;background:var(--surface2);color:var(--text);font-family:inherit;" onchange="tecEditarPin(\''+t.id+'\',this.value)">'
+      +'<button onclick="tecToggleActivo(\''+t.id+'\','+inactivo+')" style="margin-left:auto;padding:4px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.78rem;font-family:inherit;cursor:pointer;">'+(inactivo?'✅ Activar':'⛔ Desactivar')+'</button>'
+      +'</div>'
+      +'</div>';
   }).join('');
+}
+
+function tecEditarNombre(id, nuevoNombre){
+  nuevoNombre = nuevoNombre.trim();
+  if(!nuevoNombre) return;
+  var tecs=getTecnicos();
+  var t=tecs.find(function(t){return t.id===id;});
+  if(t){ t.nombre=nuevoNombre; setTecnicos(tecs); }
+}
+
+function tecEditarPin(id, pin){
+  pin = pin.trim();
+  if(pin.length !== 4) return;
+  var tecs=getTecnicos();
+  var t=tecs.find(function(t){return t.id===id;});
+  if(t){ t.pin=pin; setTecnicos(tecs); }
+}
+
+function tecToggleActivo(id, activarAhora){
+  var tecs=getTecnicos();
+  var t=tecs.find(function(t){return t.id===id;});
+  if(t){ t.activo=activarAhora; setTecnicos(tecs); renderCatTecnicos(); }
 }
 
 function catTab(tab,btn){
@@ -3020,7 +3116,8 @@ function copiar(){
 function resetearEstadoCompleto(){
   _editIdx=null; _actObrasSeleccionada=null; _pedidoNoMerc=null;
   aeData=null; esFestivo=false; _nocturnoConfirmado=false;
-  curJob=''; curLink='No'; wRoles=[]; wNames=[];
+  curJob=''; curLink='No'; wRoles=[];
+  wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
   _MS.sel={}; _MS.extras={}; _MS.secAbierta=null;
   _keepForm=false;
   ['pedido','tienda','dir','tel','centro','raw','obs','km','tr',
@@ -3066,7 +3163,9 @@ function nuevo(){
   _editIdx=null;
   ['pedido','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
   $('w').value='2'; $('job').value=''; $('link').value='No';
-  curJob=''; curLink='No'; wRoles=[]; wNames=[]; esFestivo=false; _cAC=null; _oAC=null; aeData=null;
+  curJob=''; curLink='No'; wRoles=[];
+  wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
+  esFestivo=false; _cAC=null; _oAC=null; aeData=null;
   _actObrasSeleccionada=null;
   _pedidoNoMerc=null;
   $('actObrasDisplay').style.display='none'; $('actObrasDisplay').textContent='';
@@ -5512,8 +5611,8 @@ function verParte(idx){
     '<div class="divider"></div><div class="brow" style="margin-bottom:8px;">'+
     '<button class="btn btn-s btn-sm" onclick="hacerPDF('+idx+')">PDF</button>'+
     '<button class="btn btn-s btn-sm" onclick="compartirParte('+idx+')">Compartir</button>'+
-    '<button class="btn btn-amber btn-sm" onclick="abrirEdicionParte('+idx+')">&#9998; Editar</button>'+
-    '<button class="btn btn-d btn-sm" onclick="pedirBorrarParte('+idx+')">Borrar</button></div>'+
+    (_esAdminOCreador()?'<button class="btn btn-amber btn-sm" onclick="abrirEdicionParte('+idx+')">&#9998; Editar</button>':'')+
+    (_esAdminOCreador()?'<button class="btn btn-d btn-sm" onclick="pedirBorrarParte('+idx+')">Borrar</button>':'')+'</div>'+
     '<div id="confirmDel" style="display:none;padding:12px;background:var(--red-light);border:1px solid rgba(192,57,43,.2);border-radius:var(--r-sm);margin-top:8px">'+
     '<div style="font-size:.88rem;font-weight:600;color:var(--red);margin-bottom:8px">&iquest;Borrar este parte?</div>'+
     '<div style="display:flex;gap:8px"><button class="btn btn-d btn-sm" onclick="borrarParteOk('+idx+')">S&iacute;, borrar</button><button class="btn btn-s btn-sm" onclick="$(\'confirmDel\').style.display=\'none\'">Cancelar</button></div>'+
@@ -6463,5 +6562,384 @@ if('serviceWorker' in navigator){
   });
 }
 </script>
+<!-- Firebase compat — al final para garantizar carga -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
+firebase.initializeApp({
+  apiKey: "AIzaSyCYQTHbtfp5MJwv34knrhVOPmHZDUQzuiQ",
+  authDomain: "irv-grup.firebaseapp.com",
+  projectId: "irv-grup",
+  storageBucket: "irv-grup.firebasestorage.app",
+  messagingSenderId: "179090613524",
+  appId: "1:179090613524:web:c8116a87bce66719d68e01"
+});
+var _db = firebase.firestore();
+var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
+var MANUEL_ADMIN_PIN = '1212';
+
+function _iniciarSesion() {
+  var nombre = document.getElementById('loginNombre').value.trim();
+  var pin = document.getElementById('loginPin').value.trim();
+  var msgEl = document.getElementById('loginMsg');
+  msgEl.textContent = '';
+  if (!nombre || pin.length !== 4) { msgEl.textContent = 'Introduce nombre y PIN de 4 dígitos.'; return; }
+
+  // Manuel: dos PINes hardcodeados, cada uno entra directo a su rol
+  if (nombre.toLowerCase() === CREADOR.nombre) {
+    if (pin === CREADOR.pin) { _entrarConRol(nombre, 'creador'); return; }
+    if (pin === MANUEL_ADMIN_PIN) { _mostrarSelectorRol(nombre, ['tecnico', 'admin']); return; }
+    msgEl.textContent = 'PIN incorrecto.'; return;
+  }
+
+  // Buscar primero en Firestore (admins con multi-rol)
+  msgEl.textContent = 'Verificando...';
+  var docId = nombre.toLowerCase().replace(/ /g,'_');
+  _db.collection('usuario').doc(docId).get().then(function(snap) {
+    if (snap.exists) {
+      var u = snap.data();
+      if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
+      if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+      var roles = u.roles || ['tecnico'];
+      if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
+      return;
+    }
+    // No está en Firestore: buscar en técnicos localStorage
+    try {
+      var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
+      var tecs = cat.tecnicos || [];
+      var tec = tecs.find(function(t){ return t.nombre.toLowerCase() === nombre.toLowerCase(); });
+      if (tec) {
+        if (tec.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+        if (tec.pin && tec.pin === pin) { _entrarConRol(tec.nombre, 'tecnico'); return; }
+        msgEl.textContent = 'PIN incorrecto.'; return;
+      }
+    } catch(e) {}
+    msgEl.textContent = 'Usuario no encontrado.';
+  }).catch(function() { msgEl.textContent = 'Error de conexión.'; });
+}
+
+function _mostrarSelectorRol(nombre, roles) {
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('loginRolSel').style.display = 'block';
+  document.getElementById('loginRolNombre').textContent = nombre;
+  var btns = document.getElementById('loginRolBtns');
+  btns.innerHTML = '';
+  var labels = { tecnico: '🔧 Técnico', admin: '⚙️ Administrador', creador: '👑 Creador' };
+  roles.forEach(function(r) {
+    var b = document.createElement('button');
+    b.className = 'btn btn-p btn-full';
+    b.style.marginBottom = '8px';
+    b.textContent = labels[r] || r;
+    b.onclick = function() { _entrarConRol(nombre, r); };
+    btns.appendChild(b);
+  });
+}
+
+function _entrarConRol(nombre, rol) {
+  try { localStorage.setItem('irv_sesion', JSON.stringify({ nombre: nombre, rol: rol })); } catch(e) {}
+  location.reload();
+}
+
+function _aplicarSesion(nombre, rol) {
+  window._sesion = { nombre: nombre, rol: rol };
+  document.getElementById('w-login').style.display = 'none';
+  document.querySelector('.app').style.display = 'block';
+  var sub = document.getElementById('hdr-sub');
+  if (sub) sub.textContent = nombre + ' · ' + rol;
+  var icCat = document.getElementById('iconCatalogo');
+  if (icCat) icCat.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
+  var histTools = document.getElementById('histAdminTools');
+  if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
+  setTimeout(_mostrarIconoUsuarios, 0);
+  var sp = document.getElementById('splash');
+  if (sp) {
+    sp.style.display = 'flex';
+    sp.style.opacity = '1';
+    sp.style.pointerEvents = 'auto';
+    sp.classList.remove('fade-out');
+  }
+}
+
+function _esAdminOCreador() {
+  var rol = window._sesion && window._sesion.rol;
+  return rol === 'admin' || rol === 'creador';
+}
+
+// ---- MÓDULO INCIDENCIAS ----
+var _asgJob = '';
+var _asgTec = '';
+
+function abrirAsignar() {
+  if (!curCliente) return;
+  _asgJob = ''; _asgTec = '';
+  $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value='';
+  $('asgMsg').textContent='';
+  var esMerc = curCliente.tipo==='mercadona';
+  $('asgLabelPedido').innerHTML = esMerc ? 'N&ordm; orden <span class="req">*</span>' : 'N&ordm; orden / referencia';
+  $('asgFieldCentro').style.display = esMerc ? 'block' : 'none';
+  var jobs = curCliente.jobs||['Conductos','Climatización','Obras'];
+  $('asgJobTgl').innerHTML = jobs.map(function(j){
+    return '<button onclick="setAsgJob(\''+j+'\',this)">'+j+'</button>';
+  }).join('');
+  var tecs = getTecnicos().filter(function(t){ return t.activo !== false; });
+  $('asgTecTgl').innerHTML = tecs.map(function(t){
+    return '<button onclick="setAsgTec(\''+t.nombre.replace(/\'/g,"\\'")+'\',this)">'+t.nombre+'</button>';
+  }).join('');
+  goTo('w-asignar');
+  renderAsgLista();
+}
+
+function setAsgJob(j, el) { _asgJob = j; document.querySelectorAll('#asgJobTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
+function setAsgTec(t, el) { _asgTec = t; document.querySelectorAll('#asgTecTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
+
+function guardarAsignacion() {
+  var msg = $('asgMsg'); msg.textContent='';
+  var tienda=$('asgTienda').value.trim(), dir=$('asgDir').value.trim(), tel=$('asgTel').value.trim();
+  if (!tienda || !dir || !tel) { msg.textContent='Tienda, dirección y teléfono son obligatorios.'; return; }
+  if (!_asgJob) { msg.textContent='Selecciona el tipo de trabajo.'; return; }
+  if (!_asgTec) { msg.textContent='Selecciona el técnico principal.'; return; }
+  var data = {
+    clienteId: curCliente.id,
+    pedido: $('asgPedido').value.trim(),
+    centro: $('asgCentro').value.trim(),
+    tienda: tienda, dir: dir, tel: tel, job: _asgJob,
+    tecnicoPrincipal: _asgTec,
+    creadoPor: window._sesion.nombre,
+    estado: 'pendiente',
+    vista: false,
+    fechaCreacion: Date.now()
+  };
+  _db.collection('incidencias').add(data).then(function(){
+    msg.textContent='✓ Incidencia asignada.';
+    $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value='';
+    _asgJob=''; _asgTec='';
+    document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
+    renderAsgLista();
+  }).catch(function(){ msg.textContent='Error al guardar.'; });
+}
+
+function renderAsgLista() {
+  var el = $('asgLista'); if (!el || !curCliente) return;
+  el.innerHTML = '<div style="color:var(--text2);font-size:.82rem;">Cargando...</div>';
+  _db.collection('incidencias').where('clienteId','==',curCliente.id).get().then(function(snap){
+    if (snap.empty) { el.innerHTML='<div style="color:var(--text2);font-size:.82rem;">Sin incidencias asignadas.</div>'; return; }
+    var tecs = getTecnicos().filter(function(t){ return t.activo !== false; });
+    var html='';
+    snap.forEach(function(doc){
+      var d = doc.data();
+      var estLabel = {pendiente:'⏳ Pendiente', 'en-ejecucion':'🔧 En ejecución', terminado:'✅ Terminado'}[d.estado]||d.estado;
+      html += '<div class="card" style="margin-bottom:8px;">'
+        +'<div style="font-weight:700;font-size:.9rem;">'+d.tienda+'</div>'
+        +'<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+d.job+' · '+estLabel+'</div>'
+        +'<div style="font-size:.82rem;margin-top:6px;">👤 <b>'+d.tecnicoPrincipal+'</b></div>';
+      if (d.estado === 'pendiente') {
+        html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
+          +'<select onchange="reasignarIncidencia(\''+doc.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
+          +'<option value="">-- mantener --</option>'
+          +tecs.map(function(t){return '<option value="'+t.nombre.replace(/"/g,'')+'">'+t.nombre+'</option>';}).join('')
+          +'</select></div>'
+          +'<button class="btn btn-d btn-sm" style="margin-top:8px;" onclick="eliminarIncidencia(\''+doc.id+'\')">&#128465; Eliminar</button>';
+      }
+      html += '</div>';
+    });
+    el.innerHTML = html;
+  }).catch(function(){ el.innerHTML='<div style="color:var(--red);">Error al cargar.</div>'; });
+}
+
+function reasignarIncidencia(id, nuevoTec) {
+  if (!nuevoTec) return;
+  _db.collection('incidencias').doc(id).update({ tecnicoPrincipal: nuevoTec, vista:false }).then(function(){
+    renderAsgLista();
+  });
+}
+
+function eliminarIncidencia(id) {
+  if (!confirm('¿Eliminar esta incidencia asignada?')) return;
+  _db.collection('incidencias').doc(id).delete().then(function(){ renderAsgLista(); });
+}
+
+function cerrarSesion() {
+  try { localStorage.removeItem('irv_sesion'); } catch(e) {}
+  location.reload();
+}
+
+// Comprobar sesión guardada al arrancar
+try {
+  var _s = localStorage.getItem('irv_sesion');
+  if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _aplicarSesion(_ses.nombre, _ses.rol); }
+} catch(e) {}
+
+// ---- MÓDULO USUARIOS ----
+var _nuRol = 'tecnico';
+function setNuRol(r, el) { _nuRol = r; document.querySelectorAll('#nuRolTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
+
+function abrirUsuarios() {
+  document.querySelectorAll('.win').forEach(function(w){w.style.display='none';});
+  document.getElementById('w-usuarios').style.display='block';
+  cargarUsuarios();
+}
+
+function cargarUsuarios() {
+  var lista = document.getElementById('usuariosLista');
+  lista.innerHTML = '<div style="color:var(--text2);font-size:.85rem;">Cargando...</div>';
+  var esSesionCreador = window._sesion && window._sesion.rol === 'creador';
+  _db.collection('usuario').get().then(function(snap) {
+    if (snap.empty) { lista.innerHTML = '<div style="color:var(--text2);font-size:.85rem;">No hay usuarios.</div>'; return; }
+    lista.innerHTML = '';
+    snap.forEach(function(d) {
+      var u = d.data();
+      var esCreador = d.id === 'manuel_rivero';
+      // Admin no ve al creador como creador, lo ve como técnico
+      var rolMostrado = (esCreador && !esSesionCreador) ? 'técnico' : (u.roles ? u.roles.join('/') : 'técnico');
+      var puedeTocar = esSesionCreador ? true : !esCreador;
+      var color = u.activo === false ? 'var(--text2)' : 'var(--text)';
+      var el = document.createElement('div');
+      el.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);';
+      el.innerHTML = '<div><div style="font-weight:600;color:'+color+'">'+u.nombre+'</div><div style="font-size:.78rem;color:var(--text2);">'+rolMostrado+(u.activo===false?' · Desactivado':'')+'</div></div>'
+        + (puedeTocar ? '<button class="btn btn-s btn-sm" onclick="toggleUsuario(\''+d.id+'\','+!!u.activo+')">'+(u.activo===false?'Activar':'Desactivar')+'</button>' : '');
+      lista.appendChild(el);
+    });
+  }).catch(function() { lista.innerHTML = '<div style="color:var(--red);">Error al cargar.</div>'; });
+}
+
+function toggleUsuario(docId, activo) {
+  _db.collection('usuario').doc(docId).update({ activo: !activo }).then(function() { cargarUsuarios(); });
+}
+
+function guardarNuevoUsuario() {
+  var nombre = document.getElementById('nuNombre').value.trim();
+  var pin = document.getElementById('nuPin').value.trim();
+  var msg = document.getElementById('nuMsg');
+  msg.textContent = '';
+  if (!nombre || pin.length !== 4) { msg.textContent = 'Nombre y PIN de 4 dígitos obligatorios.'; return; }
+  var docId = nombre.toLowerCase().replace(/ /g,'_');
+  var roles = window._sesion && window._sesion.rol === 'creador' ? [_nuRol] : ['tecnico'];
+  _db.collection('usuario').doc(docId).set({ nombre: nombre, pin: pin, roles: roles, activo: true })
+    .then(function() {
+      document.getElementById('nuNombre').value = '';
+      document.getElementById('nuPin').value = '';
+      msg.textContent = '✓ Usuario guardado.';
+      cargarUsuarios();
+    }).catch(function() { msg.textContent = 'Error al guardar.'; });
+}
+
+// Mostrar icono usuarios y botón cambiar rol si corresponde
+function _mostrarIconoUsuarios() {
+  var rol = window._sesion && window._sesion.rol;
+  if (rol === 'admin' || rol === 'creador') {
+    var ic = document.getElementById('iconUsuarios');
+    if (ic) ic.style.display = '';
+    if (rol === 'admin') { var rf = document.getElementById('nuRolField'); if(rf) rf.style.display='none'; }
+  }
+  // Botón cambiar rol: admin → técnico directo; técnico → admin pide PIN
+  if (rol === 'admin' || rol === 'tecnico') {
+    var btn = document.getElementById('btnCambiarRol');
+    if (btn) { btn.style.display = ''; btn.textContent = rol === 'admin' ? '🔧 Técnico' : '⚙️ Admin'; }
+  }
+}
+
+function pedirPinCambioRol() {
+  var sesion = window._sesion;
+  if (!sesion) return;
+  // De admin a técnico: directo, sin PIN
+  if (sesion.rol === 'admin') { _entrarConRol(sesion.nombre, 'tecnico'); return; }
+  // De técnico a admin: pide PIN
+  document.getElementById('dlgCambioRolPin').value = '';
+  document.getElementById('dlgCambioRolMsg').textContent = '';
+  document.getElementById('dlgCambioRol').classList.add('show');
+  setTimeout(function(){ document.getElementById('dlgCambioRolPin').focus(); }, 100);
+}
+
+function confirmarCambioRol() {
+  var pin = document.getElementById('dlgCambioRolPin').value.trim();
+  var msg = document.getElementById('dlgCambioRolMsg');
+  var sesion = window._sesion;
+  var esManuel = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
+
+  if (esManuel) {
+    if (pin === MANUEL_ADMIN_PIN) { _entrarConRol(sesion.nombre, 'admin'); } else { msg.textContent = 'PIN incorrecto.'; }
+    return;
+  }
+
+  // Verificar en Firestore para Diego (o cualquier técnico con rol admin disponible)
+  var docId = sesion.nombre.toLowerCase().replace(/ /g,'_');
+  _db.collection('usuario').doc(docId).get().then(function(snap) {
+    if (snap.exists && snap.data().pin === pin) {
+      document.getElementById('dlgCambioRol').classList.remove('show');
+      document.getElementById('dlgCambioRolPin').value = '';
+      _entrarConRol(sesion.nombre, 'admin');
+    } else {
+      msg.textContent = 'PIN incorrecto.';
+    }
+  });
+}
+
+
+
+function abrirCatalogo() {
+  var rol = window._sesion && window._sesion.rol;
+  if (rol !== 'admin' && rol !== 'creador') {
+    alert('Sin acceso. Solo administrador o creador.'); return;
+  }
+  document.getElementById('dlgPinCatalogoPin').value = '';
+  document.getElementById('dlgPinCatalogoMsg').textContent = '';
+  document.getElementById('dlgPinCatalogo').classList.add('show');
+  setTimeout(function(){ document.getElementById('dlgPinCatalogoPin').focus(); }, 100);
+}
+
+function confirmarPinCatalogo() {
+  var pin = document.getElementById('dlgPinCatalogoPin').value.trim();
+  var msg = document.getElementById('dlgPinCatalogoMsg');
+  var sesion = window._sesion;
+  var esCreador = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
+  // Verificar PIN
+  var pinOk = false;
+  if (esCreador && pin === '1212') { pinOk = true; }
+  if (!pinOk) {
+    // Buscar en Firestore para admin
+    var docId = sesion.nombre.toLowerCase().replace(/ /g,'_');
+    _db.collection('usuario').doc(docId).get().then(function(snap) {
+      if (snap.exists && snap.data().pin === pin) {
+        document.getElementById('dlgPinCatalogo').classList.remove('show');
+        document.getElementById('dlgPinCatalogoPin').value = '';
+        goTo('w-catalogo');
+      } else {
+        msg.textContent = 'PIN incorrecto.';
+      }
+    });
+    return;
+  }
+  document.getElementById('dlgPinCatalogo').classList.remove('show');
+  document.getElementById('dlgPinCatalogoPin').value = '';
+  goTo('w-catalogo');
+}
+</script>
+<!-- DIÁLOGO PIN CAMBIO ROL -->
+<div class="dlg" id="dlgCambioRol">
+  <div class="dlg-box" style="max-width:320px;">
+    <div class="dlg-title">&#8645; Cambiar rol</div>
+    <div style="font-size:.85rem;color:var(--text2);margin:8px 0 12px;">Introduce tu PIN para confirmar</div>
+    <input id="dlgCambioRolPin" type="password" inputmode="numeric" maxlength="4" placeholder="4 dígitos" style="width:100%;padding:10px;text-align:center;font-size:1.4rem;letter-spacing:.4em;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-family:inherit;" onkeydown="if(event.key==='Enter')confirmarCambioRol()">
+    <div id="dlgCambioRolMsg" style="min-height:18px;font-size:.82rem;color:var(--red);margin-top:8px;"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn btn-p" onclick="confirmarCambioRol()">Confirmar</button>
+      <button class="btn btn-s" onclick="document.getElementById('dlgCambioRol').classList.remove('show');document.getElementById('dlgCambioRolPin').value='';">Cancelar</button>
+    </div>
+  </div>
+</div>
+<!-- DIÁLOGO PIN CATÁLOGO -->
+<div class="dlg" id="dlgPinCatalogo">
+  <div class="dlg-box" style="max-width:320px;">
+    <div class="dlg-title">&#128218; Catálogo</div>
+    <div style="font-size:.85rem;color:var(--text2);margin:8px 0 12px;">Introduce tu PIN para acceder</div>
+    <input id="dlgPinCatalogoPin" type="password" inputmode="numeric" maxlength="4" placeholder="4 dígitos" style="width:100%;padding:10px;text-align:center;font-size:1.4rem;letter-spacing:.4em;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-family:inherit;" onkeydown="if(event.key==='Enter')confirmarPinCatalogo()">
+    <div id="dlgPinCatalogoMsg" style="min-height:18px;font-size:.82rem;color:var(--red);margin-top:8px;"></div>
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button class="btn btn-p" onclick="confirmarPinCatalogo()">Entrar</button>
+      <button class="btn btn-s" onclick="document.getElementById('dlgPinCatalogo').classList.remove('show');document.getElementById('dlgPinCatalogoPin').value='';">Cancelar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
