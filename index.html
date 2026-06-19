@@ -6561,7 +6561,7 @@ function _iniciarSesion() {
   // Manuel: dos PINes hardcodeados, cada uno entra directo a su rol
   if (nombre.toLowerCase() === CREADOR.nombre) {
     if (pin === CREADOR.pin) { _entrarConRol(nombre, 'creador'); return; }
-    if (pin === MANUEL_ADMIN_PIN) { _entrarConRol(nombre, 'admin'); return; }
+    if (pin === MANUEL_ADMIN_PIN) { _mostrarSelectorRol(nombre, ['tecnico', 'admin']); return; }
     msgEl.textContent = 'PIN incorrecto.'; return;
   }
 
@@ -6704,7 +6704,6 @@ function guardarNuevoUsuario() {
     }).catch(function() { msg.textContent = 'Error al guardar.'; });
 }
 
-// Mostrar icono usuarios si es admin o creador
 // Mostrar icono usuarios y botón cambiar rol si corresponde
 function _mostrarIconoUsuarios() {
   var rol = window._sesion && window._sesion.rol;
@@ -6713,14 +6712,19 @@ function _mostrarIconoUsuarios() {
     if (ic) ic.style.display = '';
     if (rol === 'admin') { var rf = document.getElementById('nuRolField'); if(rf) rf.style.display='none'; }
   }
-  // Mostrar botón cambiar rol solo para admin (Diego) — Manuel usa PINs fijos
-  if (rol === 'admin') {
+  // Botón cambiar rol: admin → técnico directo; técnico → admin pide PIN
+  if (rol === 'admin' || rol === 'tecnico') {
     var btn = document.getElementById('btnCambiarRol');
-    if (btn) btn.style.display = '';
+    if (btn) { btn.style.display = ''; btn.textContent = rol === 'admin' ? '🔧 Técnico' : '⚙️ Admin'; }
   }
 }
 
 function pedirPinCambioRol() {
+  var sesion = window._sesion;
+  if (!sesion) return;
+  // De admin a técnico: directo, sin PIN
+  if (sesion.rol === 'admin') { _entrarConRol(sesion.nombre, 'tecnico'); return; }
+  // De técnico a admin: pide PIN
   document.getElementById('dlgCambioRolPin').value = '';
   document.getElementById('dlgCambioRolMsg').textContent = '';
   document.getElementById('dlgCambioRol').classList.add('show');
@@ -6731,44 +6735,27 @@ function confirmarCambioRol() {
   var pin = document.getElementById('dlgCambioRolPin').value.trim();
   var msg = document.getElementById('dlgCambioRolMsg');
   var sesion = window._sesion;
-  var esCreador = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
+  var esManuel = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
 
-  if (esCreador) { msg.textContent = 'Cierra sesión y entra con el otro PIN.'; return; }
+  if (esManuel) {
+    if (pin === MANUEL_ADMIN_PIN) { _entrarConRol(sesion.nombre, 'admin'); } else { msg.textContent = 'PIN incorrecto.'; }
+    return;
+  }
 
-  // Verificar en Firestore para admin (Diego)
+  // Verificar en Firestore para Diego (o cualquier técnico con rol admin disponible)
   var docId = sesion.nombre.toLowerCase().replace(/ /g,'_');
   _db.collection('usuario').doc(docId).get().then(function(snap) {
     if (snap.exists && snap.data().pin === pin) {
-      _lanzarSelectorRol();
+      document.getElementById('dlgCambioRol').classList.remove('show');
+      document.getElementById('dlgCambioRolPin').value = '';
+      _entrarConRol(sesion.nombre, 'admin');
     } else {
       msg.textContent = 'PIN incorrecto.';
     }
   });
 }
 
-function _lanzarSelectorRol() {
-  document.getElementById('dlgCambioRol').classList.remove('show');
-  document.getElementById('dlgCambioRolPin').value = '';
-  var sesion = window._sesion;
-  var roles = ['tecnico','admin'];
-  // Mostrar selector sobre la app
-  document.getElementById('w-login').style.display = 'flex';
-  document.querySelector('.app').style.display = 'none';
-  document.getElementById('loginForm').style.display = 'none';
-  document.getElementById('loginRolSel').style.display = 'block';
-  document.getElementById('loginRolNombre').textContent = sesion.nombre;
-  var btns = document.getElementById('loginRolBtns');
-  btns.innerHTML = '';
-  var labels = { tecnico: '🔧 Técnico', admin: '⚙️ Administrador', creador: '👑 Creador' };
-  roles.forEach(function(r) {
-    var b = document.createElement('button');
-    b.className = 'btn btn-p btn-full';
-    b.style.marginBottom = '8px';
-    b.textContent = labels[r] || r;
-    b.onclick = function() { _entrarConRol(sesion.nombre, r); };
-    btns.appendChild(b);
-  });
-}
+
 
 function abrirCatalogo() {
   var rol = window._sesion && window._sesion.rol;
