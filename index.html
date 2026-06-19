@@ -682,6 +682,7 @@ textarea{resize:vertical;min-height:72px}
           <div class="field"><label>Centro / tienda / pedido</label><input id="busca" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);" placeholder="Filtrar&hellip;"></div>
           <div class="field"><label>Fecha</label><input id="buscaF" type="date" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);"></div>
         </div>
+        <div id="histAdminTools">
         <div class="brow">
           <button class="btn btn-d btn-sm" onclick="pedirBorrarHist()">&#128465;&#65039; Borrar historial</button>
           <button class="btn btn-s btn-sm" onclick="limpiarFiltros()">&#10005; Limpiar filtros</button>
@@ -693,6 +694,7 @@ textarea{resize:vertical;min-height:72px}
         </div>
         <div class="brow" style="margin-top:6px">
           <button class="btn btn-s btn-sm" onclick="importarDesdeTexto()">&#128203; Importar desde texto pegado</button>
+        </div>
         </div>
         <div id="searchResults" style="display:none;margin-top:10px;"></div>
         <div id="confirmBorrar" style="display:none;margin-top:10px;padding:12px;background:var(--red-light);border:1px solid rgba(192,57,43,.2);border-radius:var(--r-sm)">
@@ -5579,8 +5581,8 @@ function verParte(idx){
     '<div class="divider"></div><div class="brow" style="margin-bottom:8px;">'+
     '<button class="btn btn-s btn-sm" onclick="hacerPDF('+idx+')">PDF</button>'+
     '<button class="btn btn-s btn-sm" onclick="compartirParte('+idx+')">Compartir</button>'+
-    '<button class="btn btn-amber btn-sm" onclick="abrirEdicionParte('+idx+')">&#9998; Editar</button>'+
-    '<button class="btn btn-d btn-sm" onclick="pedirBorrarParte('+idx+')">Borrar</button></div>'+
+    (_esAdminOCreador()?'<button class="btn btn-amber btn-sm" onclick="abrirEdicionParte('+idx+')">&#9998; Editar</button>':'')+
+    (_esAdminOCreador()?'<button class="btn btn-d btn-sm" onclick="pedirBorrarParte('+idx+')">Borrar</button>':'')+'</div>'+
     '<div id="confirmDel" style="display:none;padding:12px;background:var(--red-light);border:1px solid rgba(192,57,43,.2);border-radius:var(--r-sm);margin-top:8px">'+
     '<div style="font-size:.88rem;font-weight:600;color:var(--red);margin-bottom:8px">&iquest;Borrar este parte?</div>'+
     '<div style="display:flex;gap:8px"><button class="btn btn-d btn-sm" onclick="borrarParteOk('+idx+')">S&iacute;, borrar</button><button class="btn btn-s btn-sm" onclick="$(\'confirmDel\').style.display=\'none\'">Cancelar</button></div>'+
@@ -6605,16 +6607,21 @@ function _mostrarSelectorRol(nombre, roles) {
 }
 
 function _entrarConRol(nombre, rol) {
-  window._sesion = { nombre: nombre, rol: rol };
   try { localStorage.setItem('irv_sesion', JSON.stringify({ nombre: nombre, rol: rol })); } catch(e) {}
+  location.reload();
+}
+
+function _aplicarSesion(nombre, rol) {
+  window._sesion = { nombre: nombre, rol: rol };
   document.getElementById('w-login').style.display = 'none';
   document.querySelector('.app').style.display = 'block';
   var sub = document.getElementById('hdr-sub');
   if (sub) sub.textContent = nombre + ' · ' + rol;
   var icCat = document.getElementById('iconCatalogo');
   if (icCat) icCat.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
+  var histTools = document.getElementById('histAdminTools');
+  if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
-  // Mostrar splash tras login
   var sp = document.getElementById('splash');
   if (sp) {
     sp.style.display = 'flex';
@@ -6622,6 +6629,11 @@ function _entrarConRol(nombre, rol) {
     sp.style.pointerEvents = 'auto';
     sp.classList.remove('fade-out');
   }
+}
+
+function _esAdminOCreador() {
+  var rol = window._sesion && window._sesion.rol;
+  return rol === 'admin' || rol === 'creador';
 }
 
 function cerrarSesion() {
@@ -6632,7 +6644,7 @@ function cerrarSesion() {
 // Comprobar sesión guardada al arrancar
 try {
   var _s = localStorage.getItem('irv_sesion');
-  if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _entrarConRol(_ses.nombre, _ses.rol); }
+  if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _aplicarSesion(_ses.nombre, _ses.rol); }
 } catch(e) {}
 
 // ---- MÓDULO USUARIOS ----
