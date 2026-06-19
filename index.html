@@ -551,6 +551,30 @@ textarea{resize:vertical;min-height:72px}
   <button class="back" onclick="goTo('w-clientes')">&#8592; Clientes</button>
   <div id="menuGrid" class="app-grid"></div>
 </div>
+<div id="w-asignar" class="win">
+  <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
+  <div class="card">
+    <div class="card-title">&#128229; Asignar incidencia</div>
+    <div class="field"><label id="asgLabelPedido">N&ordm; orden</label><input id="asgPedido" inputmode="numeric" placeholder="Ej: 119137"></div>
+    <div class="field" id="asgFieldCentro"><label>N&ordm; centro</label><input id="asgCentro" inputmode="numeric" placeholder="Ej: 2721"></div>
+    <div class="field"><label>Tienda <span class="req">*</span></label><input id="asgTienda" placeholder="Mercadona SAN JAVIER 2721"></div>
+    <div class="field"><label>Direcci&oacute;n <span class="req">*</span></label><input id="asgDir"></div>
+    <div class="field"><label>Tel&eacute;fono <span class="req">*</span></label><input id="asgTel" type="tel" inputmode="numeric"></div>
+    <div class="field"><label>Tipo de trabajo <span class="req">*</span></label>
+      <div class="tgl" id="asgJobTgl"></div>
+      <input type="hidden" id="asgJob">
+    </div>
+    <div class="field"><label>T&eacute;cnico principal <span class="req">*</span></label>
+      <div class="tgl" id="asgTecTgl"></div>
+    </div>
+    <div class="brow"><button class="btn btn-p btn-full" onclick="guardarAsignacion()">&#128190; Asignar</button></div>
+    <div id="asgMsg" class="msg"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">&#128203; Incidencias asignadas</div>
+    <div id="asgLista" style="margin-top:8px;"></div>
+  </div>
+</div>
 <div id="w-form" class="win">
   <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
   <button class="btn btn-s btn-full" style="margin-bottom:10px;" onclick="toggleCard('cardLectura',this)">&#128196; Auto-relleno</button>
@@ -1096,9 +1120,12 @@ function renderMenu(){
     {ico:'&#128203;',cls:'ico-other',title:'Historial',id:'w-hist'},
     {ico:'&#128295;',cls:'ico-catalogo',title:'Materiales',id:'w-mat'}
   ];
+  if(_esAdminOCreador()){
+    items.push({ico:'&#128229;',cls:'ico-other',title:'Asignar incidencia',id:'w-asignar'});
+  }
   var html='';
   items.forEach(function(item){
-    html+='<div class="app-icon" onclick="goTo(\''+item.id+'\')">'
+    html+='<div class="app-icon" onclick="'+(item.id==='w-asignar'?'abrirAsignar()':'goTo(\''+item.id+'\')')+'">'
       +'<div class="app-icon-img '+item.cls+'">'+item.ico+'</div>'
       +'<span class="app-icon-label">'+item.title+'</span>'
       +'</div>';
@@ -6637,6 +6664,99 @@ function _aplicarSesion(nombre, rol) {
 function _esAdminOCreador() {
   var rol = window._sesion && window._sesion.rol;
   return rol === 'admin' || rol === 'creador';
+}
+
+// ---- MÓDULO INCIDENCIAS ----
+var _asgJob = '';
+var _asgTec = '';
+
+function abrirAsignar() {
+  if (!curCliente) return;
+  _asgJob = ''; _asgTec = '';
+  $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value='';
+  $('asgMsg').textContent='';
+  var esMerc = curCliente.tipo==='mercadona';
+  $('asgLabelPedido').innerHTML = esMerc ? 'N&ordm; orden <span class="req">*</span>' : 'N&ordm; orden / referencia';
+  $('asgFieldCentro').style.display = esMerc ? 'block' : 'none';
+  var jobs = curCliente.jobs||['Conductos','Climatización','Obras'];
+  $('asgJobTgl').innerHTML = jobs.map(function(j){
+    return '<button onclick="setAsgJob(\''+j+'\',this)">'+j+'</button>';
+  }).join('');
+  var tecs = getTecnicos().filter(function(t){ return t.activo !== false; });
+  $('asgTecTgl').innerHTML = tecs.map(function(t){
+    return '<button onclick="setAsgTec(\''+t.nombre.replace(/\'/g,"\\'")+'\',this)">'+t.nombre+'</button>';
+  }).join('');
+  goTo('w-asignar');
+  renderAsgLista();
+}
+
+function setAsgJob(j, el) { _asgJob = j; document.querySelectorAll('#asgJobTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
+function setAsgTec(t, el) { _asgTec = t; document.querySelectorAll('#asgTecTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
+
+function guardarAsignacion() {
+  var msg = $('asgMsg'); msg.textContent='';
+  var tienda=$('asgTienda').value.trim(), dir=$('asgDir').value.trim(), tel=$('asgTel').value.trim();
+  if (!tienda || !dir || !tel) { msg.textContent='Tienda, dirección y teléfono son obligatorios.'; return; }
+  if (!_asgJob) { msg.textContent='Selecciona el tipo de trabajo.'; return; }
+  if (!_asgTec) { msg.textContent='Selecciona el técnico principal.'; return; }
+  var data = {
+    clienteId: curCliente.id,
+    pedido: $('asgPedido').value.trim(),
+    centro: $('asgCentro').value.trim(),
+    tienda: tienda, dir: dir, tel: tel, job: _asgJob,
+    tecnicoPrincipal: _asgTec,
+    creadoPor: window._sesion.nombre,
+    estado: 'pendiente',
+    vista: false,
+    fechaCreacion: Date.now()
+  };
+  _db.collection('incidencias').add(data).then(function(){
+    msg.textContent='✓ Incidencia asignada.';
+    $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value='';
+    _asgJob=''; _asgTec='';
+    document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
+    renderAsgLista();
+  }).catch(function(){ msg.textContent='Error al guardar.'; });
+}
+
+function renderAsgLista() {
+  var el = $('asgLista'); if (!el || !curCliente) return;
+  el.innerHTML = '<div style="color:var(--text2);font-size:.82rem;">Cargando...</div>';
+  _db.collection('incidencias').where('clienteId','==',curCliente.id).get().then(function(snap){
+    if (snap.empty) { el.innerHTML='<div style="color:var(--text2);font-size:.82rem;">Sin incidencias asignadas.</div>'; return; }
+    var tecs = getTecnicos().filter(function(t){ return t.activo !== false; });
+    var html='';
+    snap.forEach(function(doc){
+      var d = doc.data();
+      var estLabel = {pendiente:'⏳ Pendiente', 'en-ejecucion':'🔧 En ejecución', terminado:'✅ Terminado'}[d.estado]||d.estado;
+      html += '<div class="card" style="margin-bottom:8px;">'
+        +'<div style="font-weight:700;font-size:.9rem;">'+d.tienda+'</div>'
+        +'<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+d.job+' · '+estLabel+'</div>'
+        +'<div style="font-size:.82rem;margin-top:6px;">👤 <b>'+d.tecnicoPrincipal+'</b></div>';
+      if (d.estado === 'pendiente') {
+        html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
+          +'<select onchange="reasignarIncidencia(\''+doc.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
+          +'<option value="">-- mantener --</option>'
+          +tecs.map(function(t){return '<option value="'+t.nombre.replace(/"/g,'')+'">'+t.nombre+'</option>';}).join('')
+          +'</select></div>'
+          +'<button class="btn btn-d btn-sm" style="margin-top:8px;" onclick="eliminarIncidencia(\''+doc.id+'\')">&#128465; Eliminar</button>';
+      }
+      html += '</div>';
+    });
+    el.innerHTML = html;
+  }).catch(function(){ el.innerHTML='<div style="color:var(--red);">Error al cargar.</div>'; });
+}
+
+function reasignarIncidencia(id, nuevoTec) {
+  if (!nuevoTec) return;
+  _db.collection('incidencias').doc(id).update({ tecnicoPrincipal: nuevoTec, vista:false }).then(function(){
+    renderAsgLista();
+  });
+}
+
+function eliminarIncidencia(id) {
+  if (!confirm('¿Eliminar esta incidencia asignada?')) return;
+  _db.collection('incidencias').doc(id).delete().then(function(){ renderAsgLista(); });
 }
 
 function cerrarSesion() {
