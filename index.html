@@ -6543,7 +6543,8 @@ firebase.initializeApp({
   appId: "1:179090613524:web:c8116a87bce66719d68e01"
 });
 var _db = firebase.firestore();
-var CREADOR = { nombre: 'manuel rivero', pin: '1212' };
+var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
+var MANUEL_ADMIN_PIN = '1212';
 
 function _iniciarSesion() {
   var nombre = document.getElementById('loginNombre').value.trim();
@@ -6552,9 +6553,11 @@ function _iniciarSesion() {
   msgEl.textContent = '';
   if (!nombre || pin.length !== 4) { msgEl.textContent = 'Introduce nombre y PIN de 4 dígitos.'; return; }
 
-  // Creador hardcodeado
-  if (nombre.toLowerCase() === CREADOR.nombre && pin === CREADOR.pin) {
-    _mostrarSelectorRol(nombre, ['tecnico', 'creador']); return;
+  // Manuel: dos PINes hardcodeados, cada uno entra directo a su rol
+  if (nombre.toLowerCase() === CREADOR.nombre) {
+    if (pin === CREADOR.pin) { _entrarConRol(nombre, 'creador'); return; }
+    if (pin === MANUEL_ADMIN_PIN) { _entrarConRol(nombre, 'admin'); return; }
+    msgEl.textContent = 'PIN incorrecto.'; return;
   }
 
   // Buscar primero en Firestore (admins con multi-rol)
@@ -6695,10 +6698,8 @@ function _mostrarIconoUsuarios() {
     if (ic) ic.style.display = '';
     if (rol === 'admin') { var rf = document.getElementById('nuRolField'); if(rf) rf.style.display='none'; }
   }
-  // Mostrar botón cambiar rol solo si tiene múltiples roles posibles
-  var nombre = window._sesion && window._sesion.nombre;
-  var esCreador = nombre && nombre.toLowerCase() === 'manuel rivero';
-  if (esCreador || rol === 'admin') {
+  // Mostrar botón cambiar rol solo para admin (Diego) — Manuel usa PINs fijos
+  if (rol === 'admin') {
     var btn = document.getElementById('btnCambiarRol');
     if (btn) btn.style.display = '';
   }
@@ -6716,30 +6717,25 @@ function confirmarCambioRol() {
   var msg = document.getElementById('dlgCambioRolMsg');
   var sesion = window._sesion;
   var esCreador = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
-  var pinCorrecto = esCreador ? (pin === '1212') : false;
 
-  if (!pinCorrecto && !esCreador) {
-    // Verificar en Firestore para admin
-    var docId = sesion.nombre.toLowerCase().replace(/ /g,'_');
-    _db.collection('usuario').doc(docId).get().then(function(snap) {
-      if (snap.exists && snap.data().pin === pin) {
-        _lanzarSelectorRol();
-      } else {
-        msg.textContent = 'PIN incorrecto.';
-      }
-    });
-    return;
-  }
-  if (pinCorrecto) { _lanzarSelectorRol(); return; }
-  msg.textContent = 'PIN incorrecto.';
+  if (esCreador) { msg.textContent = 'Cierra sesión y entra con el otro PIN.'; return; }
+
+  // Verificar en Firestore para admin (Diego)
+  var docId = sesion.nombre.toLowerCase().replace(/ /g,'_');
+  _db.collection('usuario').doc(docId).get().then(function(snap) {
+    if (snap.exists && snap.data().pin === pin) {
+      _lanzarSelectorRol();
+    } else {
+      msg.textContent = 'PIN incorrecto.';
+    }
+  });
 }
 
 function _lanzarSelectorRol() {
   document.getElementById('dlgCambioRol').classList.remove('show');
   document.getElementById('dlgCambioRolPin').value = '';
   var sesion = window._sesion;
-  var esCreador = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
-  var roles = esCreador ? ['tecnico','creador'] : ['tecnico','admin'];
+  var roles = ['tecnico','admin'];
   // Mostrar selector sobre la app
   document.getElementById('w-login').style.display = 'flex';
   document.querySelector('.app').style.display = 'none';
