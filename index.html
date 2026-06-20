@@ -5724,19 +5724,17 @@ function hacerPDFTexto(txt, titulo){
 
 
 function _subirParteAFirestore(parte){
-  console.log('Intentando subir parte a Firestore...', parte);
-  if(typeof _db === 'undefined' || !_db){ console.log('ERROR: _db no está definida'); return; }
-  if(!window._sesion){ console.log('ERROR: no hay sesión activa'); return; }
-  var docId = (parte.clienteId||'mercadona')+'_'+parte.fecha+'_'+parte.centro+'_'+parte.pedido;
-  docId = docId.replace(/[\/\s]/g,'-');
-  var datos = Object.assign({}, parte, {
-    tecnicoPrincipal: (parte.tecnicos&&parte.tecnicos[0])||window._sesion.nombre,
-    creadoPor: window._sesion.nombre,
-    fechaModificacion: Date.now()
-  });
-  _db.collection('partes').doc(docId).set(datos, {merge:true})
-    .then(function(){ console.log('Parte subido a Firestore OK:', docId); })
-    .catch(function(err){ console.log('ERROR al subir parte:', err); });
+  try{
+    if(typeof _db === 'undefined' || !_db || !window._sesion) return;
+    var docId = (parte.clienteId||'mercadona')+'_'+parte.fecha+'_'+parte.centro+'_'+parte.pedido;
+    docId = docId.replace(/[\/\s]/g,'-');
+    var datos = Object.assign({}, parte, {
+      tecnicoPrincipal: (parte.tecnicos&&parte.tecnicos[0])||window._sesion.nombre,
+      creadoPor: window._sesion.nombre,
+      fechaModificacion: Date.now()
+    });
+    _db.collection('partes').doc(docId).set(datos, {merge:true}).catch(function(){});
+  }catch(e){}
 }
 
 function _finalizarGuardado(estado){
@@ -6675,6 +6673,7 @@ function _aplicarSesion(nombre, rol) {
   var histTools = document.getElementById('histAdminTools');
   if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
+  if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(); }
   var sp = document.getElementById('splash');
   if (sp) {
     sp.style.display = 'flex';
@@ -6682,6 +6681,26 @@ function _aplicarSesion(nombre, rol) {
     sp.style.pointerEvents = 'auto';
     sp.classList.remove('fade-out');
   }
+}
+
+function _sincronizarPartesDesdeFirestore() {
+  if (typeof _db === 'undefined' || !_db) return;
+  _db.collection('partes').get().then(function(snap){
+    var h = getH();
+    var nuevos = 0;
+    snap.forEach(function(doc){
+      var d = doc.data();
+      var idx = h.findIndex(function(x){ return x.fecha===d.fecha && x.pedido===d.pedido && x.centro===d.centro; });
+      if (idx >= 0) {
+        // Ya existe local: actualizar solo si Firestore es más reciente
+        if ((d.fechaModificacion||0) > (h[idx]._fm||0)) { d._fm = d.fechaModificacion; h[idx] = d; }
+      } else {
+        d._fm = d.fechaModificacion;
+        h.push(d); nuevos++;
+      }
+    });
+    if (nuevos > 0 || snap.size > 0) { setH(h); }
+  }).catch(function(){});
 }
 
 function _esAdminOCreador() {
