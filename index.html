@@ -1181,6 +1181,14 @@ var MATS_DEF = {
 // ===== STORAGE =====
 function getH(){ return JSON.parse(localStorage.getItem('pm_v4')||'[]'); }
 function setH(d){ localStorage.setItem('pm_v4',JSON.stringify(d)); }
+function getHVisible(){
+  var h=getH();
+  if(window._sesion && window._sesion.rol==='tecnico'){
+    var miNombre=window._sesion.nombre.toLowerCase();
+    h=h.filter(function(r){ return r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre; });
+  }
+  return h;
+}
 function getMats(){ return JSON.parse(localStorage.getItem('pm_mats')||'{}'); }
 function setMats(d){ localStorage.setItem('pm_mats',JSON.stringify(d)); }
 function jkm(job){ return job==='Climatización'?'Climatizacion':job; }
@@ -4394,7 +4402,7 @@ function statsMkKpi(val, label, cls){
 
 function renderClientes(){
   var lista=getClientes();
-  var h=getH();
+  var h=getHVisible();
   var stats={};
   lista.forEach(function(c){stats[c.id]={activas:0,ultimaFin:''};});
   var ordenes={};
@@ -4643,14 +4651,9 @@ function franjas(td){
 }
 
 function getOrdenes(filtro){
-  var h=getH();
+  var h=getHVisible();
   // filtrar por cliente activo
   if(curCliente) h=h.filter(function(r){ return (r.clienteId||'mercadona')===curCliente.id; });
-  // filtrar por técnico principal si la sesión es de rol técnico
-  if(window._sesion && window._sesion.rol==='tecnico'){
-    var miNombre=window._sesion.nombre.toLowerCase();
-    h=h.filter(function(r){ return r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre; });
-  }
   var q=($('busca')?($('busca').value||''):'').toLowerCase();
   var qf=$('buscaF')?($('buscaF').value||''):'';
   var grupos={};
@@ -4791,7 +4794,13 @@ var _pedidoNoMerc=null;
 function verOrden(enc){
   var dec=decodeURIComponent(enc); var pp=dec.split('||'); var pedido=pp[0]; var centro=pp[1];
   var h=getH();
-  var partes=h.map(function(r,i){ return {r:r,idx:i}; }).filter(function(x){ return x.r.pedido===pedido&&x.r.centro===centro; });
+  var esTecnico=window._sesion && window._sesion.rol==='tecnico';
+  var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
+  var partes=h.map(function(r,i){ return {r:r,idx:i}; }).filter(function(x){
+    if(x.r.pedido!==pedido||x.r.centro!==centro) return false;
+    if(esTecnico && !(x.r.tecnicos && x.r.tecnicos[0] && x.r.tecnicos[0].toLowerCase()===miNombre)) return false;
+    return true;
+  });
   if(!partes.length) return;
   $('secView').style.display='none'; $('ordenView').style.display='block'; $('parteView').style.display='none';
   var g=partes[0].r;
@@ -6229,11 +6238,10 @@ function tm(x){ if(!x) return 0; var p=x.split(':'); return +p[0]*60+(+p[1]); }
 function toggleAddMat(){ $('addMatForm').style.display=$('addMatForm').style.display==='none'?'block':'none'; }
 
 function verCentros(){
-  var h=getH();
+  var h=getHVisible();
   if(curCliente)h=h.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
   // Determine which orders are finalized (last parte is terminado)
-  var allH=getH();
-  if(curCliente)allH=allH.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
+  var allH=h.slice();
   var ordenEstado={};
   var ordenPartes={};
   allH.forEach(function(r){
@@ -6272,11 +6280,10 @@ function verCentros(){
 
 function verIncidenciasCentro(centro){
   _curCentroFin=centro;
-  var h=getH();
+  var h=getHVisible();
   if(curCliente)h=h.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
   // Get all partes for this centro
-  var allForCentro=getH();
-  if(curCliente)allForCentro=allForCentro.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
+  var allForCentro=h.slice();
   allForCentro=allForCentro.filter(function(r){return r.centro===centro;});
   // Determine which orders are finalized
   var ordFinalized={};
