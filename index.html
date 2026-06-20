@@ -4646,6 +4646,11 @@ function getOrdenes(filtro){
   var h=getH();
   // filtrar por cliente activo
   if(curCliente) h=h.filter(function(r){ return (r.clienteId||'mercadona')===curCliente.id; });
+  // filtrar por técnico principal si la sesión es de rol técnico
+  if(window._sesion && window._sesion.rol==='tecnico'){
+    var miNombre=window._sesion.nombre.toLowerCase();
+    h=h.filter(function(r){ return r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre; });
+  }
   var q=($('busca')?($('busca').value||''):'').toLowerCase();
   var qf=$('buscaF')?($('buscaF').value||''):'';
   var grupos={};
@@ -6669,18 +6674,18 @@ function _mostrarSelectorRol(nombre, roles) {
     b.className = 'btn btn-p btn-full';
     b.style.marginBottom = '8px';
     b.textContent = labels[r] || r;
-    b.onclick = function() { _entrarConRol(nombre, r); };
+    b.onclick = function() { _entrarConRol(nombre, r, true); };
     btns.appendChild(b);
   });
 }
 
-function _entrarConRol(nombre, rol) {
-  try { localStorage.setItem('irv_sesion', JSON.stringify({ nombre: nombre, rol: rol })); } catch(e) {}
+function _entrarConRol(nombre, rol, multiRol) {
+  try { localStorage.setItem('irv_sesion', JSON.stringify({ nombre: nombre, rol: rol, multiRol: !!multiRol })); } catch(e) {}
   location.reload();
 }
 
-function _aplicarSesion(nombre, rol) {
-  window._sesion = { nombre: nombre, rol: rol };
+function _aplicarSesion(nombre, rol, multiRol) {
+  window._sesion = { nombre: nombre, rol: rol, multiRol: !!multiRol };
   document.getElementById('w-login').style.display = 'none';
   document.querySelector('.app').style.display = 'block';
   var sub = document.getElementById('hdr-sub');
@@ -6897,7 +6902,7 @@ function cerrarSesion() {
 // Comprobar sesión guardada al arrancar
 try {
   var _s = localStorage.getItem('irv_sesion');
-  if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _aplicarSesion(_ses.nombre, _ses.rol); }
+  if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol); }
 } catch(e) {}
 
 // ---- MÓDULO USUARIOS ----
@@ -6962,8 +6967,8 @@ function _mostrarIconoUsuarios() {
     if (ic) ic.style.display = '';
     if (rol === 'admin') { var rf = document.getElementById('nuRolField'); if(rf) rf.style.display='none'; }
   }
-  // Botón cambiar rol: admin → técnico directo; técnico → admin pide PIN
-  if (rol === 'admin' || rol === 'tecnico') {
+  // Botón cambiar rol: solo si el usuario demostró tener más de un rol disponible
+  if (window._sesion && window._sesion.multiRol) {
     var btn = document.getElementById('btnCambiarRol');
     if (btn) { btn.style.display = ''; btn.textContent = rol === 'admin' ? '🔧 Técnico' : '⚙️ Admin'; }
   }
@@ -6973,7 +6978,7 @@ function pedirPinCambioRol() {
   var sesion = window._sesion;
   if (!sesion) return;
   // De admin a técnico: directo, sin PIN
-  if (sesion.rol === 'admin') { _entrarConRol(sesion.nombre, 'tecnico'); return; }
+  if (sesion.rol === 'admin') { _entrarConRol(sesion.nombre, 'tecnico', true); return; }
   // De técnico a admin: pide PIN
   document.getElementById('dlgCambioRolPin').value = '';
   document.getElementById('dlgCambioRolMsg').textContent = '';
@@ -6988,7 +6993,7 @@ function confirmarCambioRol() {
   var esManuel = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
 
   if (esManuel) {
-    if (pin === MANUEL_ADMIN_PIN) { _entrarConRol(sesion.nombre, 'admin'); } else { msg.textContent = 'PIN incorrecto.'; }
+    if (pin === MANUEL_ADMIN_PIN) { _entrarConRol(sesion.nombre, 'admin', true); } else { msg.textContent = 'PIN incorrecto.'; }
     return;
   }
 
@@ -6998,7 +7003,7 @@ function confirmarCambioRol() {
     if (snap.exists && snap.data().pin === pin) {
       document.getElementById('dlgCambioRol').classList.remove('show');
       document.getElementById('dlgCambioRolPin').value = '';
-      _entrarConRol(sesion.nombre, 'admin');
+      _entrarConRol(sesion.nombre, 'admin', true);
     } else {
       msg.textContent = 'PIN incorrecto.';
     }
