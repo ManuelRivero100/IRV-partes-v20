@@ -1189,6 +1189,14 @@ function getHVisible(){
   }
   return h;
 }
+function getHVisibleStats(){
+  var h=getH();
+  if(window._sesion && window._sesion.rol==='tecnico'){
+    var miNombre=window._sesion.nombre.toLowerCase();
+    h=h.filter(function(r){ return r.tecnicos && r.tecnicos.some(function(t){ return t.toLowerCase()===miNombre; }); });
+  }
+  return h;
+}
 function getMats(){ return JSON.parse(localStorage.getItem('pm_mats')||'{}'); }
 function setMats(d){ localStorage.setItem('pm_mats',JSON.stringify(d)); }
 function jkm(job){ return job==='Climatización'?'Climatizacion':job; }
@@ -2404,7 +2412,7 @@ function statsInclActivas(){
 
 function statsGetOrdenEstados(){
   var _os={};
-  getH().forEach(function(r){
+  getHVisibleStats().forEach(function(r){
     var k=(r.pedido||'')+'||'+(r.centro||'');
     if(!_os[k]||r.fecha>_os[k].fecha) _os[k]={fecha:r.fecha,estado:r.estado||'terminado'};
   });
@@ -2414,7 +2422,7 @@ function statsGetOrdenEstados(){
 function statsFiltrar(){
   var cli=$('statsCliente')?$('statsCliente').value:'todos';
   var hoy=new Date();
-  var h=getH();
+  var h=getHVisibleStats();
   var _os=statsGetOrdenEstados();
   var ia=statsInclActivas();
   var hoy=new Date();
