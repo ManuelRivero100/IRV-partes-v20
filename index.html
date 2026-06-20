@@ -509,6 +509,7 @@ textarea{resize:vertical;min-height:72px}
       <div class="card-title">&#43; Nuevo t&eacute;cnico</div>
       <div class="field"><label>Nombre</label><input id="tec-nombre" placeholder="Ej: Manuel"></div>
       <div class="field"><label>Tel&eacute;fono</label><input id="tec-tel" placeholder="Ej: 666123456" type="tel"></div>
+      <div class="field"><label>PIN (4 d&iacute;gitos)</label><input id="tec-pin" type="text" inputmode="numeric" maxlength="4" placeholder="Ej: 1234" style="letter-spacing:.2em;"></div>
       <div class="field"><label>Tipo de trabajo</label>
         <div id="tec-jobs-tgl" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">
           <button onclick="tecToggleJob('Climatización',this)" style="padding:5px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.8rem;font-family:inherit;cursor:pointer;">Climatización</button>
@@ -1429,9 +1430,12 @@ function tecGuardar(){
   if(tecs.find(function(t){return t.nombre.toLowerCase()===nom.toLowerCase();})){
     showMsg('msgTec','Ya existe un técnico con ese nombre.','warn'); return;
   }
-  tecs.push({id:'tec_'+Date.now(), nombre:nom, tel:$('tec-tel').value.trim(), jobs:_tecJobs.slice()});
+  var pin=$('tec-pin').value.trim();
+  var nuevoTec={id:'tec_'+Date.now(), nombre:nom, tel:$('tec-tel').value.trim(), jobs:_tecJobs.slice(), pin:pin, activo:true};
+  tecs.push(nuevoTec);
   setTecnicos(tecs);
-  $('tec-nombre').value=''; $('tec-tel').value=''; _tecJobs=[];
+  if(pin.length===4) _subirTecnicoAFirestore(nuevoTec);
+  $('tec-nombre').value=''; $('tec-tel').value=''; $('tec-pin').value=''; _tecJobs=[];
   document.querySelectorAll('#tec-jobs-tgl button').forEach(function(b){
     b.style.background='var(--surface2)'; b.style.color='var(--text2)'; b.style.borderColor='var(--border)';
   });
@@ -1448,6 +1452,7 @@ function tecEliminar(id){
 function renderCatTecnicos(){
   var el=$('catTecnicosList'); if(!el) return;
   var tecs=getTecnicos();
+  tecs.forEach(function(t){ if(t.pin) _subirTecnicoAFirestore(t); }); // migrar a Firestore
   if(!tecs.length){ el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay técnicos registrados.</div>'; return; }
   el.innerHTML=tecs.map(function(t){
     var inactivo = t.activo === false;
@@ -1467,12 +1472,23 @@ function renderCatTecnicos(){
   }).join('');
 }
 
+function _subirTecnicoAFirestore(t){
+  try{
+    if(typeof _db === 'undefined' || !_db) return;
+    if(!t.pin || t.pin.length!==4) return; // solo subir si tiene PIN válido
+    var docId = t.nombre.toLowerCase().replace(/ /g,'_');
+    _db.collection('usuario').doc(docId).set({
+      nombre: t.nombre, pin: t.pin, roles: ['tecnico'], activo: t.activo!==false
+    }, {merge:true}).catch(function(){});
+  }catch(e){}
+}
+
 function tecEditarNombre(id, nuevoNombre){
   nuevoNombre = nuevoNombre.trim();
   if(!nuevoNombre) return;
   var tecs=getTecnicos();
   var t=tecs.find(function(t){return t.id===id;});
-  if(t){ t.nombre=nuevoNombre; setTecnicos(tecs); }
+  if(t){ t.nombre=nuevoNombre; setTecnicos(tecs); _subirTecnicoAFirestore(t); }
 }
 
 function tecEditarPin(id, pin){
@@ -1480,13 +1496,13 @@ function tecEditarPin(id, pin){
   if(pin.length !== 4) return;
   var tecs=getTecnicos();
   var t=tecs.find(function(t){return t.id===id;});
-  if(t){ t.pin=pin; setTecnicos(tecs); }
+  if(t){ t.pin=pin; setTecnicos(tecs); _subirTecnicoAFirestore(t); }
 }
 
 function tecToggleActivo(id, activarAhora){
   var tecs=getTecnicos();
   var t=tecs.find(function(t){return t.id===id;});
-  if(t){ t.activo=activarAhora; setTecnicos(tecs); renderCatTecnicos(); }
+  if(t){ t.activo=activarAhora; setTecnicos(tecs); renderCatTecnicos(); _subirTecnicoAFirestore(t); }
 }
 
 function catTab(tab,btn){
