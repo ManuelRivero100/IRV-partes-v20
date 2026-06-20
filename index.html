@@ -5724,17 +5724,19 @@ function hacerPDFTexto(txt, titulo){
 
 
 function _subirParteAFirestore(parte){
-  try{
-    if(!window._db || !window._sesion) return;
-    var docId = (parte.clienteId||'mercadona')+'_'+parte.fecha+'_'+parte.centro+'_'+parte.pedido;
-    docId = docId.replace(/[\/\s]/g,'-');
-    var datos = Object.assign({}, parte, {
-      tecnicoPrincipal: (parte.tecnicos&&parte.tecnicos[0])||window._sesion.nombre,
-      creadoPor: window._sesion.nombre,
-      fechaModificacion: Date.now()
-    });
-    _db.collection('partes').doc(docId).set(datos, {merge:true}).catch(function(){});
-  }catch(e){}
+  console.log('Intentando subir parte a Firestore...', parte);
+  if(typeof _db === 'undefined' || !_db){ console.log('ERROR: _db no está definida'); return; }
+  if(!window._sesion){ console.log('ERROR: no hay sesión activa'); return; }
+  var docId = (parte.clienteId||'mercadona')+'_'+parte.fecha+'_'+parte.centro+'_'+parte.pedido;
+  docId = docId.replace(/[\/\s]/g,'-');
+  var datos = Object.assign({}, parte, {
+    tecnicoPrincipal: (parte.tecnicos&&parte.tecnicos[0])||window._sesion.nombre,
+    creadoPor: window._sesion.nombre,
+    fechaModificacion: Date.now()
+  });
+  _db.collection('partes').doc(docId).set(datos, {merge:true})
+    .then(function(){ console.log('Parte subido a Firestore OK:', docId); })
+    .catch(function(err){ console.log('ERROR al subir parte:', err); });
 }
 
 function _finalizarGuardado(estado){
