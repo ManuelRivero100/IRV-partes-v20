@@ -5723,6 +5723,20 @@ function hacerPDFTexto(txt, titulo){
 }
 
 
+function _subirParteAFirestore(parte){
+  try{
+    if(!window._db || !window._sesion) return;
+    var docId = (parte.clienteId||'mercadona')+'_'+parte.fecha+'_'+parte.centro+'_'+parte.pedido;
+    docId = docId.replace(/[\/\s]/g,'-');
+    var datos = Object.assign({}, parte, {
+      tecnicoPrincipal: (parte.tecnicos&&parte.tecnicos[0])||window._sesion.nombre,
+      creadoPor: window._sesion.nombre,
+      fechaModificacion: Date.now()
+    });
+    _db.collection('partes').doc(docId).set(datos, {merge:true}).catch(function(){});
+  }catch(e){}
+}
+
 function _finalizarGuardado(estado){
   var r=window.recTmp; if(!r) return;
   r.estado=estado;
@@ -5737,6 +5751,7 @@ function _finalizarGuardado(estado){
     if(mismoId){
       // Misma fecha+centro+orden → reemplazar sin preguntar
       h[_editIdx]=r; setH(h); _editIdx=null; window._editIdxBackup=null;
+      _subirParteAFirestore(r);
       showMsg('msgRes','Parte actualizado.','success');
       $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
       setTimeout(function(){ goTo('w-menu'); },1200);
@@ -5750,6 +5765,7 @@ function _finalizarGuardado(estado){
   if(_idxDup>=0){
     if(confirm('Ya existe un parte con la misma fecha, centro y orden.\n¿Reemplazar el parte existente?\n(Cancela para descartar el nuevo)')){
       h[_idxDup]=r; setH(h);
+      _subirParteAFirestore(r);
       showMsg('msgRes','Parte reemplazado.','success');
       $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
       setTimeout(function(){ goTo('w-menu'); },1200);
@@ -5759,6 +5775,7 @@ function _finalizarGuardado(estado){
     return;
   }
   h.push(r); setH(h);
+  _subirParteAFirestore(r);
   showMsg('msgRes','Guardado correctamente.','success');
   $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
   setTimeout(function(){ goTo('w-menu'); },1200);
@@ -6738,34 +6755,56 @@ function abrirAsignar() {
 function setAsgJob(j, el) { _asgJob = j; document.querySelectorAll('#asgJobTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
 function setAsgTec(t, el) { _asgTec = t; document.querySelectorAll('#asgTecTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
 
+function _irAlCampo(id){
+  var el=$(id);
+  if(el){ el.scrollIntoView({behavior:'smooth',block:'center'}); el.focus(); }
+}
+
 function guardarAsignacion() {
-  var msg = $('asgMsg'); msg.textContent=''; msg.style.color='var(--red)';
   var tienda=$('asgTienda').value.trim(), dir=$('asgDir').value.trim(), tel=$('asgTel').value.trim();
-  if (!tienda) { msg.textContent='⚠ Falta: Tienda.'; return; }
-  if (!dir) { msg.textContent='⚠ Falta: Dirección.'; return; }
-  if (!tel) { msg.textContent='⚠ Falta: Teléfono.'; return; }
-  if (!_asgJob) { msg.textContent='⚠ Falta: Tipo de trabajo (toca uno de los botones).'; return; }
-  if (!_asgTec) { msg.textContent='⚠ Falta: Técnico principal (toca uno de los botones).'; return; }
-  var data = {
-    clienteId: curCliente.id,
-    pedido: $('asgPedido').value.trim(),
-    centro: $('asgCentro').value.trim(),
-    tienda: tienda, dir: dir, tel: tel, job: _asgJob,
-    km: $('asgKm').value.trim(), tr: $('asgTr').value.trim(),
-    tecnicoPrincipal: _asgTec,
-    creadoPor: window._sesion.nombre,
-    estado: 'pendiente',
-    vista: false,
-    fechaCreacion: Date.now()
-  };
-  _db.collection('incidencias').add(data).then(function(){
-    msg.style.color='var(--green)';
-    msg.textContent='✓ Incidencia asignada.';
-    $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value='';
-    _asgJob=''; _asgTec='';
-    document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
-    renderAsgLista();
-  }).catch(function(){ msg.textContent='Error al guardar.'; });
+  var pedido=$('asgPedido').value.trim();
+  if (!tienda) { showMsg('asgMsg','Falta: Tienda.','error'); _irAlCampo('asgTienda'); return; }
+  if (!dir) { showMsg('asgMsg','Falta: Dirección.','error'); _irAlCampo('asgDir'); return; }
+  if (!tel) { showMsg('asgMsg','Falta: Teléfono.','error'); _irAlCampo('asgTel'); return; }
+  if (!_asgJob) { showMsg('asgMsg','Falta: Tipo de trabajo (toca uno de los botones).','error'); _irAlCampo('asgJobTgl'); return; }
+  if (!_asgTec) { showMsg('asgMsg','Falta: Técnico principal (toca uno de los botones).','error'); _irAlCampo('asgTecTgl'); return; }
+
+  function _guardar(){
+    var data = {
+      clienteId: curCliente.id,
+      pedido: pedido,
+      centro: $('asgCentro').value.trim(),
+      tienda: tienda, dir: dir, tel: tel, job: _asgJob,
+      km: $('asgKm').value.trim(), tr: $('asgTr').value.trim(),
+      tecnicoPrincipal: _asgTec,
+      creadoPor: window._sesion.nombre,
+      estado: 'pendiente',
+      vista: false,
+      fechaCreacion: Date.now()
+    };
+    _db.collection('incidencias').add(data).then(function(){
+      showMsg('asgMsg','✓ Incidencia asignada.','success');
+      $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value='';
+      _asgJob=''; _asgTec='';
+      document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
+      renderAsgLista();
+    }).catch(function(){ showMsg('asgMsg','Error al guardar.','error'); });
+  }
+
+  // Verificar si ya existe una incidencia pendiente/en-ejecución con el mismo nº de orden
+  if (pedido) {
+    _db.collection('incidencias').where('clienteId','==',curCliente.id).where('pedido','==',pedido).get().then(function(snap){
+      var existente=null;
+      snap.forEach(function(doc){ var d=doc.data(); if(d.estado!=='terminado') existente=d; });
+      if (existente) {
+        showMsg('asgMsg','⚠ Esta orden ya está asignada a '+existente.tecnicoPrincipal+'.','error');
+      } else {
+        _guardar();
+      }
+    }).catch(_guardar);
+  } else {
+    _guardar();
+  }
 }
 
 function renderAsgLista() {
