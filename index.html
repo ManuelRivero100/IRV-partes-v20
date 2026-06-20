@@ -555,7 +555,9 @@ textarea{resize:vertical;min-height:72px}
   <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
   <div class="card">
     <div class="card-title">&#128229; Asignar incidencia</div>
-    <div class="field"><label id="asgLabelPedido">N&ordm; orden</label><input id="asgPedido" inputmode="numeric" placeholder="Ej: 119137"></div>
+    <div class="field"><label>Pegar texto de la orden</label><textarea id="asgRaw" rows="5" placeholder="Pega aqu&iacute; el texto de la orden&hellip;"></textarea></div>
+    <div class="brow"><button class="btn btn-p" onclick="leerAsg()">&#128269; Autocompletar</button><button class="btn btn-s" onclick="$('asgRaw').value=''">&#128465;&#65039; Limpiar</button></div>
+    <div class="field" style="margin-top:10px;"><label id="asgLabelPedido">N&ordm; orden</label><input id="asgPedido" inputmode="numeric" placeholder="Ej: 119137"></div>
     <div class="field" id="asgFieldCentro"><label>N&ordm; centro</label><input id="asgCentro" inputmode="numeric" placeholder="Ej: 2721"></div>
     <div class="field"><label>Tienda <span class="req">*</span></label><input id="asgTienda" placeholder="Mercadona SAN JAVIER 2721"></div>
     <div class="field"><label>Direcci&oacute;n <span class="req">*</span></label><input id="asgDir"></div>
@@ -6670,9 +6672,34 @@ function _esAdminOCreador() {
 var _asgJob = '';
 var _asgTec = '';
 
+function leerAsg(){
+  var t=$('asgRaw').value; if(!t.trim()){ $('asgMsg').textContent='Pega el texto primero.'; return; }
+  var pedido=cap(/PEDIDO DE SERVICIO\s+N[º°ª]?[:\s]+(\d+)/i,t)||cap(/N[º°ª]\s*ORDEN[:\s]+(\S+)/i,t)||cap(/(\d{6,})/,t);
+  var centro=cap(/N[º°ª]?\s*de\s*Centro[:\s]+(\d+)/i,t)||cap(/Centro[:\s-]+(\d+)/i,t);
+  var denom=cap(/(?:TIENDA|Denominaci[oó]n)[:\s]+([^\n]+)/i,t);
+  if(!centro&&denom){ var cm=denom.trim().match(/(\d{3,5})\s*$/); if(cm) centro=cm[1]; }
+  var tel=cap(/TEL[EÉ]FONO[^:]*[:\s]+(\+?\d[\d\s\-]{6,})/i,t);
+  var dir=cap(/DIRECCI[OÓ]N[:\s]+([^\n]+)/i,t);
+  var job=cap(/TIPO[:\s]+([^\n]+)/i,t);
+  var n=0;
+  if(pedido){ $('asgPedido').value=pedido.trim(); n++; }
+  if(centro){ $('asgCentro').value=centro.trim(); n++; }
+  if(denom){ $('asgTienda').value=denom.trim(); n++; }
+  if(dir){ $('asgDir').value=dir.trim(); n++; }
+  if(tel){ $('asgTel').value=tel.trim(); n++; }
+  if(job){
+    var jobT=job.trim();
+    document.querySelectorAll('#asgJobTgl button').forEach(function(btn){
+      if(btn.textContent.trim().toLowerCase()===jobT.toLowerCase()){ btn.click(); n++; }
+    });
+  }
+  $('asgMsg').textContent = n?n+' campo(s) autocompletados.':'No se encontraron datos.';
+}
+
 function abrirAsignar() {
   if (!curCliente) return;
   _asgJob = ''; _asgTec = '';
+  $('asgRaw').value='';
   $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value='';
   $('asgMsg').textContent='';
   var esMerc = curCliente.tipo==='mercadona';
@@ -6683,9 +6710,9 @@ function abrirAsignar() {
     return '<button onclick="setAsgJob(\''+j+'\',this)">'+j+'</button>';
   }).join('');
   var tecs = getTecnicos().filter(function(t){ return t.activo !== false; });
-  $('asgTecTgl').innerHTML = tecs.map(function(t){
+  $('asgTecTgl').innerHTML = tecs.length ? tecs.map(function(t){
     return '<button onclick="setAsgTec(\''+t.nombre.replace(/\'/g,"\\'")+'\',this)">'+t.nombre+'</button>';
-  }).join('');
+  }).join('') : '<div style="color:var(--text2);font-size:.82rem;padding:6px;">No hay técnicos activos en el catálogo.</div>';
   goTo('w-asignar');
   renderAsgLista();
 }
@@ -6694,11 +6721,11 @@ function setAsgJob(j, el) { _asgJob = j; document.querySelectorAll('#asgJobTgl b
 function setAsgTec(t, el) { _asgTec = t; document.querySelectorAll('#asgTecTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
 
 function guardarAsignacion() {
-  var msg = $('asgMsg'); msg.textContent='';
+  var msg = $('asgMsg'); msg.textContent=''; msg.style.color='';
   var tienda=$('asgTienda').value.trim(), dir=$('asgDir').value.trim(), tel=$('asgTel').value.trim();
-  if (!tienda || !dir || !tel) { msg.textContent='Tienda, dirección y teléfono son obligatorios.'; return; }
-  if (!_asgJob) { msg.textContent='Selecciona el tipo de trabajo.'; return; }
-  if (!_asgTec) { msg.textContent='Selecciona el técnico principal.'; return; }
+  if (!tienda || !dir || !tel) { msg.textContent='⚠ Tienda, dirección y teléfono son obligatorios.'; msg.style.color='var(--red)'; return; }
+  if (!_asgJob) { msg.textContent='⚠ Selecciona el tipo de trabajo (toca uno de los botones).'; msg.style.color='var(--red)'; return; }
+  if (!_asgTec) { msg.textContent='⚠ Selecciona el técnico principal (toca uno de los botones).'; msg.style.color='var(--red)'; return; }
   var data = {
     clienteId: curCliente.id,
     pedido: $('asgPedido').value.trim(),
