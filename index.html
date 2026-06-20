@@ -558,10 +558,12 @@ textarea{resize:vertical;min-height:72px}
     <div class="field"><label>Pegar texto de la orden</label><textarea id="asgRaw" rows="5" placeholder="Pega aqu&iacute; el texto de la orden&hellip;"></textarea></div>
     <div class="brow"><button class="btn btn-p" onclick="leerAsg()">&#128269; Autocompletar</button><button class="btn btn-s" onclick="$('asgRaw').value=''">&#128465;&#65039; Limpiar</button></div>
     <div class="field" style="margin-top:10px;"><label id="asgLabelPedido">N&ordm; orden</label><input id="asgPedido" inputmode="numeric" placeholder="Ej: 119137"></div>
-    <div class="field" id="asgFieldCentro"><label>N&ordm; centro</label><input id="asgCentro" inputmode="numeric" placeholder="Ej: 2721"></div>
+    <div class="field" id="asgFieldCentro"><label>N&ordm; centro</label><input id="asgCentro" inputmode="numeric" placeholder="Ej: 2721" oninput="buscarKmAsg(this.value)"></div>
     <div class="field"><label>Tienda <span class="req">*</span></label><input id="asgTienda" placeholder="Mercadona SAN JAVIER 2721"></div>
     <div class="field"><label>Direcci&oacute;n <span class="req">*</span></label><input id="asgDir"></div>
     <div class="field"><label>Tel&eacute;fono <span class="req">*</span></label><input id="asgTel" type="tel" inputmode="numeric"></div>
+    <div class="field"><label>Km (opcional)</label><input id="asgKm" type="number" inputmode="decimal" placeholder="Ej: 35"></div>
+    <div class="field"><label>Desplazamiento min. (opcional)</label><input id="asgTr" type="number" inputmode="numeric" placeholder="Ej: 40"></div>
     <div class="field"><label>Tipo de trabajo <span class="req">*</span></label>
       <div class="tgl" id="asgJobTgl"></div>
       <input type="hidden" id="asgJob">
@@ -6683,7 +6685,7 @@ function leerAsg(){
   var job=cap(/TIPO[:\s]+([^\n]+)/i,t);
   var n=0;
   if(pedido){ $('asgPedido').value=pedido.trim(); n++; }
-  if(centro){ $('asgCentro').value=centro.trim(); n++; }
+  if(centro){ $('asgCentro').value=centro.trim(); n++; buscarKmAsg(centro.trim()); }
   if(denom){
     var nombreTienda='Mercadona '+denom.trim()+(centro?' '+centro.trim():'');
     $('asgTienda').value=nombreTienda; n++;
@@ -6699,11 +6701,24 @@ function leerAsg(){
   $('asgMsg').textContent = n?n+' campo(s) autocompletados.':'No se encontraron datos.';
 }
 
+function buscarKmAsg(centro){
+  centro=(centro||'').trim(); if(!centro) return;
+  var h=getH();
+  for(var i=h.length-1;i>=0;i--){
+    var r=h[i];
+    if((r.centro||'')===centro && r.km){
+      if(!$('asgKm').value){ $('asgKm').value=r.km; }
+      if(!$('asgTr').value && r.tr){ $('asgTr').value=r.tr; }
+      break;
+    }
+  }
+}
+
 function abrirAsignar() {
   if (!curCliente) return;
   _asgJob = ''; _asgTec = '';
   $('asgRaw').value='';
-  $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value='';
+  $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value='';
   $('asgMsg').textContent='';
   var esMerc = curCliente.tipo==='mercadona';
   $('asgLabelPedido').innerHTML = esMerc ? 'N&ordm; orden <span class="req">*</span>' : 'N&ordm; orden / referencia';
@@ -6724,16 +6739,19 @@ function setAsgJob(j, el) { _asgJob = j; document.querySelectorAll('#asgJobTgl b
 function setAsgTec(t, el) { _asgTec = t; document.querySelectorAll('#asgTecTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
 
 function guardarAsignacion() {
-  var msg = $('asgMsg'); msg.textContent=''; msg.style.color='';
+  var msg = $('asgMsg'); msg.textContent=''; msg.style.color='var(--red)';
   var tienda=$('asgTienda').value.trim(), dir=$('asgDir').value.trim(), tel=$('asgTel').value.trim();
-  if (!tienda || !dir || !tel) { msg.textContent='⚠ Tienda, dirección y teléfono son obligatorios.'; msg.style.color='var(--red)'; return; }
-  if (!_asgJob) { msg.textContent='⚠ Selecciona el tipo de trabajo (toca uno de los botones).'; msg.style.color='var(--red)'; return; }
-  if (!_asgTec) { msg.textContent='⚠ Selecciona el técnico principal (toca uno de los botones).'; msg.style.color='var(--red)'; return; }
+  if (!tienda) { msg.textContent='⚠ Falta: Tienda.'; return; }
+  if (!dir) { msg.textContent='⚠ Falta: Dirección.'; return; }
+  if (!tel) { msg.textContent='⚠ Falta: Teléfono.'; return; }
+  if (!_asgJob) { msg.textContent='⚠ Falta: Tipo de trabajo (toca uno de los botones).'; return; }
+  if (!_asgTec) { msg.textContent='⚠ Falta: Técnico principal (toca uno de los botones).'; return; }
   var data = {
     clienteId: curCliente.id,
     pedido: $('asgPedido').value.trim(),
     centro: $('asgCentro').value.trim(),
     tienda: tienda, dir: dir, tel: tel, job: _asgJob,
+    km: $('asgKm').value.trim(), tr: $('asgTr').value.trim(),
     tecnicoPrincipal: _asgTec,
     creadoPor: window._sesion.nombre,
     estado: 'pendiente',
@@ -6741,8 +6759,9 @@ function guardarAsignacion() {
     fechaCreacion: Date.now()
   };
   _db.collection('incidencias').add(data).then(function(){
+    msg.style.color='var(--green)';
     msg.textContent='✓ Incidencia asignada.';
-    $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value='';
+    $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value='';
     _asgJob=''; _asgTec='';
     document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
     renderAsgLista();
