@@ -6072,6 +6072,7 @@ function guardarEdicionParte(){
       .replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p){return p+newTel;});
   }
   setH(h);
+  _subirParteAFirestore(r);
   showMsg('msgEdit','Guardado correctamente.','success');
   setTimeout(function(){verParte(_editIdx);},700);
 }
@@ -6674,6 +6675,7 @@ function _aplicarSesion(nombre, rol) {
   if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
   if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(); }
+  else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre); }
   var sp = document.getElementById('splash');
   if (sp) {
     sp.style.display = 'flex';
@@ -6683,9 +6685,10 @@ function _aplicarSesion(nombre, rol) {
   }
 }
 
-function _sincronizarPartesDesdeFirestore() {
+function _sincronizarPartesDesdeFirestore(soloTecnico) {
   if (typeof _db === 'undefined' || !_db) return;
-  _db.collection('partes').get().then(function(snap){
+  var query = soloTecnico ? _db.collection('partes').where('tecnicoPrincipal','==',soloTecnico) : _db.collection('partes');
+  query.get().then(function(snap){
     var h = getH();
     var nuevos = 0;
     snap.forEach(function(doc){
