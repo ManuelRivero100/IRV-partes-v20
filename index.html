@@ -6750,6 +6750,7 @@ function _sincronizarClientesDesdeFirestore() {
 
 function _aplicarSesion(nombre, rol, multiRol) {
   window._sesion = { nombre: nombre, rol: rol, multiRol: !!multiRol };
+  renderClientes();
   document.getElementById('w-login').style.display = 'none';
   document.querySelector('.app').style.display = 'block';
   var sub = document.getElementById('hdr-sub');
