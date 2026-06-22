@@ -1114,8 +1114,13 @@ function guardarNuevoCliente(){
   var c={id:id,nombre:n,tipo:_ncTipo,jobs:jobs,codigos:false,precios:_ncTipo==='particular'};
   var extra=JSON.parse(localStorage.getItem('pm_clientes')||'[]');
   extra.push(c); localStorage.setItem('pm_clientes',JSON.stringify(extra));
+  _subirClienteAFirestore(c);
   $('nc-nombre').value=''; $('nc-jobs').value='';
   renderClientes(); goTo('w-clientes');
+}
+
+function _subirClienteAFirestore(c){
+  try{ if(typeof _db==='undefined'||!_db) return; _db.collection('clientes').doc(c.id).set(c,{merge:true}).catch(function(){}); }catch(e){}
 }
 
 function renderMenu(){
@@ -2290,6 +2295,10 @@ function statsRenderTecnicos(datos){
     });
   });
   var tecs=Object.keys(tecMap);
+  if(window._sesion && window._sesion.rol==='tecnico'){
+    var miNombre=window._sesion.nombre.toLowerCase();
+    tecs=tecs.filter(function(t){ return t.toLowerCase()===miNombre; });
+  }
   if(!tecs.length){ sec.style.display='none'; return; }
   sec.style.display='block';
   list.innerHTML=tecs.sort().map(function(tec){
@@ -4719,12 +4728,15 @@ var _actObrasCallback=null;
 function mostrarDlgInicioOrden(){
   var clienteId=curCliente?curCliente.id:'mercadona';
   var h=getH();
+  var esTecnico=window._sesion && window._sesion.rol==='tecnico';
+  var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
   var activas=[];
   var seen={};
   for(var i=h.length-1;i>=0;i--){
     var r=h[i];
     if((r.clienteId||'mercadona')!==clienteId) continue;
     if((r.estado||'terminado')!=='en-ejecucion') continue;
+    if(esTecnico && !(r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre)) continue;
     var k=r.pedido+'||'+r.centro;
     if(seen[k]) continue;
     seen[k]=true;
@@ -5021,11 +5033,14 @@ function buscarPorCentroORef(val){
   var esMerc=curCliente&&curCliente.tipo==='mercadona';
   var clienteId=curCliente?curCliente.id:'mercadona';
   var campo=esMerc?'centro':'tienda';
+  var esTecnico=window._sesion && window._sesion.rol==='tecnico';
+  var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
   var seen={},activas=[],cerradas=[];
   for(var i=h.length-1;i>=0;i--){
     var r=h[i];
     var esDeCliente=(r.clienteId||'mercadona')===clienteId;
     if(!esDeCliente) continue;
+    if(esTecnico && !(r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre)) continue;
     var campoVal=(r[campo]||'').toLowerCase();
     if(!campoVal.includes(val.toLowerCase())) continue;
     var k=r[campo];
@@ -5078,7 +5093,13 @@ function buscarPorOrden(val){
   if(!val||val.length<2){ box.classList.remove('show'); box.innerHTML=''; return; }
   var h=getH();
   var clienteId=curCliente?curCliente.id:'mercadona';
-  var delCliente=h.filter(function(r){ return (r.clienteId||'mercadona')===clienteId; });
+  var esTecnico=window._sesion && window._sesion.rol==='tecnico';
+  var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
+  var delCliente=h.filter(function(r){
+    if((r.clienteId||'mercadona')!==clienteId) return false;
+    if(esTecnico && !(r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre)) return false;
+    return true;
+  });
   var seen={},activas=[],cerradas=[];
   for(var i=delCliente.length-1;i>=0;i--){
     var r=delCliente[i];
@@ -6699,6 +6720,20 @@ function _entrarConRol(nombre, rol, multiRol) {
   location.reload();
 }
 
+function _sincronizarClientesDesdeFirestore() {
+  if (typeof _db === 'undefined' || !_db) return;
+  _db.collection('clientes').get().then(function(snap){
+    var lista = JSON.parse(localStorage.getItem('pm_clientes')||'[]');
+    var nuevos = 0;
+    snap.forEach(function(doc){
+      var d = doc.data();
+      var idx = lista.findIndex(function(x){ return x.id===d.id; });
+      if (idx >= 0) { lista[idx] = d; } else { lista.push(d); nuevos++; }
+    });
+    if (nuevos > 0 || snap.size > 0) { localStorage.setItem('pm_clientes', JSON.stringify(lista)); }
+  }).catch(function(){});
+}
+
 function _aplicarSesion(nombre, rol, multiRol) {
   window._sesion = { nombre: nombre, rol: rol, multiRol: !!multiRol };
   document.getElementById('w-login').style.display = 'none';
@@ -6710,6 +6745,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
   var histTools = document.getElementById('histAdminTools');
   if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
+  _sincronizarClientesDesdeFirestore();
   if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(); }
   else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre); }
   var sp = document.getElementById('splash');
