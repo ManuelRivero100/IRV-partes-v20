@@ -6778,8 +6778,11 @@ function _sincronizarPartesDesdeFirestore(soloTecnico) {
   query.get().then(function(snap){
     var h = getH();
     var nuevos = 0;
+    var idsRemotos = {};
     snap.forEach(function(doc){
       var d = doc.data();
+      var k = d.fecha+'||'+d.pedido+'||'+d.centro;
+      idsRemotos[k] = true;
       var idx = h.findIndex(function(x){ return x.fecha===d.fecha && x.pedido===d.pedido && x.centro===d.centro; });
       if (idx >= 0) {
         // Ya existe local: actualizar solo si Firestore es más reciente
@@ -6789,7 +6792,18 @@ function _sincronizarPartesDesdeFirestore(soloTecnico) {
         h.push(d); nuevos++;
       }
     });
-    if (nuevos > 0 || snap.size > 0) { setH(h); }
+    var borrados = 0;
+    if (!soloTecnico) {
+      // Solo limpiar cuando la consulta trae TODOS los partes (sin filtro);
+      // con consulta filtrada no hay certeza de que lo ausente ya no exista.
+      var antes = h.length;
+      h = h.filter(function(x){
+        var k = x.fecha+'||'+x.pedido+'||'+x.centro;
+        return idsRemotos[k];
+      });
+      borrados = antes - h.length;
+    }
+    if (nuevos > 0 || borrados > 0 || snap.size > 0) { setH(h); }
   }).catch(function(){});
 }
 
