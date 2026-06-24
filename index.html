@@ -580,6 +580,7 @@ textarea{resize:vertical;min-height:72px}
     <div class="field"><label>T&eacute;cnico principal <span class="req">*</span></label>
       <div class="tgl" id="asgTecTgl"></div>
     </div>
+    <div class="field"><label>Descripci&oacute;n de la aver&iacute;a</label><textarea id="asgDescripcion" rows="3" placeholder="Ej: Salta presostato de baja, visor burbujea&hellip;"></textarea></div>
     <div class="brow"><button class="btn btn-p btn-full" onclick="guardarAsignacion()">&#128190; Asignar</button></div>
     <div id="asgMsg" class="msg"></div>
   </div>
@@ -6843,6 +6844,13 @@ function leerAsg(){
   var tel=cap(/TEL[EÉ]FONO[^:]*[:\s]+(\+?\d[\d\s\-]{6,})/i,t);
   var dir=cap(/DIRECCI[OÓ]N[:\s]+([^\n]+)/i,t);
   var job=cap(/TIPO[:\s]+([^\n]+)/i,t);
+  var descMatches = t.match(/Descripci[oó]n:\s*\n?([^\n]+)/gi);
+  var descripcion = null;
+  if (descMatches && descMatches.length) {
+    var ultima = descMatches[descMatches.length-1];
+    var dm = ultima.match(/Descripci[oó]n:\s*\n?([^\n]+)/i);
+    if (dm) descripcion = dm[1].trim();
+  }
   var n=0;
   if(pedido){ $('asgPedido').value=pedido.trim(); n++; }
   if(centro){ $('asgCentro').value=centro.trim(); n++; buscarKmAsg(centro.trim()); }
@@ -6852,6 +6860,7 @@ function leerAsg(){
   }
   if(dir){ $('asgDir').value=dir.trim(); n++; }
   if(tel){ $('asgTel').value=tel.trim(); n++; }
+  if(descripcion){ $('asgDescripcion').value=descripcion; n++; }
   if(job){
     var jobT=job.trim();
     document.querySelectorAll('#asgJobTgl button').forEach(function(btn){
@@ -6919,6 +6928,7 @@ function guardarAsignacion() {
       centro: $('asgCentro').value.trim(),
       tienda: tienda, dir: dir, tel: tel, job: _asgJob,
       km: $('asgKm').value.trim(), tr: $('asgTr').value.trim(),
+      descripcion: $('asgDescripcion').value.trim(),
       tecnicoPrincipal: _asgTec,
       creadoPor: window._sesion.nombre,
       estado: 'pendiente',
@@ -6927,7 +6937,7 @@ function guardarAsignacion() {
     };
     _db.collection('incidencias').add(data).then(function(){
       showMsg('asgMsg','✓ Incidencia asignada.','success');
-      $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value='';
+      $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
       _asgJob=''; _asgTec='';
       document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
       renderAsgLista();
@@ -6965,7 +6975,8 @@ function renderAsgLista() {
         +'<div style="font-weight:700;font-size:.9rem;">'+d.tienda+'</div>'
         +(refs.length?'<div style="font-size:.78rem;color:var(--text2);">'+refs.join(' · ')+'</div>':'')
         +'<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+d.job+' · '+estLabel+'</div>'
-        +'<div style="font-size:.82rem;margin-top:6px;">👤 <b>'+d.tecnicoPrincipal+'</b></div>';
+        +'<div style="font-size:.82rem;margin-top:6px;">👤 <b>'+d.tecnicoPrincipal+'</b></div>'
+        +(d.descripcion?'<div style="font-size:.78rem;color:var(--text2);margin-top:6px;font-style:italic;">"'+d.descripcion+'"</div>':'');
       if (d.estado === 'pendiente') {
         html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
           +'<select onchange="reasignarIncidencia(\''+doc.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
@@ -7029,6 +7040,7 @@ function consultarAsgTec() {
     + (d.tel?'<div class="rrow info-row"><span class="rc">Tel&eacute;fono</span><span class="rl">'+d.tel+'</span><span class="rv"></span></div>':'')
     + (d.km?'<div class="rrow info-row"><span class="rc">Km</span><span class="rl">'+d.km+'</span><span class="rv"></span></div>':'')
     + (d.tr?'<div class="rrow info-row"><span class="rc">Despl.</span><span class="rl">'+d.tr+' min</span><span class="rv"></span></div>':'')
+    + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion+'</span><span class="rv"></span></div>':'')
     + '</div><button class="btn btn-s btn-full" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
   document.querySelectorAll('.win').forEach(function(w){w.classList.remove('active');});
   $('w-consultaAsg').classList.add('active');
@@ -7060,6 +7072,7 @@ function ejecutarAsgTec() {
       if (b.textContent.trim() === d.job) setJob(d.job, b);
     });
   }
+  if (d.descripcion) { $('obs').value = d.descripcion; }
   if (d.pedido) ocultarLectura();
 }
 
