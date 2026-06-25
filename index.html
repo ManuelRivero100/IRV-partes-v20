@@ -3884,6 +3884,14 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado){
   _db.collection('incidencias').where('pedido','==',pedido).where('centro','==',centro).get().then(function(snap){
     snap.forEach(function(doc){ doc.ref.update({estado:estado}); });
   }).catch(function(){});
+  if(estado==='terminado'){
+    _db.collection('partes').where('pedido','==',pedido).where('centro','==',centro).get().then(function(snap){
+      snap.forEach(function(doc){ doc.ref.update({estado:'terminado'}); });
+    }).catch(function(){});
+    var h=getH();
+    h.forEach(function(r){ if(r.pedido===pedido && r.centro===centro) r.estado='terminado'; });
+    setH(h);
+  }
 }
 // =====================================================
 // MÓDULO MATERIALES POR SECCIONES (ms*)
@@ -5268,7 +5276,11 @@ function leer(){
   var n=0;
   if(pedido&&!$('pedido').value){ $('pedido').value=pedido.trim(); n++; }
   if(centro){ $('centro').value=centro.trim(); n++; }
-  if(denom){ $('tienda').value=denom.trim(); n++; }
+  if(denom){
+    var nombreBase=denom.trim().replace(/\s*\d{3,5}\s*$/,'').trim();
+    $('tienda').value = centro ? (nombreBase+' '+centro.trim()) : denom.trim();
+    n++;
+  }
   if(dir){ $('dir').value=dir.trim(); n++; }
   if(tel){ $('tel').value=tel.trim(); n++; }
   if(fecha){
