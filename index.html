@@ -5225,6 +5225,7 @@ function leer(){
   if(!centro&&denom){ var cm=denom.trim().match(/(\d{3,5})\s*$/); if(cm) centro=cm[1]; }
   var tel=cap(/TEL[EÉ]FONO[^:]*[:\s]+(\+?\d[\d\s\-]{6,})/i,t);
   var dir=cap(/DIRECCI[OÓ]N[:\s]+([^\n]+)/i,t);
+  if(dir) dir = dir.replace(/\s+Persona\s+de\s*$/i,'').trim();
   var job=cap(/TIPO[:\s]+([^\n]+)/i,t);
   var fecha=cap(/FECHA[:\s]+(\d{2}\/\d{2}\/\d{4})/i,t);
   var arr=cap(/LLEGADA[:\s]+(\d{1,2}:\d{2})/i,t);
