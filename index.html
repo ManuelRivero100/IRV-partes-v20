@@ -479,10 +479,6 @@ textarea{resize:vertical;min-height:72px}
 <div id="w-clientes" class="win active">
   <div class="section-label">Clientes</div>
   <div id="clientesGrid" class="app-grid"></div>
-  <div id="asgTecSection" style="display:none;">
-    <div class="section-label">Incidencias asignadas</div>
-    <div id="asgTecLista"></div>
-  </div>
   <div class="section-label">Herramientas</div>
   <div class="app-grid">
     <div class="app-icon" id="iconCatalogo" onclick="abrirCatalogo()" style="position:relative;">
@@ -495,10 +491,6 @@ textarea{resize:vertical;min-height:72px}
       <span class="app-icon-label">Estad&iacute;sticas</span>
     </div>
   </div>
-</div>
-<div id="w-consultaAsg" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
-  <div id="consultaAsgBody"></div>
 </div>
 <div id="w-catalogo" class="win">
   <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
@@ -580,7 +572,6 @@ textarea{resize:vertical;min-height:72px}
     <div class="field"><label>T&eacute;cnico principal <span class="req">*</span></label>
       <div class="tgl" id="asgTecTgl"></div>
     </div>
-    <div class="field"><label>Descripci&oacute;n de la aver&iacute;a</label><textarea id="asgDescripcion" rows="3" placeholder="Ej: Salta presostato de baja, visor burbujea&hellip;"></textarea></div>
     <div class="brow"><button class="btn btn-p btn-full" onclick="guardarAsignacion()">&#128190; Asignar</button></div>
     <div id="asgMsg" class="msg"></div>
   </div>
@@ -590,7 +581,7 @@ textarea{resize:vertical;min-height:72px}
   </div>
 </div>
 <div id="w-form" class="win">
-  <button class="back" onclick="if(_asgTecActual){_asgTecActual=null;goTo('w-clientes');}else{goTo('w-menu');}">&#8592; Men&uacute; principal</button>
+  <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
   <button class="btn btn-s btn-full" style="margin-bottom:10px;" onclick="toggleCard('cardLectura',this)">&#128196; Auto-relleno</button>
   <div class="card" id="cardLectura" style="display:none"><div class="card-title">&#128196; Lectura de orden</div>
     <div class="field"><label>Pegar texto de la orden</label><textarea id="raw" rows="5" placeholder="Pega aqu&iacute; el texto de la orden&hellip;"></textarea></div>
@@ -1099,7 +1090,6 @@ function seleccionarCliente(id){
 }
 
 function borrarCliente(id){
-  if(!_esAdminOCreador()) return;
   if(!confirm('¿Eliminar este cliente y todos sus datos?')) return;
   var lista=getClientes().filter(function(c){ return c.id!==id; });
   saveClientes(lista);
@@ -1117,7 +1107,6 @@ function setNcTipo(v,btn){
   $('nc-tipo').value=v;
 }
 function guardarNuevoCliente(){
-  if(!_esAdminOCreador()) return;
   var n=$('nc-nombre').value.trim(); if(!n){ showMsg('msgNc','Introduce el nombre del cliente.','error'); return; }
   var jobs=$('nc-jobs').value.split(',').map(function(j){ return j.trim(); }).filter(Boolean);
   if(!jobs.length) jobs=['Trabajos'];
@@ -1125,13 +1114,8 @@ function guardarNuevoCliente(){
   var c={id:id,nombre:n,tipo:_ncTipo,jobs:jobs,codigos:false,precios:_ncTipo==='particular'};
   var extra=JSON.parse(localStorage.getItem('pm_clientes')||'[]');
   extra.push(c); localStorage.setItem('pm_clientes',JSON.stringify(extra));
-  _subirClienteAFirestore(c);
   $('nc-nombre').value=''; $('nc-jobs').value='';
   renderClientes(); goTo('w-clientes');
-}
-
-function _subirClienteAFirestore(c){
-  try{ if(typeof _db==='undefined'||!_db) return; _db.collection('clientes').doc(c.id).set(c,{merge:true}).catch(function(){}); }catch(e){}
 }
 
 function renderMenu(){
@@ -3217,7 +3201,6 @@ function resetearEstadoCompleto(){
 
 function nuevo(){
   _editIdx=null;
-  _asgTecActual=null;
   ['pedido','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
   $('w').value='2'; $('job').value=''; $('link').value='No';
   curJob=''; curLink='No'; wRoles=[];
@@ -3885,9 +3868,22 @@ function finalizarOrdenActual(){
 function cerrarIncidenciaActual(){
   var o=window._ordenActual;if(!o)return;
   var h=getH();
-  h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro)r.estado='terminado';});
+  h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro){r.estado='terminado';_subirParteAFirestore(r);}});
   setH(h);
   verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
+}
+function reabrirIncidenciaActual(){
+  var o=window._ordenActual;if(!o)return;
+  var h=getH();
+  h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro){r.estado='en-ejecucion';_subirParteAFirestore(r);}});
+  setH(h);
+  verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
+}
+function _actualizarIncidenciaPorOrden(pedido,centro,estado){
+  if(typeof _db === 'undefined' || !_db || !pedido) return;
+  _db.collection('incidencias').where('pedido','==',pedido).where('centro','==',centro).get().then(function(snap){
+    snap.forEach(function(doc){ doc.ref.update({estado:estado}); });
+  }).catch(function(){});
 }
 // =====================================================
 // MÓDULO MATERIALES POR SECCIONES (ms*)
@@ -4463,7 +4459,7 @@ function renderClientes(){
     var cls=c.tipo==='mercadona'?'ico-mercadona':c.tipo==='particular'?'ico-particular':'ico-other';
     var div=document.createElement('div');
     div.className='app-icon';
-    if(c.id!=='mercadona'&&_esAdminOCreador()){
+    if(c.id!=='mercadona'){
       var db=document.createElement('button');
       db.className='app-del-btn';
       db.innerHTML='&#x2715;';
@@ -4487,22 +4483,20 @@ function renderClientes(){
     (function(cid2){div.addEventListener('click',function(){seleccionarCliente(cid2);});})(c.id);
     el.appendChild(div);
   });
-  if(_esAdminOCreador()){
-    var addDiv=document.createElement('div');
-    addDiv.className='app-icon';
-    var ai=document.createElement('div');
-    ai.className='app-icon-img ico-nuevo';
-    ai.style.fontSize='28px';
-    ai.innerHTML='&#43;';
-    addDiv.appendChild(ai);
-    var al=document.createElement('span');
-    al.className='app-icon-label';
-    al.style.color='rgba(255,255,255,.5)';
-    al.textContent='Añadir';
-    addDiv.appendChild(al);
-    addDiv.addEventListener('click',function(){goTo('w-nuevo-cliente');});
-    el.appendChild(addDiv);
-  }
+  var addDiv=document.createElement('div');
+  addDiv.className='app-icon';
+  var ai=document.createElement('div');
+  ai.className='app-icon-img ico-nuevo';
+  ai.style.fontSize='28px';
+  ai.innerHTML='&#43;';
+  addDiv.appendChild(ai);
+  var al=document.createElement('span');
+  al.className='app-icon-label';
+  al.style.color='rgba(255,255,255,.5)';
+  al.textContent='Añadir';
+  addDiv.appendChild(al);
+  addDiv.addEventListener('click',function(){goTo('w-nuevo-cliente');});
+  el.appendChild(addDiv);
 }
 
 function onFechaChange(){
@@ -4543,27 +4537,24 @@ function renderWorkers(){
   while(wNames.length<w) wNames.push('');
   wNames=wNames.slice(0,w);
   var html='';
-  var _bloqueado = (_editIdx !== null && !_esCreador());
-  var _esTecnico = window._sesion && window._sesion.rol === 'tecnico';
   // Técnicos disponibles filtrados por job activo
   var _allTecs=getTecnicos().filter(function(t){
     return !t.jobs||!t.jobs.length||t.jobs.indexOf(curJob)>=0;
   });
   for(var i=0;i<w;i++){
-    var _bloqueadoFila = _bloqueado || (i===0 && _esTecnico);
     var _usados=wNames.filter(function(n,ni){return ni!==i&&n&&n.trim();});
     var _tDisp=_allTecs.filter(function(t){return _usados.indexOf(t.nombre)<0;});
     var _dropId='tecDrop'+i;
     var _dropItems=_tDisp.map(function(t){
       return '<div onmousedown="tecSeleccionar('+i+',\''+t.nombre.replace(/\'/g,'\\\'')+'\')" style="padding:10px 14px;font-size:.88rem;cursor:pointer;border-bottom:1px solid var(--border2);">'+t.nombre+'</div>';
     }).join('');
-    var _dropHtml=_bloqueadoFila?'':'<div id="'+_dropId+'" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:99;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.4);">'+_dropItems+'</div>';
-    var _inp='<input type="text" id="wInp'+i+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;width:100%;'+(_bloqueadoFila?'opacity:.6;cursor:not-allowed;':'')+'" value="'+(wNames[i]||'')+'"'+(_bloqueadoFila?' readonly':' oninput="wNames['+i+']=this.value" onfocus="tecMostrarDrop('+i+')" onblur="tecOcultarDrop('+i+')"')+'>';
+    var _dropHtml='<div id="'+_dropId+'" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:99;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.4);">'+_dropItems+'</div>';
+    var _inp='<input type="text" id="wInp'+i+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;width:100%;" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value" onfocus="tecMostrarDrop('+i+')" onblur="tecOcultarDrop('+i+')">';
     if(nr&&i===0){
       html+='<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador 1<span class="wbadge wbadge-auto">Oficial</span></span><div style="position:relative;flex:1;min-width:120px;">'+_inp+_dropHtml+'</div></div>';
     } else if(nr){
       var rol=wRoles[i]||'Oficial';
-      html+='<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador '+(i+1)+'<span class="wbadge wbadge-sel" id="wb'+i+'">'+rol+'</span></span><div style="position:relative;flex:1;min-width:120px;">'+_inp+_dropHtml+'</div>'+(_bloqueadoFila?'':'<div class="worker-tgl"><button onclick="setWR('+i+',\'Oficial\',this)" class="'+(rol==='Oficial'?'active':'')+'">Oficial</button><button onclick="setWR('+i+',\'Pe\u00f3n\',this)" class="'+(rol==='Peón'?'active':'')+'">Pe&oacute;n</button></div>')+'</div>';
+      html+='<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador '+(i+1)+'<span class="wbadge wbadge-sel" id="wb'+i+'">'+rol+'</span></span><div style="position:relative;flex:1;min-width:120px;">'+_inp+_dropHtml+'</div><div class="worker-tgl"><button onclick="setWR('+i+',\'Oficial\',this)" class="'+(rol==='Oficial'?'active':'')+'">Oficial</button><button onclick="setWR('+i+',\'Pe\u00f3n\',this)" class="'+(rol==='Peón'?'active':'')+'">Pe&oacute;n</button></div></div>';
     } else {
       html+='<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador '+(i+1)+'</span><div style="position:relative;flex:1;min-width:120px;">'+_inp+_dropHtml+'</div></div>';
     }
@@ -4839,7 +4830,6 @@ function verOrden(enc){
     return true;
   });
   if(!partes.length) return;
-  partes.sort(function(a,b){ return a.r.fecha.localeCompare(b.r.fecha); });
   $('secView').style.display='none'; $('ordenView').style.display='block'; $('parteView').style.display='none';
   var g=partes[0].r;
   var lastEstado=partes[partes.length-1].r.estado||'terminado';
@@ -4911,11 +4901,13 @@ function verOrden(enc){
     '<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:14px 0 7px;">Materiales acumulados</div>'+
     '<div class="acum-block">'+matHTML+'</div>'+
     '<div class="brow" style="margin-top:10px;">'+
-    (lastEstado==='terminado'?'<button class="btn btn-p btn-sm" onclick="pdfOrden()">&#128196; PDF resumen</button>':'<button class="btn btn-p btn-sm" id="btnCerrarOrden" style="background:var(--green);">&#9989; Cerrar incidencia</button>')+
+    (lastEstado==='terminado'?'<button class="btn btn-p btn-sm" onclick="pdfOrden()">&#128196; PDF resumen</button><button class="btn btn-s btn-sm" id="btnReabrirOrden">&#128275; Reabrir incidencia</button>':'<button class="btn btn-p btn-sm" id="btnCerrarOrden" style="background:var(--green);">&#9989; Cerrar incidencia</button>')+
     '<button class="btn btn-s btn-sm" onclick="compartirOrden()">&#128203; Compartir resumen</button>'+
     '</div>';
   var btnC=document.getElementById('btnCerrarOrden');
   if(btnC) btnC.addEventListener('click', cerrarIncidenciaActual);
+  var btnR=document.getElementById('btnReabrirOrden');
+  if(btnR) btnR.addEventListener('click', reabrirIncidenciaActual);
 }
 
 // ===== PDF ORDEN (con desglose por partes) =====
@@ -5777,7 +5769,7 @@ function volverAlForm(){
 
 function volverCentros(){histShow(['centrosView']);}
 
-function volverHistOpts(){ _secActual=''; $('histOpts').style.display='block'; $('secView').style.display='none'; $('ordenView').style.display='none'; $('parteView').style.display='none'; refreshCounts(); }
+function volverHistOpts(){ if(_secActual){ verSec(_secActual); } else { $('histOpts').style.display='block'; $('secView').style.display='none'; } $('ordenView').style.display='none'; $('parteView').style.display='none'; refreshCounts(); }
 
 function volverIncidencias(){histShow(['incidenciasView']);}
 
@@ -5811,6 +5803,7 @@ function _subirParteAFirestore(parte){
       fechaModificacion: Date.now()
     });
     _db.collection('partes').doc(docId).set(datos, {merge:true}).catch(function(){});
+    if(parte.pedido) _actualizarIncidenciaPorOrden(parte.pedido, parte.centro, parte.estado||'en-ejecucion');
   }catch(e){}
 }
 
@@ -5853,10 +5846,6 @@ function _finalizarGuardado(estado){
   }
   h.push(r); setH(h);
   _subirParteAFirestore(r);
-  if (_asgTecActual && _asgTecActual.id) {
-    _db.collection('incidencias').doc(_asgTecActual.id).update({ estado: 'en-ejecucion' }).then(function(){ renderAsgTecnico(); }).catch(function(){});
-    _asgTecActual = null;
-  }
   showMsg('msgRes','Guardado correctamente.','success');
   $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
   setTimeout(function(){ goTo('w-menu'); },1200);
@@ -6652,20 +6641,6 @@ if('caches' in window){
   </div>
 </div>
 
-<div class="dialogo" id="dlgAsgTec">
-  <div class="dialogo-box">
-    <div class="dialogo-titulo">&#128229; <span id="dlgAsgTecTitulo"></span></div>
-    <div class="dialogo-sub" id="dlgAsgTecSub"></div>
-    <div class="brow">
-      <button class="btn btn-s" style="flex:1;justify-content:center" onclick="consultarAsgTec()">&#128065; Consultar</button>
-      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="ejecutarAsgTec()">&#9889; Ejecutar</button>
-    </div>
-    <div style="margin-top:10px;">
-      <button class="btn btn-s btn-sm btn-full" onclick="$('dlgAsgTec').classList.remove('show')">&#8592; Cancelar</button>
-    </div>
-  </div>
-</div>
-
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
@@ -6690,15 +6665,6 @@ firebase.initializeApp({
   appId: "1:179090613524:web:c8116a87bce66719d68e01"
 });
 var _db = firebase.firestore();
-_db.enablePersistence({ synchronizeTabs: true }).catch(function(err){
-  if (err.code === 'failed-precondition') {
-    console.warn('Firestore persistence: multiples pestañas abiertas, no se pudo activar.');
-  } else if (err.code === 'unimplemented') {
-    console.warn('Firestore persistence: navegador sin soporte para persistencia offline.');
-  } else {
-    console.warn('Firestore persistence: error al activar.', err);
-  }
-});
 var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
 var MANUEL_ADMIN_PIN = '1212';
 
@@ -6765,24 +6731,8 @@ function _entrarConRol(nombre, rol, multiRol) {
   location.reload();
 }
 
-function _sincronizarClientesDesdeFirestore() {
-  if (typeof _db === 'undefined' || !_db) return;
-  _db.collection('clientes').get().then(function(snap){
-    var lista = JSON.parse(localStorage.getItem('pm_clientes')||'[]');
-    var nuevos = 0;
-    snap.forEach(function(doc){
-      var d = doc.data();
-      var idx = lista.findIndex(function(x){ return x.id===d.id; });
-      if (idx >= 0) { lista[idx] = d; } else { lista.push(d); nuevos++; }
-    });
-    if (nuevos > 0 || snap.size > 0) { localStorage.setItem('pm_clientes', JSON.stringify(lista)); }
-  }).catch(function(){});
-}
-
 function _aplicarSesion(nombre, rol, multiRol) {
   window._sesion = { nombre: nombre, rol: rol, multiRol: !!multiRol };
-  renderClientes();
-  renderAsgTecnico();
   document.getElementById('w-login').style.display = 'none';
   document.querySelector('.app').style.display = 'block';
   var sub = document.getElementById('hdr-sub');
@@ -6792,7 +6742,6 @@ function _aplicarSesion(nombre, rol, multiRol) {
   var histTools = document.getElementById('histAdminTools');
   if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
-  _sincronizarClientesDesdeFirestore();
   if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(); }
   else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre); }
   var sp = document.getElementById('splash');
@@ -6830,10 +6779,6 @@ function _esAdminOCreador() {
   return rol === 'admin' || rol === 'creador';
 }
 
-function _esCreador() {
-  return window._sesion && window._sesion.rol === 'creador';
-}
-
 // ---- MÓDULO INCIDENCIAS ----
 var _asgJob = '';
 var _asgTec = '';
@@ -6847,13 +6792,6 @@ function leerAsg(){
   var tel=cap(/TEL[EÉ]FONO[^:]*[:\s]+(\+?\d[\d\s\-]{6,})/i,t);
   var dir=cap(/DIRECCI[OÓ]N[:\s]+([^\n]+)/i,t);
   var job=cap(/TIPO[:\s]+([^\n]+)/i,t);
-  var descMatches = t.match(/Descripci[oó]n:\s*\n?([^\n]+)/gi);
-  var descripcion = null;
-  if (descMatches && descMatches.length) {
-    var ultima = descMatches[descMatches.length-1];
-    var dm = ultima.match(/Descripci[oó]n:\s*\n?([^\n]+)/i);
-    if (dm) descripcion = dm[1].trim();
-  }
   var n=0;
   if(pedido){ $('asgPedido').value=pedido.trim(); n++; }
   if(centro){ $('asgCentro').value=centro.trim(); n++; buscarKmAsg(centro.trim()); }
@@ -6863,7 +6801,6 @@ function leerAsg(){
   }
   if(dir){ $('asgDir').value=dir.trim(); n++; }
   if(tel){ $('asgTel').value=tel.trim(); n++; }
-  if(descripcion){ $('asgDescripcion').value=descripcion; n++; }
   if(job){
     var jobT=job.trim();
     document.querySelectorAll('#asgJobTgl button').forEach(function(btn){
@@ -6931,7 +6868,6 @@ function guardarAsignacion() {
       centro: $('asgCentro').value.trim(),
       tienda: tienda, dir: dir, tel: tel, job: _asgJob,
       km: $('asgKm').value.trim(), tr: $('asgTr').value.trim(),
-      descripcion: $('asgDescripcion').value.trim(),
       tecnicoPrincipal: _asgTec,
       creadoPor: window._sesion.nombre,
       estado: 'pendiente',
@@ -6940,7 +6876,7 @@ function guardarAsignacion() {
     };
     _db.collection('incidencias').add(data).then(function(){
       showMsg('asgMsg','✓ Incidencia asignada.','success');
-      $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
+      $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value='';
       _asgJob=''; _asgTec='';
       document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
       renderAsgLista();
@@ -6978,8 +6914,7 @@ function renderAsgLista() {
         +'<div style="font-weight:700;font-size:.9rem;">'+d.tienda+'</div>'
         +(refs.length?'<div style="font-size:.78rem;color:var(--text2);">'+refs.join(' · ')+'</div>':'')
         +'<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+d.job+' · '+estLabel+'</div>'
-        +'<div style="font-size:.82rem;margin-top:6px;">👤 <b>'+d.tecnicoPrincipal+'</b></div>'
-        +(d.descripcion?'<div style="font-size:.78rem;color:var(--text2);margin-top:6px;font-style:italic;">"'+d.descripcion+'"</div>':'');
+        +'<div style="font-size:.82rem;margin-top:6px;">👤 <b>'+d.tecnicoPrincipal+'</b></div>';
       if (d.estado === 'pendiente') {
         html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
           +'<select onchange="reasignarIncidencia(\''+doc.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
@@ -6992,91 +6927,6 @@ function renderAsgLista() {
     });
     el.innerHTML = html;
   }).catch(function(){ el.innerHTML='<div style="color:var(--red);">Error al cargar.</div>'; });
-}
-
-function renderAsgTecnico() {
-  var sec = $('asgTecSection'); var el = $('asgTecLista');
-  if (!sec || !el) return;
-  var esTecnico = window._sesion && window._sesion.rol === 'tecnico';
-  if (!esTecnico) { sec.style.display = 'none'; return; }
-  var miNombre = window._sesion.nombre;
-  _db.collection('incidencias')
-    .where('tecnicoPrincipal','==',miNombre)
-    .where('estado','==','pendiente')
-    .get().then(function(snap){
-      if (snap.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
-      var html = '';
-      snap.forEach(function(doc){
-        var d = doc.data();
-        var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
-        html += '<div class="act-list-item" onclick="abrirAsgTecOpciones(\''+doc.id+'\')">'
-          + '<span class="act-num">&#128229;</span>'
-          + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
-          + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+'</div></div>'
-          + '</div>';
-      });
-      el.innerHTML = html;
-      sec.style.display = 'block';
-    }).catch(function(){ sec.style.display = 'none'; });
-}
-
-var _asgTecActual = null;
-function abrirAsgTecOpciones(id) {
-  _db.collection('incidencias').doc(id).get().then(function(doc){
-    if (!doc.exists) return;
-    _asgTecActual = Object.assign({id: doc.id}, doc.data());
-    $('dlgAsgTecTitulo').textContent = _asgTecActual.tienda || 'Incidencia';
-    var refs=[]; if(_asgTecActual.pedido) refs.push('Orden '+_asgTecActual.pedido); if(_asgTecActual.centro) refs.push('Centro '+_asgTecActual.centro);
-    $('dlgAsgTecSub').textContent = (refs.length?refs.join(' · ')+' · ':'')+(_asgTecActual.job||'');
-    $('dlgAsgTec').classList.add('show');
-  });
-}
-function consultarAsgTec() {
-  if (!_asgTecActual) return;
-  $('dlgAsgTec').classList.remove('show');
-  var d = _asgTecActual;
-  var refs=[]; if(d.pedido) refs.push('N&ordm; orden: '+d.pedido); if(d.centro) refs.push('N&ordm; centro: '+d.centro);
-  var html = '<div class="card"><div class="card-title">&#128229; '+(d.tienda||'')+'</div>'
-    + (refs.length?'<div class="rrow info-row"><span class="rc">Datos</span><span class="rl">'+refs.join(' · ')+'</span><span class="rv"></span></div>':'')
-    + '<div class="rrow info-row"><span class="rc">Trabajo</span><span class="rl">'+(d.job||'')+'</span><span class="rv"></span></div>'
-    + (d.dir?'<div class="rrow info-row"><span class="rc">Direcci&oacute;n</span><span class="rl">'+d.dir+'</span><span class="rv"></span></div>':'')
-    + (d.tel?'<div class="rrow info-row"><span class="rc">Tel&eacute;fono</span><span class="rl">'+d.tel+'</span><span class="rv"></span></div>':'')
-    + (d.km?'<div class="rrow info-row"><span class="rc">Km</span><span class="rl">'+d.km+'</span><span class="rv"></span></div>':'')
-    + (d.tr?'<div class="rrow info-row"><span class="rc">Despl.</span><span class="rl">'+d.tr+' min</span><span class="rv"></span></div>':'')
-    + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion+'</span><span class="rv"></span></div>':'')
-    + '</div><button class="btn btn-s btn-full" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
-  document.querySelectorAll('.win').forEach(function(w){w.classList.remove('active');});
-  $('w-consultaAsg').classList.add('active');
-  $('consultaAsgBody').innerHTML = html;
-}
-function ejecutarAsgTec() {
-  if (!_asgTecActual) return;
-  $('dlgAsgTec').classList.remove('show');
-  var d = _asgTecActual;
-  var cli = getClientes().find(function(c){ return c.id === d.clienteId; });
-  curCliente = cli || null;
-  if (!curCliente) return;
-  goToRaw('w-form');
-  nuevo();
-  _asgTecActual = d;
-  if (d.pedido) {
-    var esMerc = curCliente.tipo === 'mercadona';
-    if (esMerc) { $('pedido').value = d.pedido; }
-    else { _pedidoNoMerc = d.pedido; $('pedidoGenDisplay').textContent = d.pedido; }
-  }
-  $('centro').value = d.centro || '';
-  $('tienda').value = d.tienda || '';
-  $('dir').value = d.dir || '';
-  $('tel').value = d.tel || '';
-  if (d.km) { $('km').value = d.km; $('kmE').value = d.km; }
-  if (d.tr) { $('tr').value = d.tr; $('trE').value = d.tr; }
-  if (d.job) {
-    document.querySelectorAll('#jobTgl button').forEach(function(b){
-      if (b.textContent.trim() === d.job) setJob(d.job, b);
-    });
-  }
-  if (d.descripcion) { $('obs').value = d.descripcion; }
-  if (d.pedido) ocultarLectura();
 }
 
 function reasignarIncidencia(id, nuevoTec) {
@@ -7101,6 +6951,18 @@ try {
   var _s = localStorage.getItem('irv_sesion');
   if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol); }
 } catch(e) {}
+
+// Cierre automático tras 10 minutos de inactividad
+var _inactTimer=null;
+function _resetInactTimer(){
+  if(!window._sesion) return;
+  if(_inactTimer) clearTimeout(_inactTimer);
+  _inactTimer=setTimeout(cerrarSesion, 600000);
+}
+['click','keydown','touchstart','scroll'].forEach(function(ev){
+  document.addEventListener(ev, _resetInactTimer, {passive:true});
+});
+_resetInactTimer();
 
 // ---- MÓDULO USUARIOS ----
 var _nuRol = 'tecnico';
