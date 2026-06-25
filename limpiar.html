@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Limpiar partes fantasma</title>
+<style>
+  body{font-family:sans-serif;background:#1a1a2e;color:#fff;padding:24px;text-align:center}
+  button{font-size:1.1rem;padding:16px 24px;border-radius:10px;border:none;background:#2ecc71;color:#fff;margin:10px;cursor:pointer;width:90%}
+  button:active{background:#27ae60}
+  #res{margin-top:20px;font-size:1rem;white-space:pre-wrap;text-align:left;background:#16213e;padding:14px;border-radius:8px}
+</style>
+</head>
+<body>
+  <h2>Limpiar partes fantasma</h2>
+  <p>Pedidos a borrar del localStorage de este dispositivo: <b>131333</b> y <b>129837</b></p>
+  <button onclick="verAntes()">1. Ver qué hay ahora</button>
+  <button onclick="borrar()">2. Borrar fantasmas</button>
+  <div id="res"></div>
+
+<script>
+function leerH(){
+  try{ return JSON.parse(localStorage.getItem('pm_v4')||'[]'); }
+  catch(e){ return null; }
+}
+function verAntes(){
+  var h = leerH();
+  var out = document.getElementById('res');
+  if(h===null){ out.textContent='No se pudo leer localStorage pm_v4 en este navegador/pestaña.'; return; }
+  var rel = h.filter(function(x){ return x.pedido=='131333' || x.pedido=='129837'; });
+  if(rel.length===0){ out.textContent='No hay partes con esos pedidos en este dispositivo. Total partes: '+h.length; return; }
+  out.textContent = 'Encontrados '+rel.length+' partes:\n' + rel.map(function(r){
+    return '- '+r.fecha+' | pedido '+r.pedido+' | centro '+r.centro+' | estado '+r.estado;
+  }).join('\n');
+}
+function borrar(){
+  var h = leerH();
+  var out = document.getElementById('res');
+  if(h===null){ out.textContent='No se pudo leer localStorage pm_v4 en este navegador/pestaña.'; return; }
+  var antes = h.length;
+  h = h.filter(function(x){ return !(x.pedido=='131333' || x.pedido=='129837'); });
+  localStorage.setItem('pm_v4', JSON.stringify(h));
+  out.textContent = 'Borrados: '+(antes-h.length)+' partes. Total restante: '+h.length+'\n\nAhora vuelve a la app, sal y entra de nuevo.';
+}
+</script>
+</body>
+</html>
