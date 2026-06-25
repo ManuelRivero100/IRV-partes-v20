@@ -5277,8 +5277,8 @@ function leer(){
   if(pedido&&!$('pedido').value){ $('pedido').value=pedido.trim(); n++; }
   if(centro){ $('centro').value=centro.trim(); n++; }
   if(denom){
-    var nombreBase=denom.trim().replace(/\s*\d{3,5}\s*$/,'').trim();
-    $('tienda').value = centro ? (nombreBase+' '+centro.trim()) : denom.trim();
+    var nombreBase=denom.trim().replace(/\s*\d{3,5}\s*$/,'').replace(/^Mercadona\s+/i,'').trim();
+    $('tienda').value = centro ? ('Mercadona '+nombreBase+' '+centro.trim()) : ('Mercadona '+nombreBase);
     n++;
   }
   if(dir){ $('dir').value=dir.trim(); n++; }
