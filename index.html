@@ -4467,7 +4467,7 @@ function renderClientes(){
     var cls=c.tipo==='mercadona'?'ico-mercadona':c.tipo==='particular'?'ico-particular':'ico-other';
     var div=document.createElement('div');
     div.className='app-icon';
-    if(c.id!=='mercadona'){
+    if(c.id!=='mercadona' && _esAdminOCreador()){
       var db=document.createElement('button');
       db.className='app-del-btn';
       db.innerHTML='&#x2715;';
@@ -4491,20 +4491,22 @@ function renderClientes(){
     (function(cid2){div.addEventListener('click',function(){seleccionarCliente(cid2);});})(c.id);
     el.appendChild(div);
   });
-  var addDiv=document.createElement('div');
-  addDiv.className='app-icon';
-  var ai=document.createElement('div');
-  ai.className='app-icon-img ico-nuevo';
-  ai.style.fontSize='28px';
-  ai.innerHTML='&#43;';
-  addDiv.appendChild(ai);
-  var al=document.createElement('span');
-  al.className='app-icon-label';
-  al.style.color='rgba(255,255,255,.5)';
-  al.textContent='Añadir';
-  addDiv.appendChild(al);
-  addDiv.addEventListener('click',function(){goTo('w-nuevo-cliente');});
-  el.appendChild(addDiv);
+  if(_esAdminOCreador()){
+    var addDiv=document.createElement('div');
+    addDiv.className='app-icon';
+    var ai=document.createElement('div');
+    ai.className='app-icon-img ico-nuevo';
+    ai.style.fontSize='28px';
+    ai.innerHTML='&#43;';
+    addDiv.appendChild(ai);
+    var al=document.createElement('span');
+    al.className='app-icon-label';
+    al.style.color='rgba(255,255,255,.5)';
+    al.textContent='Añadir';
+    addDiv.appendChild(al);
+    addDiv.addEventListener('click',function(){goTo('w-nuevo-cliente');});
+    el.appendChild(addDiv);
+  }
 }
 
 function onFechaChange(){
