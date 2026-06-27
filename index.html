@@ -6943,7 +6943,7 @@ function guardarAsignacion() {
 function renderAsgLista() {
   var el = $('asgLista'); if (!el || !curCliente) return;
   el.innerHTML = '<div style="color:var(--text2);font-size:.82rem;">Cargando...</div>';
-  _db.collection('incidencias').where('clienteId','==',curCliente.id).get().then(function(snap){
+  _db.collection('incidencias').where('clienteId','==',curCliente.id).where('estado','!=','terminado').get().then(function(snap){
     if (snap.empty) { el.innerHTML='<div style="color:var(--text2);font-size:.82rem;">Sin incidencias asignadas.</div>'; return; }
     var tecs = getTecnicos().filter(function(t){ return t.activo !== false; });
     var html='';
