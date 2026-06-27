@@ -1037,6 +1037,7 @@ function goTo(id){
     window._incidenciasCache=[];
     _centrosCache=[];
     _secActual='';
+    _sincronizarClientesDesdeFirestore();
     renderClientes();
   }
   if(id==='w-menu'&&curCliente){ resetearEstadoCompleto(); renderMenu(); }
@@ -1063,6 +1064,29 @@ function saveClientes(lista){
   // solo guardamos los que no son mercadona
   var extra=lista.filter(function(c){ return c.id!=='mercadona'; });
   localStorage.setItem('pm_clientes',JSON.stringify(extra));
+}
+function _subirClienteAFirestore(c){
+  try{
+    if(typeof _db === 'undefined' || !_db || !c || c.id==='mercadona') return;
+    _db.collection('clientes').doc(c.id).set(c, {merge:true}).catch(function(){});
+  }catch(e){}
+}
+function _sincronizarClientesDesdeFirestore(){
+  if(typeof _db === 'undefined' || !_db) return;
+  _db.collection('clientes').get().then(function(snap){
+    var extra=JSON.parse(localStorage.getItem('pm_clientes')||'[]');
+    var subidos={};
+    extra.forEach(function(c){ subidos[c.id]=true; });
+    var cambiado=false;
+    snap.forEach(function(doc){
+      var d=doc.data();
+      var idx=extra.findIndex(function(c){ return c.id===d.id; });
+      if(idx>=0) extra[idx]=d; else { extra.push(d); cambiado=true; }
+    });
+    // Subir los que existen solo en local (creados antes de tener sincronización)
+    extra.forEach(function(c){ if(c.id!=='mercadona') _subirClienteAFirestore(c); });
+    if(cambiado){ localStorage.setItem('pm_clientes',JSON.stringify(extra)); renderClientes(); }
+  }).catch(function(){});
 }
 
 var curCliente = null;
@@ -1093,6 +1117,7 @@ function borrarCliente(id){
   if(!confirm('¿Eliminar este cliente y todos sus datos?')) return;
   var lista=getClientes().filter(function(c){ return c.id!==id; });
   saveClientes(lista);
+  try{ if(typeof _db !== 'undefined' && _db) _db.collection('clientes').doc(id).delete().catch(function(){}); }catch(e){}
   // borrar partes de este cliente
   var h=getH().filter(function(r){ return r.clienteId!==id; });
   setH(h);
@@ -1114,6 +1139,7 @@ function guardarNuevoCliente(){
   var c={id:id,nombre:n,tipo:_ncTipo,jobs:jobs,codigos:false,precios:_ncTipo==='particular'};
   var extra=JSON.parse(localStorage.getItem('pm_clientes')||'[]');
   extra.push(c); localStorage.setItem('pm_clientes',JSON.stringify(extra));
+  _subirClienteAFirestore(c);
   $('nc-nombre').value=''; $('nc-jobs').value='';
   renderClientes(); goTo('w-clientes');
 }
