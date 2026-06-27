@@ -6785,6 +6785,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
   setTimeout(_mostrarIconoUsuarios, 0);
   if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(); }
   else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre); }
+  _sincronizarClientesDesdeFirestore();
   var sp = document.getElementById('splash');
   if (sp) {
     sp.style.display = 'flex';
