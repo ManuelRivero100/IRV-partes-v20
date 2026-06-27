@@ -1970,28 +1970,7 @@ function catConfirmSub(ctx){
   renderCatGrupoBody();
 }
 
-function catEditMat(si,ssi,mi){
-  var cat=getCat();
-  var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
-  var sec=g.secciones[si];if(!sec)return;
-  var mats=ssi===-1?(sec.mats||[]):(sec.subsecs[ssi]?(sec.subsecs[ssi].mats||[]):[]);
-  var m=mats[mi];if(!m)return;
-  var nuevoNom=prompt('Nombre del material:',m.nom);
-  if(!nuevoNom||!nuevoNom.trim()||nuevoNom.trim()===m.nom)return;
-  // Check no duplicate
-  var todos=catAllMatsGrupo(_catState.grupoAb);
-  if(todos.find(function(n){return n.toLowerCase()===nuevoNom.trim().toLowerCase()&&n!==m.nom;})){
-    alert('"'+nuevoNom.trim()+'" ya existe en este grupo.');return;
-  }
-  // Update also in _MS.sel if was selected
-  if(_MS.sel[m.nom]!==undefined){
-    _MS.sel[nuevoNom.trim()]=_MS.sel[m.nom];
-    delete _MS.sel[m.nom];
-  }
-  m.nom=nuevoNom.trim();
-  setCat(cat);
-  renderCatGrupoBody();
-}
+// catEditMat: ver definición real más abajo (redirige a catEditMat2, diálogo moderno)
 
 // ===== DIÁLOGO NOMBRE (reemplaza prompt) =====
 var _dlgNomCb = null;
@@ -4856,8 +4835,7 @@ function setWR(i,rol,btn){
 }
 
 // ===== ACTUACION OBRAS =====
-var _actObrasSeleccionada=null;
-var _pedidoNoMerc=null;
+// (_actObrasSeleccionada y _pedidoNoMerc ya declaradas arriba)
 
 function verOrden(enc){
   var dec=decodeURIComponent(enc); var pp=dec.split('||'); var pedido=pp[0]; var centro=pp[1];
@@ -5754,7 +5732,7 @@ function verParte(idx){
 }
 
 // ===== EDITAR PARTE (V17) =====
-var _editIdx=null;
+// (_editIdx ya declarada arriba)
 
 function verResumenCentro(){
   var h=getH();
