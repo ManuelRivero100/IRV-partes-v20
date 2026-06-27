@@ -6471,6 +6471,7 @@ var PAUSE = 650;
 
 function renderFace(face) {
   var coin = document.getElementById("coin");
+  if (!coin) return;
   coin.classList.remove("blinking");
   if (face.isIRV) {
     coin.style.background = "#fff";
