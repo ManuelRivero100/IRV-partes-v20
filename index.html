@@ -4459,6 +4459,10 @@ function statsMkKpi(val, label, cls){
 }
 
 
+function _esAdminOCreador() {
+  var rol = window._sesion && window._sesion.rol;
+  return rol === 'admin' || rol === 'creador';
+}
 function renderClientes(){
   var lista=getClientes();
   var h=getHVisible();
@@ -6816,10 +6820,7 @@ function _sincronizarPartesDesdeFirestore(soloTecnico) {
   }).catch(function(){});
 }
 
-function _esAdminOCreador() {
-  var rol = window._sesion && window._sesion.rol;
-  return rol === 'admin' || rol === 'creador';
-}
+// (definición de _esAdminOCreador movida arriba, junto a renderClientes)
 
 // ---- MÓDULO INCIDENCIAS ----
 var _asgJob = '';
