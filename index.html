@@ -477,10 +477,6 @@ textarea{resize:vertical;min-height:72px}
   <button style="margin-left:8px;padding:6px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.75rem;font-family:inherit;cursor:pointer;" onclick="cerrarSesion()">&#128275; Salir</button>
 </div>
 <div id="w-clientes" class="win active">
-  <div id="asgTecSection" style="display:none;margin-bottom:14px;">
-    <div class="section-label">&#128229; Incidencias asignadas</div>
-    <div id="asgTecLista"></div>
-  </div>
   <div class="section-label">Clientes</div>
   <div id="clientesGrid" class="app-grid"></div>
   <div class="section-label">Herramientas</div>
@@ -494,6 +490,14 @@ textarea{resize:vertical;min-height:72px}
       <div class="app-icon-img ico-stats">&#128202;</div>
       <span class="app-icon-label">Estad&iacute;sticas</span>
     </div>
+  </div>
+  <div id="asgTecSection" style="display:none;margin-top:14px;">
+    <div class="section-label">&#128229; Incidencias asignadas</div>
+    <div id="asgTecLista"></div>
+  </div>
+  <div id="asgAdminSection" style="display:none;margin-top:14px;">
+    <div class="section-label">&#128229; Incidencias creadas por t&eacute;cnicos</div>
+    <div id="asgAdminLista"></div>
   </div>
 </div>
 <div id="w-catalogo" class="win">
@@ -1064,6 +1068,7 @@ function goTo(id){
     _sincronizarClientesDesdeFirestore();
     renderClientes();
     renderAsgTecnico();
+    renderAsgAdmin();
   }
   if(id==='w-menu'&&curCliente){ resetearEstadoCompleto(); renderMenu(); }
 }
@@ -1111,6 +1116,22 @@ function _sincronizarClientesDesdeFirestore(){
     // Subir los que existen solo en local (creados antes de tener sincronización)
     extra.forEach(function(c){ if(c.id!=='mercadona') _subirClienteAFirestore(c); });
     if(cambiado){ localStorage.setItem('pm_clientes',JSON.stringify(extra)); renderClientes(); }
+  }).catch(function(){});
+}
+function _sincronizarTecnicosDesdeFirestore(){
+  if(typeof _db === 'undefined' || !_db) return;
+  _db.collection('usuario').where('roles','array-contains','tecnico').get().then(function(snap){
+    var tecs=getTecnicos();
+    var cambiado=false;
+    snap.forEach(function(doc){
+      var d=doc.data();
+      var idx=tecs.findIndex(function(t){ return t.nombre===d.nombre; });
+      if(idx>=0){ tecs[idx].pin=d.pin; tecs[idx].activo=d.activo!==false; }
+      else { tecs.push({id:'tec_'+Date.now()+'_'+idx, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false}); cambiado=true; }
+    });
+    // Subir los que existen solo en local (creados antes de tener sincronización)
+    tecs.forEach(function(t){ if(t.pin) _subirTecnicoAFirestore(t); });
+    if(cambiado) setTecnicos(tecs);
   }).catch(function(){});
 }
 
@@ -1181,13 +1202,24 @@ function renderMenu(){
   }
   var html='';
   items.forEach(function(item){
-    html+='<div class="app-icon" onclick="'+(item.id==='w-asignar'?'abrirAsignar()':'goTo(\''+item.id+'\')')+'">'
+    html+='<div class="app-icon" id="'+(item.id==='w-asignar'?'iconAsignar':'')+'" onclick="'+(item.id==='w-asignar'?'abrirAsignar()':'goTo(\''+item.id+'\')')+'" style="'+(item.id==='w-asignar'?'position:relative;':'')+'">'
       +'<div class="app-icon-img '+item.cls+'">'+item.ico+'</div>'
+      +(item.id==='w-asignar'?'<span id="asgBadge" style="display:none;position:absolute;top:-4px;right:2px;background:#e05555;color:#fff;font-size:.62rem;font-weight:700;padding:2px 6px;border-radius:20px;min-width:18px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.3);">0</span>':'')
       +'<span class="app-icon-label">'+item.title+'</span>'
       +'</div>';
   });
   $('menuGrid').innerHTML=html;
   refreshCounts();
+  if(_esAdminOCreador()) _actualizarBadgeAsignar();
+}
+function _actualizarBadgeAsignar(){
+  if(!curCliente) return;
+  var b=$('asgBadge'); if(!b) return;
+  _db.collection('incidencias').where('clienteId','==',curCliente.id).where('estado','!=','terminado').get().then(function(snap){
+    if(!b) return;
+    b.textContent=snap.size;
+    b.style.display=snap.size>0?'block':'none';
+  }).catch(function(){});
 }
 
 function renderJobTgl(){
@@ -1376,6 +1408,7 @@ function getCat(){
     var viejo=JSON.parse(localStorage.getItem(CAT_KEY)||'null');
     var nuevo=JSON.parse(JSON.stringify(CAT_DEFAULT));
     if(viejo&&viejo.conceptos){nuevo.conceptos=viejo.conceptos;}
+    if(viejo&&viejo.tecnicos){nuevo.tecnicos=viejo.tecnicos;}
     if(viejo&&viejo.familias){
       // Convertir familias planas a grupos con sección general
       viejo.familias.forEach(function(f){
@@ -3911,9 +3944,22 @@ function reabrirIncidenciaActual(){
   setH(h);
   verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
 }
-function _actualizarIncidenciaPorOrden(pedido,centro,estado){
+function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
   if(typeof _db === 'undefined' || !_db || !pedido) return;
   _db.collection('incidencias').where('pedido','==',pedido).where('centro','==',centro).get().then(function(snap){
+    if(snap.empty){
+      if(datosParte && estado!=='terminado'){
+        _db.collection('incidencias').add({
+          clienteId: datosParte.clienteId||'mercadona',
+          pedido: pedido, centro: centro||'',
+          tienda: datosParte.tienda||'', dir: datosParte.dir||'', tel: datosParte.tel||'',
+          job: datosParte.job||'', tecnicoPrincipal: datosParte.tecnicoPrincipal||'',
+          creadoPor: datosParte.creadoPor||'', estado: estado,
+          vista: true, vistaAdmin: false, fechaCreacion: Date.now()
+        }).catch(function(){});
+      }
+      return;
+    }
     snap.forEach(function(doc){ doc.ref.update({estado:estado}); });
   }).catch(function(){});
   if(estado==='terminado'){
@@ -3925,6 +3971,148 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado){
     setH(h);
   }
 }
+function _migrarOrdenesEnEjecucionAIncidencias(){
+  if(typeof _db === 'undefined' || !_db) return;
+  var h=getH();
+  var vistos={};
+  h.forEach(function(r){
+    if((r.estado||'terminado')!=='en-ejecucion') return;
+    if(!r.pedido) return;
+    var k=r.pedido+'||'+(r.centro||'');
+    if(vistos[k]) return;
+    vistos[k]=true;
+    var ultimo=null;
+    for(var i=h.length-1;i>=0;i--){
+      if(h[i].pedido===r.pedido && h[i].centro===r.centro){ ultimo=h[i]; break; }
+    }
+    if(!ultimo) return;
+    _actualizarIncidenciaPorOrden(ultimo.pedido, ultimo.centro, 'en-ejecucion', {
+      clienteId: ultimo.clienteId||'mercadona',
+      tienda: ultimo.tienda||'', dir: ultimo.dir||'', tel: ultimo.tel||'',
+      job: ultimo.job||'', tecnicoPrincipal: (ultimo.tecnicos&&ultimo.tecnicos[0])||'',
+      creadoPor: ultimo.tecnicos&&ultimo.tecnicos[0]||''
+    });
+  });
+}
+
+function renderAsgTecnico() {
+  var sec = $('asgTecSection'); var el = $('asgTecLista');
+  if (!sec || !el) return;
+  var esTecnico = window._sesion && window._sesion.rol === 'tecnico';
+  if (!esTecnico) { sec.style.display = 'none'; return; }
+  var miNombre = window._sesion.nombre;
+  _db.collection('incidencias')
+    .where('tecnicoPrincipal','==',miNombre)
+    .where('estado','==','pendiente')
+    .get().then(function(snap){
+      if (snap.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
+      var html = '';
+      snap.forEach(function(doc){
+        var d = doc.data();
+        var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
+        html += '<div class="act-list-item" onclick="abrirAsgTecOpciones(\''+doc.id+'\')">'
+          + '<span class="act-num">&#128229;</span>'
+          + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
+          + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+'</div></div>'
+          + '</div>';
+      });
+      el.innerHTML = html;
+      sec.style.display = 'block';
+    }).catch(function(){ sec.style.display = 'none'; });
+}
+
+function renderAsgAdmin() {
+  var sec = $('asgAdminSection'); var el = $('asgAdminLista');
+  if (!sec || !el) return;
+  var esAdmin = window._sesion && window._sesion.rol === 'admin';
+  if (!esAdmin) { sec.style.display = 'none'; return; }
+  _db.collection('incidencias')
+    .where('vistaAdmin','==',false)
+    .get().then(function(snap){
+      if (snap.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
+      var html = '';
+      snap.forEach(function(doc){
+        var d = doc.data();
+        var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
+        html += '<div class="act-list-item" onclick="verAsgAdminAviso(\''+doc.id+'\',\''+(d.clienteId||'')+'\')">'
+          + '<span class="act-num">&#128229;</span>'
+          + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
+          + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+' · Creada por '+(d.creadoPor||'')+'</div></div>'
+          + '</div>';
+      });
+      el.innerHTML = html;
+      sec.style.display = 'block';
+    }).catch(function(){ sec.style.display = 'none'; });
+}
+function verAsgAdminAviso(id, clienteId) {
+  _db.collection('incidencias').doc(id).update({ vistaAdmin: true }).then(function(){
+    renderAsgAdmin();
+    var cli = getClientes().find(function(c){ return c.id === clienteId; });
+    if (cli) { seleccionarCliente(clienteId); abrirAsignar(); }
+  });
+}
+
+var _asgTecActual = null;
+function abrirAsgTecOpciones(id) {
+  _db.collection('incidencias').doc(id).get().then(function(doc){
+    if (!doc.exists) return;
+    _asgTecActual = Object.assign({id: doc.id}, doc.data());
+    $('dlgAsgTecTitulo').textContent = _asgTecActual.tienda || 'Incidencia';
+    var refs=[]; if(_asgTecActual.pedido) refs.push('Orden '+_asgTecActual.pedido); if(_asgTecActual.centro) refs.push('Centro '+_asgTecActual.centro);
+    $('dlgAsgTecSub').textContent = (refs.length?refs.join(' · ')+' · ':'')+(_asgTecActual.job||'');
+    $('dlgAsgTec').classList.add('show');
+  });
+}
+
+function consultarAsgTec() {
+  if (!_asgTecActual) return;
+  $('dlgAsgTec').classList.remove('show');
+  var d = _asgTecActual;
+  var refs=[]; if(d.pedido) refs.push('N&ordm; orden: '+d.pedido); if(d.centro) refs.push('N&ordm; centro: '+d.centro);
+  var html = '<div class="card"><div class="card-title">&#128229; '+(d.tienda||'')+'</div>'
+    + (refs.length?'<div class="rrow info-row"><span class="rc">Datos</span><span class="rl">'+refs.join(' · ')+'</span><span class="rv"></span></div>':'')
+    + '<div class="rrow info-row"><span class="rc">Trabajo</span><span class="rl">'+(d.job||'')+'</span><span class="rv"></span></div>'
+    + (d.dir?'<div class="rrow info-row"><span class="rc">Direcci&oacute;n</span><span class="rl">'+d.dir+'</span><span class="rv"></span></div>':'')
+    + (d.tel?'<div class="rrow info-row"><span class="rc">Tel&eacute;fono</span><span class="rl">'+d.tel+'</span><span class="rv"></span></div>':'')
+    + (d.km?'<div class="rrow info-row"><span class="rc">Km</span><span class="rl">'+d.km+'</span><span class="rv"></span></div>':'')
+    + (d.tr?'<div class="rrow info-row"><span class="rc">Despl.</span><span class="rl">'+d.tr+' min</span><span class="rv"></span></div>':'')
+    + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion+'</span><span class="rv"></span></div>':'')
+    + '</div><button class="btn btn-s btn-full" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
+  document.querySelectorAll('.win').forEach(function(w){w.classList.remove('active');});
+  $('w-consultaAsg').classList.add('active');
+  $('consultaAsgBody').innerHTML = html;
+}
+
+function ejecutarAsgTec() {
+  if (!_asgTecActual) return;
+  $('dlgAsgTec').classList.remove('show');
+  var d = _asgTecActual;
+  var cli = getClientes().find(function(c){ return c.id === d.clienteId; });
+  curCliente = cli || null;
+  if (!curCliente) return;
+  goToRaw('w-form');
+  nuevo();
+  _asgTecActual = d;
+  if (d.pedido) {
+    var esMerc = curCliente.tipo === 'mercadona';
+    if (esMerc) { $('pedido').value = d.pedido; }
+    else { _pedidoNoMerc = d.pedido; $('pedidoGenDisplay').textContent = d.pedido; }
+  }
+  $('centro').value = d.centro || '';
+  $('tienda').value = d.tienda || '';
+  $('dir').value = d.dir || '';
+  $('tel').value = d.tel || '';
+  if (d.km) { $('km').value = d.km; $('kmE').value = d.km; }
+  if (d.tr) { $('tr').value = d.tr; $('trE').value = d.tr; }
+  if (d.job) {
+    document.querySelectorAll('#jobTgl button').forEach(function(b){
+      if (b.textContent.trim() === d.job) setJob(d.job, b);
+    });
+  }
+  if (d.descripcion) { $('obs').value = d.descripcion; }
+  if (d.pedido) ocultarLectura();
+}
+
 // =====================================================
 // MÓDULO MATERIALES POR SECCIONES (ms*)
 // =====================================================
@@ -5870,7 +6058,7 @@ function _subirParteAFirestore(parte){
       fechaModificacion: Date.now()
     });
     _db.collection('partes').doc(docId).set(datos, {merge:true}).catch(function(){});
-    if(parte.pedido) _actualizarIncidenciaPorOrden(parte.pedido, parte.centro, parte.estado||'en-ejecucion');
+    if(parte.pedido) _actualizarIncidenciaPorOrden(parte.pedido, parte.centro, parte.estado||'en-ejecucion', datos);
   }catch(e){}
 }
 
@@ -6635,6 +6823,7 @@ initApp();
 renderClientes();
 _sincronizarClientesDesdeFirestore();
 renderAsgTecnico();
+renderAsgAdmin();
 $('fecha').value=hoy();
 onFechaChange();
 renderWorkers();
@@ -6757,16 +6946,7 @@ function _iniciarSesion() {
   // Buscar primero en Firestore (admins con multi-rol)
   msgEl.textContent = 'Verificando...';
   var docId = nombre.toLowerCase().replace(/ /g,'_');
-  _db.collection('usuario').doc(docId).get().then(function(snap) {
-    if (snap.exists) {
-      var u = snap.data();
-      if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
-      if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
-      var roles = u.roles || ['tecnico'];
-      if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
-      return;
-    }
-    // No está en Firestore: buscar en técnicos localStorage
+  function _intentarLoginLocal(){
     try {
       var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
       var tecs = cat.tecnicos || [];
@@ -6778,7 +6958,19 @@ function _iniciarSesion() {
       }
     } catch(e) {}
     msgEl.textContent = 'Usuario no encontrado.';
-  }).catch(function() { msgEl.textContent = 'Error de conexión.'; });
+  }
+  _db.collection('usuario').doc(docId).get().then(function(snap) {
+    if (snap.exists) {
+      var u = snap.data();
+      if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
+      if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+      var roles = u.roles || ['tecnico'];
+      if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
+      return;
+    }
+    // No está en Firestore: buscar en técnicos localStorage
+    _intentarLoginLocal();
+  }).catch(function() { _intentarLoginLocal(); });
 }
 
 function _mostrarSelectorRol(nombre, roles) {
@@ -6817,7 +7009,10 @@ function _aplicarSesion(nombre, rol, multiRol) {
   if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(); }
   else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre); }
   _sincronizarClientesDesdeFirestore();
+  _sincronizarTecnicosDesdeFirestore();
   renderAsgTecnico();
+  renderAsgAdmin();
+  _migrarOrdenesEnEjecucionAIncidencias();
   var sp = document.getElementById('splash');
   if (sp) {
     sp.style.display = 'flex';
@@ -6974,6 +7169,7 @@ function renderAsgLista() {
   var el = $('asgLista'); if (!el || !curCliente) return;
   el.innerHTML = '<div style="color:var(--text2);font-size:.82rem;">Cargando...</div>';
   _db.collection('incidencias').where('clienteId','==',curCliente.id).where('estado','!=','terminado').get().then(function(snap){
+    var b=$('asgBadge'); if(b){ b.textContent=snap.size; b.style.display=snap.size>0?'block':'none'; }
     if (snap.empty) { el.innerHTML='<div style="color:var(--text2);font-size:.82rem;">Sin incidencias asignadas.</div>'; return; }
     var tecs = getTecnicos().filter(function(t){ return t.activo !== false; });
     var html='';
@@ -7010,92 +7206,8 @@ function eliminarIncidencia(id) {
   _db.collection('incidencias').doc(id).delete().then(function(){ renderAsgLista(); });
 }
 
-function renderAsgTecnico() {
-  var sec = $('asgTecSection'); var el = $('asgTecLista');
-  if (!sec || !el) return;
-  var esTecnico = window._sesion && window._sesion.rol === 'tecnico';
-  if (!esTecnico) { sec.style.display = 'none'; return; }
-  var miNombre = window._sesion.nombre;
-  _db.collection('incidencias')
-    .where('tecnicoPrincipal','==',miNombre)
-    .where('estado','==','pendiente')
-    .get().then(function(snap){
-      if (snap.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
-      var html = '';
-      snap.forEach(function(doc){
-        var d = doc.data();
-        var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
-        html += '<div class="act-list-item" onclick="abrirAsgTecOpciones(\''+doc.id+'\')">'
-          + '<span class="act-num">&#128229;</span>'
-          + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
-          + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+'</div></div>'
-          + '</div>';
-      });
-      el.innerHTML = html;
-      sec.style.display = 'block';
-    }).catch(function(){ sec.style.display = 'none'; });
-}
-
-var _asgTecActual = null;
-function abrirAsgTecOpciones(id) {
-  _db.collection('incidencias').doc(id).get().then(function(doc){
-    if (!doc.exists) return;
-    _asgTecActual = Object.assign({id: doc.id}, doc.data());
-    $('dlgAsgTecTitulo').textContent = _asgTecActual.tienda || 'Incidencia';
-    var refs=[]; if(_asgTecActual.pedido) refs.push('Orden '+_asgTecActual.pedido); if(_asgTecActual.centro) refs.push('Centro '+_asgTecActual.centro);
-    $('dlgAsgTecSub').textContent = (refs.length?refs.join(' · ')+' · ':'')+(_asgTecActual.job||'');
-    $('dlgAsgTec').classList.add('show');
-  });
-}
-
-function consultarAsgTec() {
-  if (!_asgTecActual) return;
-  $('dlgAsgTec').classList.remove('show');
-  var d = _asgTecActual;
-  var refs=[]; if(d.pedido) refs.push('N&ordm; orden: '+d.pedido); if(d.centro) refs.push('N&ordm; centro: '+d.centro);
-  var html = '<div class="card"><div class="card-title">&#128229; '+(d.tienda||'')+'</div>'
-    + (refs.length?'<div class="rrow info-row"><span class="rc">Datos</span><span class="rl">'+refs.join(' · ')+'</span><span class="rv"></span></div>':'')
-    + '<div class="rrow info-row"><span class="rc">Trabajo</span><span class="rl">'+(d.job||'')+'</span><span class="rv"></span></div>'
-    + (d.dir?'<div class="rrow info-row"><span class="rc">Direcci&oacute;n</span><span class="rl">'+d.dir+'</span><span class="rv"></span></div>':'')
-    + (d.tel?'<div class="rrow info-row"><span class="rc">Tel&eacute;fono</span><span class="rl">'+d.tel+'</span><span class="rv"></span></div>':'')
-    + (d.km?'<div class="rrow info-row"><span class="rc">Km</span><span class="rl">'+d.km+'</span><span class="rv"></span></div>':'')
-    + (d.tr?'<div class="rrow info-row"><span class="rc">Despl.</span><span class="rl">'+d.tr+' min</span><span class="rv"></span></div>':'')
-    + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion+'</span><span class="rv"></span></div>':'')
-    + '</div><button class="btn btn-s btn-full" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
-  document.querySelectorAll('.win').forEach(function(w){w.classList.remove('active');});
-  $('w-consultaAsg').classList.add('active');
-  $('consultaAsgBody').innerHTML = html;
-}
-
-function ejecutarAsgTec() {
-  if (!_asgTecActual) return;
-  $('dlgAsgTec').classList.remove('show');
-  var d = _asgTecActual;
-  var cli = getClientes().find(function(c){ return c.id === d.clienteId; });
-  curCliente = cli || null;
-  if (!curCliente) return;
-  goToRaw('w-form');
-  nuevo();
-  _asgTecActual = d;
-  if (d.pedido) {
-    var esMerc = curCliente.tipo === 'mercadona';
-    if (esMerc) { $('pedido').value = d.pedido; }
-    else { _pedidoNoMerc = d.pedido; $('pedidoGenDisplay').textContent = d.pedido; }
-  }
-  $('centro').value = d.centro || '';
-  $('tienda').value = d.tienda || '';
-  $('dir').value = d.dir || '';
-  $('tel').value = d.tel || '';
-  if (d.km) { $('km').value = d.km; $('kmE').value = d.km; }
-  if (d.tr) { $('tr').value = d.tr; $('trE').value = d.tr; }
-  if (d.job) {
-    document.querySelectorAll('#jobTgl button').forEach(function(b){
-      if (b.textContent.trim() === d.job) setJob(d.job, b);
-    });
-  }
-  if (d.descripcion) { $('obs').value = d.descripcion; }
-  if (d.pedido) ocultarLectura();
-}
+// (renderAsgTecnico, renderAsgAdmin, verAsgAdminAviso, abrirAsgTecOpciones, consultarAsgTec,
+// ejecutarAsgTec y _asgTecActual movidos arriba, al bloque de script correcto, antes de su primer uso)
 
 function cerrarSesion() {
   try { localStorage.removeItem('irv_sesion'); } catch(e) {}
