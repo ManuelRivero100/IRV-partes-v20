@@ -477,6 +477,10 @@ textarea{resize:vertical;min-height:72px}
   <button style="margin-left:8px;padding:6px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.75rem;font-family:inherit;cursor:pointer;" onclick="cerrarSesion()">&#128275; Salir</button>
 </div>
 <div id="w-clientes" class="win active">
+  <div id="asgTecSection" style="display:none;margin-bottom:14px;">
+    <div class="section-label">&#128229; Incidencias asignadas</div>
+    <div id="asgTecLista"></div>
+  </div>
   <div class="section-label">Clientes</div>
   <div id="clientesGrid" class="app-grid"></div>
   <div class="section-label">Herramientas</div>
@@ -581,7 +585,7 @@ textarea{resize:vertical;min-height:72px}
   </div>
 </div>
 <div id="w-form" class="win">
-  <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
+  <button class="back" onclick="_asgTecActual?(_asgTecActual=null,goTo('w-clientes')):goTo('w-menu')">&#8592; Men&uacute; principal</button>
   <button class="btn btn-s btn-full" style="margin-bottom:10px;" onclick="toggleCard('cardLectura',this)">&#128196; Auto-relleno</button>
   <div class="card" id="cardLectura" style="display:none"><div class="card-title">&#128196; Lectura de orden</div>
     <div class="field"><label>Pegar texto de la orden</label><textarea id="raw" rows="5" placeholder="Pega aqu&iacute; el texto de la orden&hellip;"></textarea></div>
@@ -886,6 +890,22 @@ textarea{resize:vertical;min-height:72px}
     </div>
   </div>
 </div>
+<div class="dialogo" id="dlgAsgTec">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo" id="dlgAsgTecTitulo">Incidencia</div>
+    <div class="dialogo-sub" id="dlgAsgTecSub"></div>
+    <div class="brow" style="margin-bottom:12px;">
+      <button class="btn btn-s" style="flex:1;justify-content:center" onclick="consultarAsgTec()">&#128065; Consultar</button>
+      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="ejecutarAsgTec()">&#9881; Ejecutar</button>
+    </div>
+    <div style="margin-top:10px;">
+      <button class="btn btn-s btn-sm btn-full" onclick="$('dlgAsgTec').classList.remove('show');">&#8592; Cancelar</button>
+    </div>
+  </div>
+</div>
+<div id="w-consultaAsg" class="win">
+  <div id="consultaAsgBody"></div>
+</div>
 <div class="dialogo" id="dlgCorregir">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#9998; Datos modificados</div>
@@ -1043,6 +1063,7 @@ function goTo(id){
     _secActual='';
     _sincronizarClientesDesdeFirestore();
     renderClientes();
+    renderAsgTecnico();
   }
   if(id==='w-menu'&&curCliente){ resetearEstadoCompleto(); renderMenu(); }
 }
@@ -5892,6 +5913,10 @@ function _finalizarGuardado(estado){
   }
   h.push(r); setH(h);
   _subirParteAFirestore(r);
+  if (_asgTecActual && _asgTecActual.id) {
+    _db.collection('incidencias').doc(_asgTecActual.id).update({ estado: 'en-ejecucion' }).then(function(){ renderAsgTecnico(); }).catch(function(){});
+    _asgTecActual = null;
+  }
   showMsg('msgRes','Guardado correctamente.','success');
   $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
   setTimeout(function(){ goTo('w-menu'); },1200);
@@ -6609,6 +6634,7 @@ initApp();
 
 renderClientes();
 _sincronizarClientesDesdeFirestore();
+renderAsgTecnico();
 $('fecha').value=hoy();
 onFechaChange();
 renderWorkers();
@@ -6791,6 +6817,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
   if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(); }
   else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre); }
   _sincronizarClientesDesdeFirestore();
+  renderAsgTecnico();
   var sp = document.getElementById('splash');
   if (sp) {
     sp.style.display = 'flex';
@@ -6959,14 +6986,12 @@ function renderAsgLista() {
         +(refs.length?'<div style="font-size:.78rem;color:var(--text2);">'+refs.join(' · ')+'</div>':'')
         +'<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+d.job+' · '+estLabel+'</div>'
         +'<div style="font-size:.82rem;margin-top:6px;">👤 <b>'+d.tecnicoPrincipal+'</b></div>';
-      if (d.estado === 'pendiente') {
-        html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
-          +'<select onchange="reasignarIncidencia(\''+doc.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
-          +'<option value="">-- mantener --</option>'
-          +tecs.map(function(t){return '<option value="'+t.nombre.replace(/"/g,'')+'">'+t.nombre+'</option>';}).join('')
-          +'</select></div>'
-          +'<button class="btn btn-d btn-sm" style="margin-top:8px;" onclick="eliminarIncidencia(\''+doc.id+'\')">&#128465; Eliminar</button>';
-      }
+      html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
+        +'<select onchange="reasignarIncidencia(\''+doc.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
+        +'<option value="">-- mantener --</option>'
+        +tecs.map(function(t){return '<option value="'+t.nombre.replace(/"/g,'')+'">'+t.nombre+'</option>';}).join('')
+        +'</select></div>'
+        +'<button class="btn btn-d btn-sm" style="margin-top:8px;" onclick="eliminarIncidencia(\''+doc.id+'\')">&#128465; Eliminar</button>';
       html += '</div>';
     });
     el.innerHTML = html;
@@ -6983,6 +7008,93 @@ function reasignarIncidencia(id, nuevoTec) {
 function eliminarIncidencia(id) {
   if (!confirm('¿Eliminar esta incidencia asignada?')) return;
   _db.collection('incidencias').doc(id).delete().then(function(){ renderAsgLista(); });
+}
+
+function renderAsgTecnico() {
+  var sec = $('asgTecSection'); var el = $('asgTecLista');
+  if (!sec || !el) return;
+  var esTecnico = window._sesion && window._sesion.rol === 'tecnico';
+  if (!esTecnico) { sec.style.display = 'none'; return; }
+  var miNombre = window._sesion.nombre;
+  _db.collection('incidencias')
+    .where('tecnicoPrincipal','==',miNombre)
+    .where('estado','==','pendiente')
+    .get().then(function(snap){
+      if (snap.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
+      var html = '';
+      snap.forEach(function(doc){
+        var d = doc.data();
+        var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
+        html += '<div class="act-list-item" onclick="abrirAsgTecOpciones(\''+doc.id+'\')">'
+          + '<span class="act-num">&#128229;</span>'
+          + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
+          + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+'</div></div>'
+          + '</div>';
+      });
+      el.innerHTML = html;
+      sec.style.display = 'block';
+    }).catch(function(){ sec.style.display = 'none'; });
+}
+
+var _asgTecActual = null;
+function abrirAsgTecOpciones(id) {
+  _db.collection('incidencias').doc(id).get().then(function(doc){
+    if (!doc.exists) return;
+    _asgTecActual = Object.assign({id: doc.id}, doc.data());
+    $('dlgAsgTecTitulo').textContent = _asgTecActual.tienda || 'Incidencia';
+    var refs=[]; if(_asgTecActual.pedido) refs.push('Orden '+_asgTecActual.pedido); if(_asgTecActual.centro) refs.push('Centro '+_asgTecActual.centro);
+    $('dlgAsgTecSub').textContent = (refs.length?refs.join(' · ')+' · ':'')+(_asgTecActual.job||'');
+    $('dlgAsgTec').classList.add('show');
+  });
+}
+
+function consultarAsgTec() {
+  if (!_asgTecActual) return;
+  $('dlgAsgTec').classList.remove('show');
+  var d = _asgTecActual;
+  var refs=[]; if(d.pedido) refs.push('N&ordm; orden: '+d.pedido); if(d.centro) refs.push('N&ordm; centro: '+d.centro);
+  var html = '<div class="card"><div class="card-title">&#128229; '+(d.tienda||'')+'</div>'
+    + (refs.length?'<div class="rrow info-row"><span class="rc">Datos</span><span class="rl">'+refs.join(' · ')+'</span><span class="rv"></span></div>':'')
+    + '<div class="rrow info-row"><span class="rc">Trabajo</span><span class="rl">'+(d.job||'')+'</span><span class="rv"></span></div>'
+    + (d.dir?'<div class="rrow info-row"><span class="rc">Direcci&oacute;n</span><span class="rl">'+d.dir+'</span><span class="rv"></span></div>':'')
+    + (d.tel?'<div class="rrow info-row"><span class="rc">Tel&eacute;fono</span><span class="rl">'+d.tel+'</span><span class="rv"></span></div>':'')
+    + (d.km?'<div class="rrow info-row"><span class="rc">Km</span><span class="rl">'+d.km+'</span><span class="rv"></span></div>':'')
+    + (d.tr?'<div class="rrow info-row"><span class="rc">Despl.</span><span class="rl">'+d.tr+' min</span><span class="rv"></span></div>':'')
+    + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion+'</span><span class="rv"></span></div>':'')
+    + '</div><button class="btn btn-s btn-full" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
+  document.querySelectorAll('.win').forEach(function(w){w.classList.remove('active');});
+  $('w-consultaAsg').classList.add('active');
+  $('consultaAsgBody').innerHTML = html;
+}
+
+function ejecutarAsgTec() {
+  if (!_asgTecActual) return;
+  $('dlgAsgTec').classList.remove('show');
+  var d = _asgTecActual;
+  var cli = getClientes().find(function(c){ return c.id === d.clienteId; });
+  curCliente = cli || null;
+  if (!curCliente) return;
+  goToRaw('w-form');
+  nuevo();
+  _asgTecActual = d;
+  if (d.pedido) {
+    var esMerc = curCliente.tipo === 'mercadona';
+    if (esMerc) { $('pedido').value = d.pedido; }
+    else { _pedidoNoMerc = d.pedido; $('pedidoGenDisplay').textContent = d.pedido; }
+  }
+  $('centro').value = d.centro || '';
+  $('tienda').value = d.tienda || '';
+  $('dir').value = d.dir || '';
+  $('tel').value = d.tel || '';
+  if (d.km) { $('km').value = d.km; $('kmE').value = d.km; }
+  if (d.tr) { $('tr').value = d.tr; $('trE').value = d.tr; }
+  if (d.job) {
+    document.querySelectorAll('#jobTgl button').forEach(function(b){
+      if (b.textContent.trim() === d.job) setJob(d.job, b);
+    });
+  }
+  if (d.descripcion) { $('obs').value = d.descripcion; }
+  if (d.pedido) ocultarLectura();
 }
 
 function cerrarSesion() {
