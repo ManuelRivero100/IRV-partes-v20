@@ -669,6 +669,10 @@ textarea{resize:vertical;min-height:72px}
     <button class="btn btn-s btn-full" style="margin-bottom:10px;" id="btnMateriales" onclick="toggleCard('cardMatForm',this)">&#128230; Materiales</button>
     <div class="card" id="cardMatForm" style="display:none">
       <div class="card-title">&#128230; Materiales utilizados</div>
+      <div id="obrasMatTipoTgl" class="tgl" style="display:none;margin-bottom:10px;">
+        <button onclick="setObrasMatTipo('Climatización',this)">Climatización</button>
+        <button onclick="setObrasMatTipo('Conductos',this)">Conductos</button>
+      </div>
       <div id="parteMatCard"></div>
     </div>
   </div>
@@ -1148,10 +1152,10 @@ function renderMenu(){
   if(!curCliente) return;
   var items=[
     {ico:'&#9999;&#65039;',cls:'ico-mercadona',title:'Generar parte',id:'w-form'},
-    {ico:'&#128203;',cls:'ico-other',title:'Historial',id:'w-hist'},
-    {ico:'&#128295;',cls:'ico-catalogo',title:'Materiales',id:'w-mat'}
+    {ico:'&#128203;',cls:'ico-other',title:'Historial',id:'w-hist'}
   ];
   if(_esAdminOCreador()){
+    items.push({ico:'&#128295;',cls:'ico-catalogo',title:'Materiales',id:'w-mat'});
     items.push({ico:'&#128229;',cls:'ico-other',title:'Asignar incidencia',id:'w-asignar'});
   }
   var html='';
@@ -3163,7 +3167,7 @@ function resetearEstadoCompleto(){
   aeData=null; esFestivo=false; _nocturnoConfirmado=false;
   curJob=''; curLink='No'; wRoles=[];
   wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
-  _MS.sel={}; _MS.extras={}; _MS.secAbierta=null;
+  _MS.sel={}; _MS.extras={}; _MS.secAbierta=null; _MS.catJob=null;
   _keepForm=false;
   ['pedido','tienda','dir','tel','centro','raw','obs','km','tr',
    'kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){
@@ -3226,6 +3230,8 @@ function nuevo(){
   $('msgForm').className='msg'; $('out').innerHTML=''; window.recTmp=null;
   $('gbtn').textContent='&#128190; Guardar parte'; $('gbtn').disabled=false; $('gbtn').style.opacity='1';
   $('cardMatForm').style.display='none'; msInitSel([]);
+  _MS.catJob=null;
+  var omt=$('obrasMatTipoTgl'); if(omt) omt.style.display='none';
   $('fecha').value=hoy(); onFechaChange(); renderWorkers();
   renderJobTgl();
   adaptarFormularioACliente();
@@ -3997,7 +4003,7 @@ function msNextCod(){var s=msGetSecciones(_MS.catJob||curJob),max=31;s.forEach(f
 function msRender(cid){
   var el=$(cid); if(!el) return;
   if(_MS.modo==='parte'){
-    var g=catGetGrupoParaJob(curJob);
+    var g=catGetGrupoParaJob(_MS.catJob||curJob);
     if(!g){ el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay materiales para este tipo de trabajo.</div>'; return; }
     var html='';
     // Lista de materiales ya seleccionados (sel + extras) con cantidad editable y botón borrar
@@ -4358,7 +4364,7 @@ function msGetSecIco(nombre){
 }
 
 function msAbrirCatalogo(){
-  _MS.modo='catalogo';_MS.secAbierta=null;
+  _MS.modo='catalogo';_MS.secAbierta=null;_MS.catJob=null;
   var el=$('matCatCard');if(el)el.style.display='block';
   var ed=$('w-mat-edit');if(ed)ed.style.display='none';
   msRenderCatGrid();
@@ -4819,12 +4825,29 @@ function setJob(v,btn){
   $('cardMatFormWrap').style.display='block';
   $('cardMatForm').style.display='none';
   var bm=$('btnMateriales'); if(bm) bm.textContent='\u{1F4E6} Materiales';
+  var esObras=v==='Obras';
+  var tgl=$('obrasMatTipoTgl');
+  if(esObras){
+    tgl.style.display='flex';
+    if(!_MS.catJob){ _MS.catJob='Climatización'; }
+    document.querySelectorAll('#obrasMatTipoTgl button').forEach(function(b){
+      b.classList.toggle('active', b.textContent===_MS.catJob);
+    });
+  } else {
+    tgl.style.display='none';
+    _MS.catJob=null;
+  }
   msRender('parteMatCard');
   // Mostrar/ocultar campo pedido vs actuación obras
   var esMercadona=curCliente&&curCliente.tipo==='mercadona';
-  var esObras=v==='Obras';
   $('fieldPedido').style.display=(esMercadona&&esObras)?'none':'block';
   $('fieldActObras').style.display=(esMercadona&&esObras)?'block':'none';
+}
+function setObrasMatTipo(tipo,btn){
+  _MS.catJob=tipo;
+  document.querySelectorAll('#obrasMatTipoTgl button').forEach(function(b){ b.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  msRender('parteMatCard');
 }
 
 function setWR(i,rol,btn){
