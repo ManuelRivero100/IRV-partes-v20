@@ -3986,7 +3986,8 @@ function _migrarOrdenesEnEjecucionAIncidencias(){
       if(h[i].pedido===r.pedido && h[i].centro===r.centro){ ultimo=h[i]; break; }
     }
     if(!ultimo) return;
-    _actualizarIncidenciaPorOrden(ultimo.pedido, ultimo.centro, 'en-ejecucion', {
+    if((ultimo.estado||'terminado')!=='en-ejecucion') return;
+    _actualizarIncidenciaPorOrden(ultimo.pedido, ultimo.centro, ultimo.estado, {
       clienteId: ultimo.clienteId||'mercadona',
       tienda: ultimo.tienda||'', dir: ultimo.dir||'', tel: ultimo.tel||'',
       job: ultimo.job||'', tecnicoPrincipal: (ultimo.tecnicos&&ultimo.tecnicos[0])||'',
@@ -7102,7 +7103,7 @@ function abrirAsignar() {
   $('asgJobTgl').innerHTML = jobs.map(function(j){
     return '<button onclick="setAsgJob(\''+j+'\',this)">'+j+'</button>';
   }).join('');
-  var tecs = getTecnicos().filter(function(t){ return t.activo !== false; });
+  var tecs = getTecnicos().filter(function(t){ return t.activo !== false && t.pin && t.pin.length===4; });
   $('asgTecTgl').innerHTML = tecs.length ? tecs.map(function(t){
     return '<button onclick="setAsgTec(\''+t.nombre.replace(/\'/g,"\\'")+'\',this)">'+t.nombre+'</button>';
   }).join('') : '<div style="color:var(--text2);font-size:.82rem;padding:6px;">No hay técnicos activos en el catálogo.</div>';
@@ -7171,7 +7172,7 @@ function renderAsgLista() {
   _db.collection('incidencias').where('clienteId','==',curCliente.id).where('estado','!=','terminado').get().then(function(snap){
     var b=$('asgBadge'); if(b){ b.textContent=snap.size; b.style.display=snap.size>0?'block':'none'; }
     if (snap.empty) { el.innerHTML='<div style="color:var(--text2);font-size:.82rem;">Sin incidencias asignadas.</div>'; return; }
-    var tecs = getTecnicos().filter(function(t){ return t.activo !== false; });
+    var tecs = getTecnicos().filter(function(t){ return t.activo !== false && t.pin && t.pin.length===4; });
     var html='';
     snap.forEach(function(doc){
       var d = doc.data();
