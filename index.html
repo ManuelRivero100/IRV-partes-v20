@@ -1149,6 +1149,7 @@ var _pedidoNoMerc = null;
 var _editIdx = null;
 var _nocturnoConfirmado = false;
 var _incidenciasCache = [];
+var _averiaReportada = '';
 
 
 
@@ -3183,6 +3184,7 @@ function generarCore(){
     kmDif:kmDG, trDif:trDG, horaEnlace:heG, tipoDia:td,
     estado:'en-ejecucion', materiales:msGetSel(), codigos:codigos,
     clienteId:curCliente?curCliente.id:'mercadona', cod_v:3,
+    averiaReportada:_averiaReportada||'',
     tecnicos:(function(){
       var tecs=getTecnicos();
       return wNames.filter(function(n){return n&&n.trim();}).map(function(nom){
@@ -3219,7 +3221,7 @@ function copiar(){
 }
 
 function resetearEstadoCompleto(){
-  _editIdx=null; _actObrasSeleccionada=null; _pedidoNoMerc=null;
+  _editIdx=null; _actObrasSeleccionada=null; _pedidoNoMerc=null; _averiaReportada='';
   aeData=null; esFestivo=false; _nocturnoConfirmado=false;
   curJob=''; curLink='No'; wRoles=[];
   wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
@@ -3957,7 +3959,7 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
           tienda: datosParte.tienda||'', dir: datosParte.dir||'', tel: datosParte.tel||'',
           job: datosParte.job||'', tecnicoPrincipal: datosParte.tecnicoPrincipal||'',
           creadoPor: datosParte.creadoPor||'', estado: estado,
-          descripcion: datosParte.obs||'',
+          descripcion: datosParte.averiaReportada||datosParte.obs||'',
           vista: true, vistaAdmin: false, fechaCreacion: Date.now()
         }).catch(function(){});
       }
@@ -3995,7 +3997,8 @@ function _migrarOrdenesEnEjecucionAIncidencias(){
       tienda: ultimo.tienda||'', dir: ultimo.dir||'', tel: ultimo.tel||'',
       job: ultimo.job||'', tecnicoPrincipal: (ultimo.tecnicos&&ultimo.tecnicos[0])||'',
       creadoPor: ultimo.tecnicos&&ultimo.tecnicos[0]||'',
-      obs: ultimo.obs||''
+      obs: ultimo.obs||'',
+      averiaReportada: ultimo.averiaReportada||''
     });
   });
 }
@@ -5542,6 +5545,10 @@ function leer(){
   var obsM=t.match(/OBS\.?\n([\s\S]+?)(?=\nMATERIALES|\nPartes IRV|$)/i);
   var obsVal=obsM?obsM[1].replace(/^\s+|\s+$/g,''):'';
 
+  // Extraer avería reportada (bloque DESCRIPCIÓN del pedido original, ej. pedidos de Mercadona)
+  var averiaM=t.match(/DESCRIPCI[OÓ]N\s*\n?([^\n]+(?:\n(?!\s*[A-ZÁÉÍÓÚÑ ]{4,}[:\n])[^\n]+)*)/);
+  var averiaVal=averiaM?averiaM[1].trim():'';
+
   // Rellenar campos
   var n=0;
   if(pedido&&!$('pedido').value){ $('pedido').value=pedido.trim(); n++; }
@@ -5561,6 +5568,7 @@ function leer(){
   if(kmVal){ $('km').value=kmVal; n++; }
   if(trVal){ $('tr').value=trVal; n++; }
   if(obsVal){ $('obs').value=obsVal; n++; }
+  if(averiaVal){ _averiaReportada=averiaVal; n++; }
 
   // Tipo de trabajo — primero activar el botón, luego cargar materiales en setTimeout
   // para que setJob() termine antes de que msInitSel() lea curJob
@@ -6074,9 +6082,17 @@ function hacerPDFTexto(txt, titulo){
 }
 
 
+function _marcarPendienteSync(parte, pendiente){
+  var h=getH();
+  var idx=h.findIndex(function(x){ return x.fecha===parte.fecha && x.pedido===parte.pedido && x.centro===parte.centro; });
+  if(idx<0) return;
+  if(pendiente) h[idx]._pendienteSync=true; else delete h[idx]._pendienteSync;
+  setH(h);
+}
+
 function _subirParteAFirestore(parte){
   try{
-    if(typeof _db === 'undefined' || !_db || !window._sesion) return;
+    if(typeof _db === 'undefined' || !_db || !window._sesion) { _marcarPendienteSync(parte, true); return; }
     var docId = (parte.clienteId||'mercadona')+'_'+parte.fecha+'_'+parte.centro+'_'+parte.pedido;
     docId = docId.replace(/[\/\s]/g,'-');
     var datos = Object.assign({}, parte, {
@@ -6084,10 +6100,22 @@ function _subirParteAFirestore(parte){
       creadoPor: window._sesion.nombre,
       fechaModificacion: Date.now()
     });
-    _db.collection('partes').doc(docId).set(datos, {merge:true}).catch(function(){});
+    _db.collection('partes').doc(docId).set(datos, {merge:true}).then(function(){
+      _marcarPendienteSync(parte, false);
+    }).catch(function(){
+      _marcarPendienteSync(parte, true);
+    });
     if(parte.pedido) _actualizarIncidenciaPorOrden(parte.pedido, parte.centro, parte.estado||'en-ejecucion', datos);
-  }catch(e){}
+  }catch(e){ _marcarPendienteSync(parte, true); }
 }
+
+function _reintentarPartesPendientes(){
+  if(typeof _db === 'undefined' || !_db || !window._sesion) return;
+  var h=getH();
+  var pendientes=h.filter(function(r){ return r._pendienteSync; });
+  pendientes.forEach(function(r){ _subirParteAFirestore(r); });
+}
+window.addEventListener('online', _reintentarPartesPendientes);
 
 function _finalizarGuardado(estado){
   var r=window.recTmp; if(!r) return;
@@ -7040,6 +7068,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
   renderAsgTecnico();
   renderAsgAdmin();
   _migrarOrdenesEnEjecucionAIncidencias();
+  _reintentarPartesPendientes();
   var sp = document.getElementById('splash');
   if (sp) {
     sp.style.display = 'flex';
