@@ -7232,33 +7232,67 @@ function guardarAsignacion() {
   }
 }
 
+var _asgIncidenciasPorTec = {};
 function renderAsgLista() {
   var el = $('asgLista'); if (!el || !curCliente) return;
   el.innerHTML = '<div style="color:var(--text2);font-size:.82rem;">Cargando...</div>';
   _db.collection('incidencias').where('clienteId','==',curCliente.id).where('estado','!=','terminado').get().then(function(snap){
     var b=$('asgBadge'); if(b){ b.textContent=snap.size; b.style.display=snap.size>0?'block':'none'; }
-    if (snap.empty) { el.innerHTML='<div style="color:var(--text2);font-size:.82rem;">Sin incidencias asignadas.</div>'; return; }
     var tecs = getTecnicos().filter(function(t){ return t.activo !== false && t.pin && t.pin.length===4; });
-    var html='';
+    _asgIncidenciasPorTec = {};
     snap.forEach(function(doc){
-      var d = doc.data();
-      var estLabel = {pendiente:'⏳ Pendiente', 'en-ejecucion':'🔧 En ejecución', terminado:'✅ Terminado'}[d.estado]||d.estado;
-      var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
-      html += '<div class="card" style="margin-bottom:8px;">'
-        +'<div style="font-weight:700;font-size:.9rem;">'+d.tienda+'</div>'
-        +(refs.length?'<div style="font-size:.78rem;color:var(--text2);">'+refs.join(' · ')+'</div>':'')
-        +'<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+d.job+' · '+estLabel+'</div>'
-        +'<div style="font-size:.82rem;margin-top:6px;">👤 <b>'+d.tecnicoPrincipal+'</b></div>';
-      html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
-        +'<select onchange="reasignarIncidencia(\''+doc.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
-        +'<option value="">-- mantener --</option>'
-        +tecs.map(function(t){return '<option value="'+t.nombre.replace(/"/g,'')+'">'+t.nombre+'</option>';}).join('')
-        +'</select></div>'
-        +'<button class="btn btn-d btn-sm" style="margin-top:8px;" onclick="eliminarIncidencia(\''+doc.id+'\')">&#128465; Eliminar</button>';
-      html += '</div>';
+      var d = Object.assign({id: doc.id}, doc.data());
+      var nom = d.tecnicoPrincipal || '(sin asignar)';
+      if(!_asgIncidenciasPorTec[nom]) _asgIncidenciasPorTec[nom]=[];
+      _asgIncidenciasPorTec[nom].push(d);
+    });
+    // Asegurar que aparezcan también los técnicos sin ninguna incidencia
+    tecs.forEach(function(t){ if(!_asgIncidenciasPorTec[t.nombre]) _asgIncidenciasPorTec[t.nombre]=[]; });
+    var nombres = Object.keys(_asgIncidenciasPorTec).sort(function(a,b){
+      return (_asgIncidenciasPorTec[b].length) - (_asgIncidenciasPorTec[a].length);
+    });
+    if(!nombres.length){ el.innerHTML='<div style="color:var(--text2);font-size:.82rem;">Sin técnicos en el catálogo.</div>'; return; }
+    var html='';
+    nombres.forEach(function(nom){
+      var cant=_asgIncidenciasPorTec[nom].length;
+      var key=nom.replace(/[^a-z0-9]/gi,'_');
+      html += '<div class="card" style="margin-bottom:8px;padding:0;overflow:hidden;">'
+        + '<button class="btn btn-s btn-full" style="justify-content:space-between;border-radius:0;" onclick="toggleCard(\'asgTecGrupo_'+key+'\',this)">'
+        + '<span>&#128119; '+nom+'</span>'
+        + '<span style="background:'+(cant>0?'var(--green)':'var(--border2)')+';color:#fff;font-size:.75rem;font-weight:700;padding:2px 9px;border-radius:20px;min-width:22px;text-align:center;">'+cant+'</span>'
+        + '</button>'
+        + '<div id="asgTecGrupo_'+key+'" style="display:none;padding:10px;">'
+        + _renderAsgTecGrupoBody(nom)
+        + '</div>'
+        + '</div>';
     });
     el.innerHTML = html;
   }).catch(function(){ el.innerHTML='<div style="color:var(--red);">Error al cargar.</div>'; });
+}
+
+function _renderAsgTecGrupoBody(nom){
+  var lista = (_asgIncidenciasPorTec[nom]||[]).slice().sort(function(a,b){
+    return (b.fechaCreacion||0)-(a.fechaCreacion||0);
+  });
+  if(!lista.length) return '<div style="color:var(--text2);font-size:.82rem;">Sin incidencias asignadas.</div>';
+  var tecs = getTecnicos().filter(function(t){ return t.activo !== false && t.pin && t.pin.length===4; });
+  var html='';
+  lista.forEach(function(d){
+    var estLabel = {pendiente:'⏳ Pendiente', 'en-ejecucion':'🔧 En ejecución', terminado:'✅ Terminado'}[d.estado]||d.estado;
+    var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
+    html += '<div class="card" style="margin-bottom:8px;">'
+      +'<div style="font-weight:700;font-size:.9rem;">'+d.tienda+'</div>'
+      +(refs.length?'<div style="font-size:.78rem;color:var(--text2);">'+refs.join(' · ')+'</div>':'')
+      +'<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+d.job+' · '+estLabel+'</div>';
+    html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
+      +'<select onchange="reasignarIncidencia(\''+d.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
+      +'<option value="">-- mantener --</option>'
+      +tecs.map(function(t){return '<option value="'+t.nombre.replace(/"/g,'')+'">'+t.nombre+'</option>';}).join('')
+      +'</select></div>'
+      +'<button class="btn btn-d btn-sm" style="margin-top:8px;" onclick="eliminarIncidencia(\''+d.id+'\')">&#128465; Eliminar</button>';
+    html += '</div>';
+  });
+  return html;
 }
 
 function reasignarIncidencia(id, nuevoTec) {
