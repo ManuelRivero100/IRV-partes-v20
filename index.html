@@ -562,7 +562,8 @@ textarea{resize:vertical;min-height:72px}
 </div>
 <div id="w-asignar" class="win">
   <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
-  <div class="card">
+  <button class="btn btn-p btn-full" style="margin-bottom:10px;" onclick="toggleCard('cardCrearAsg',this)">&#10133; Crear asignaci&oacute;n</button>
+  <div class="card" id="cardCrearAsg" style="display:none">
     <div class="card-title">&#128229; Asignar incidencia</div>
     <div class="field"><label>Pegar texto de la orden</label><textarea id="asgRaw" rows="5" placeholder="Pega aqu&iacute; el texto de la orden&hellip;"></textarea></div>
     <div class="brow"><button class="btn btn-p" onclick="leerAsg()">&#128269; Autocompletar</button><button class="btn btn-s" onclick="$('asgRaw').value=''">&#128465;&#65039; Limpiar</button></div>
