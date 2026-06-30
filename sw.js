@@ -1,14 +1,12 @@
 // sw.js — Partes IRV-10
-const CACHE = 'irv10-v20260627b';
+const CACHE = 'irv10-v20260630a';
 const FILES = ['./','./index.html','./manifest.json','./icon.png'];
-
 self.addEventListener('install', function(e){
   self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE).then(function(c){ return c.addAll(FILES); })
   );
 });
-
 self.addEventListener('activate', function(e){
   e.waitUntil(
     caches.keys().then(function(keys){
@@ -21,7 +19,6 @@ self.addEventListener('activate', function(e){
     })
   );
 });
-
 self.addEventListener('fetch', function(e){
   if(e.request.mode === 'navigate'){
     e.respondWith(
