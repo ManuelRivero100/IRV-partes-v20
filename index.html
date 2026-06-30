@@ -573,6 +573,7 @@ textarea{resize:vertical;min-height:72px}
     <div class="field"><label>Tel&eacute;fono <span class="req">*</span></label><input id="asgTel" type="tel" inputmode="numeric"></div>
     <div class="field"><label>Km (opcional)</label><input id="asgKm" type="number" inputmode="decimal" placeholder="Ej: 35"></div>
     <div class="field"><label>Desplazamiento min. (opcional)</label><input id="asgTr" type="number" inputmode="numeric" placeholder="Ej: 40"></div>
+    <div class="field"><label>Descripci&oacute;n de la aver&iacute;a (opcional)</label><textarea id="asgDescripcion" rows="3" placeholder="Ej: Fricooling descolgado, no funciona&hellip;"></textarea></div>
     <div class="field"><label>Tipo de trabajo <span class="req">*</span></label>
       <div class="tgl" id="asgJobTgl"></div>
       <input type="hidden" id="asgJob">
@@ -5485,7 +5486,15 @@ function leer(){
   var tel=cap(/TEL[EÉ]FONO[^:]*[:\s]+(\+?\d[\d\s\-]{6,})/i,t);
   var dir=cap(/DIRECCI[OÓ]N[:\s]+([^\n]+)/i,t);
   if(dir) dir = dir.replace(/\s+Persona\s+de\s*$/i,'').trim();
-  var job=cap(/TIPO[:\s]+([^\n]+)/i,t);
+  var jobKeysParte=(curCliente&&curCliente.jobs&&curCliente.jobs.length)?curCliente.jobs:['Climatización','Conductos','Obras'];
+  var job=null;
+  var clasifParte=cap(/Clasificaci[oó]n[:\s]+([^\n]+)/i,t);
+  if(clasifParte){
+    for(var jip=0;jip<jobKeysParte.length;jip++){ if(clasifParte.toLowerCase().indexOf(jobKeysParte[jip].toLowerCase())>=0){ job=jobKeysParte[jip]; break; } }
+  }
+  if(!job){
+    for(var jkp=0;jkp<jobKeysParte.length;jkp++){ if(t.toLowerCase().indexOf(jobKeysParte[jkp].toLowerCase())>=0){ job=jobKeysParte[jkp]; break; } }
+  }
   var fecha=cap(/FECHA[:\s]+(\d{2}\/\d{2}\/\d{4})/i,t);
   var arr=cap(/LLEGADA[:\s]+(\d{1,2}:\d{2})/i,t);
   var lea=cap(/SALIDA[:\s]+(\d{1,2}:\d{2})/i,t);
@@ -7074,7 +7083,16 @@ function leerAsg(){
   if(!centro&&denom){ var cm=denom.trim().match(/(\d{3,5})\s*$/); if(cm) centro=cm[1]; }
   var tel=cap(/TEL[EÉ]FONO[^:]*[:\s]+(\+?\d[\d\s\-]{6,})/i,t);
   var dir=cap(/DIRECCI[OÓ]N[:\s]+([^\n]+)/i,t);
-  var job=cap(/TIPO[:\s]+([^\n]+)/i,t);
+  var jobKeys=['Climatización','Conductos','Obras'];
+  var job=null;
+  var clasif=cap(/Clasificaci[oó]n[:\s]+([^\n]+)/i,t);
+  if(clasif){
+    for(var ji=0;ji<jobKeys.length;ji++){ if(clasif.toLowerCase().indexOf(jobKeys[ji].toLowerCase())>=0){ job=jobKeys[ji]; break; } }
+  }
+  if(!job){
+    for(var jk=0;jk<jobKeys.length;jk++){ if(t.toLowerCase().indexOf(jobKeys[jk].toLowerCase())>=0){ job=jobKeys[jk]; break; } }
+  }
+  var desc=cap(/DESCRIPCI[OÓ]N\s*\n?([^\n]+(?:\n(?!\s*[A-ZÁÉÍÓÚÑ ]{4,}[:\n])[^\n]+)*)/,t);
   var n=0;
   if(pedido){ $('asgPedido').value=pedido.trim(); n++; }
   if(centro){ $('asgCentro').value=centro.trim(); n++; buscarKmAsg(centro.trim()); }
@@ -7090,6 +7108,7 @@ function leerAsg(){
       if(btn.textContent.trim().toLowerCase()===jobT.toLowerCase()){ btn.click(); n++; }
     });
   }
+  if(desc){ $('asgDescripcion').value=desc.trim(); n++; }
   $('asgMsg').textContent = n?n+' campo(s) autocompletados.':'No se encontraron datos.';
 }
 
@@ -7110,7 +7129,7 @@ function abrirAsignar() {
   if (!curCliente) return;
   _asgJob = ''; _asgTec = '';
   $('asgRaw').value='';
-  $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value='';
+  $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
   $('asgMsg').textContent='';
   var esMerc = curCliente.tipo==='mercadona';
   $('asgLabelPedido').innerHTML = esMerc ? 'N&ordm; orden <span class="req">*</span>' : 'N&ordm; orden / referencia';
@@ -7151,6 +7170,7 @@ function guardarAsignacion() {
       centro: $('asgCentro').value.trim(),
       tienda: tienda, dir: dir, tel: tel, job: _asgJob,
       km: $('asgKm').value.trim(), tr: $('asgTr').value.trim(),
+      descripcion: $('asgDescripcion').value.trim(),
       tecnicoPrincipal: _asgTec,
       creadoPor: window._sesion.nombre,
       estado: 'pendiente',
@@ -7159,7 +7179,7 @@ function guardarAsignacion() {
     };
     _db.collection('incidencias').add(data).then(function(){
       showMsg('asgMsg','✓ Incidencia asignada.','success');
-      $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value='';
+      $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
       _asgJob=''; _asgTec='';
       document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
       renderAsgLista();
