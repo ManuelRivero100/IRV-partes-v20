@@ -1136,6 +1136,37 @@ function _sincronizarTecnicosDesdeFirestore(){
     if(cambiado) setTecnicos(tecs);
   }).catch(function(){});
 }
+function _sincronizarCatalogoDesdeFirestore(){
+  if(typeof _db === 'undefined' || !_db || !window._sesion) return;
+  var rol=window._sesion.rol;
+  // Solo admin/creador sube y baja el catálogo
+  if(rol!=='admin'&&rol!=='creador') return;
+  _db.collection('config').doc('catalogo').get().then(function(doc){
+    if(doc.exists){
+      var d=doc.data();
+      // Bajar de Firestore solo si es más reciente que el local
+      var localV=localStorage.getItem(CAT_V_KEY)||'0';
+      if(d.version&&d.version>=localV){
+        localStorage.setItem(CAT_KEY,JSON.stringify(d.catalogo));
+        localStorage.setItem(CAT_V_KEY,d.version);
+      }
+    } else {
+      // No existe en Firestore aún — subir el local
+      _subirCatalogoAFirestore();
+    }
+  }).catch(function(){});
+}
+function _subirCatalogoAFirestore(){
+  if(typeof _db === 'undefined' || !_db || !window._sesion) return;
+  var rol=window._sesion.rol;
+  if(rol!=='admin'&&rol!=='creador') return;
+  var cat=getCat();
+  _db.collection('config').doc('catalogo').set({
+    catalogo: cat,
+    version: CAT_V,
+    fechaModificacion: Date.now()
+  }).catch(function(){});
+}
 
 var curCliente = null;
 var _keepForm = false;
@@ -1328,7 +1359,7 @@ var DATOS_RESPALDO=[{"fecha": "2026-05-29", "pedido": "IRV-0005", "actObras": nu
 
 
 // ===== CATÁLOGO GLOBAL =====
-var CAT_KEY='pm_catalogo',CAT_V_KEY='pm_catalogo_v',CAT_V='3';
+var CAT_KEY='pm_catalogo',CAT_V_KEY='pm_catalogo_v',CAT_V='4';
 var CAT_DEFAULT={
   grupos:[
     {id:'climatizacion',nombre:'Climatización',ico:'❄️',secciones:[
@@ -1382,26 +1413,26 @@ var CAT_DEFAULT={
   ],
   flotantes:[],
   conceptos:[
-    {id:'k1a',tipo:'Climatización',lab:'H. Normal (Oficial)',cod:'MF9344',precio:''},{id:'k1b',tipo:'Climatización',lab:'H. Normal (Peón)',cod:'MF9348',precio:''},
-    {id:'k2a',tipo:'Climatización',lab:'H. Extra (Oficial)',cod:'MF9345',precio:''},{id:'k2b',tipo:'Climatización',lab:'H. Extra (Peón)',cod:'MF9349',precio:''},
-    {id:'k3a',tipo:'Climatización',lab:'H. Nocturna (Oficial)',cod:'MF9346',precio:''},{id:'k3b',tipo:'Climatización',lab:'H. Nocturna (Peón)',cod:'MF9350',precio:''},
-    {id:'k4a',tipo:'Climatización',lab:'H. Festiva (Oficial)',cod:'MF9347',precio:''},{id:'k4b',tipo:'Climatización',lab:'H. Festiva (Peón)',cod:'MF9351',precio:''},
-    {id:'k5',tipo:'Climatización',lab:'Despl. Normal',cod:'M71077',precio:''},{id:'k6',tipo:'Climatización',lab:'Despl. Extra',cod:'MB8726',precio:''},
-    {id:'k7',tipo:'Climatización',lab:'Despl. Nocturno',cod:'MB8728',precio:''},{id:'k8',tipo:'Climatización',lab:'Despl. Festivo',cod:'MB8727',precio:''},
-    {id:'k9',tipo:'Climatización',lab:'Kilometraje',cod:'MF9352',precio:''},{id:'k10',tipo:'Climatización',lab:'½ Dieta',cod:'MF9895',precio:''},
-    {id:'k11',tipo:'Conductos',lab:'H. Normal',cod:'MF9404',precio:''},{id:'k12',tipo:'Conductos',lab:'H. Extra',cod:'MF9405',precio:''},
-    {id:'k13',tipo:'Conductos',lab:'H. Nocturna',cod:'MF9406',precio:''},{id:'k14',tipo:'Conductos',lab:'H. Festiva',cod:'MF9407',precio:''},
-    {id:'k15',tipo:'Conductos',lab:'Despl. Normal',cod:'MK9OVB',precio:''},{id:'k16',tipo:'Conductos',lab:'Despl. Extra',cod:'MB8723',precio:''},
-    {id:'k17',tipo:'Conductos',lab:'Despl. Nocturno',cod:'MB8725',precio:''},{id:'k18',tipo:'Conductos',lab:'Despl. Festivo',cod:'MB8724',precio:''},
-    {id:'k19',tipo:'Conductos',lab:'Kilometraje',cod:'MF9412',precio:''},{id:'k20',tipo:'Conductos',lab:'½ Dieta',cod:'MF9896',precio:''},
-    {id:'k21',tipo:'Obras',lab:'H. Normal',cod:'MA4836',precio:''},{id:'k22',tipo:'Obras',lab:'H. Extra',cod:'M71088',precio:''},
-    {id:'k23',tipo:'Obras',lab:'H. Nocturna',cod:'MA4837',precio:''},{id:'k24',tipo:'Obras',lab:'H. Festiva',cod:'MA4838',precio:''},
-    {id:'k25',tipo:'Obras',lab:'Despl. Normal',cod:'M71077',precio:''},{id:'k26',tipo:'Obras',lab:'Despl. Extra',cod:'MB8726',precio:''},
-    {id:'k27',tipo:'Obras',lab:'Despl. Nocturno',cod:'MB8728',precio:''},{id:'k28',tipo:'Obras',lab:'Despl. Festivo',cod:'MB8727',precio:''},
-    {id:'k29',tipo:'Obras',lab:'Kilometraje',cod:'MA4841',precio:''},{id:'k30',tipo:'Obras',lab:'½ Dieta',cod:'MA4839',precio:''},
-    {id:'k31',tipo:'Electricidad',lab:'H. Normal',cod:'—',precio:''},{id:'k32',tipo:'Electricidad',lab:'H. Extra',cod:'—',precio:''},
-    {id:'k33',tipo:'Electricidad',lab:'H. Nocturna',cod:'—',precio:''},{id:'k34',tipo:'Electricidad',lab:'H. Festiva',cod:'—',precio:''},
-    {id:'k35',tipo:'Electricidad',lab:'Despl. Normal',cod:'—',precio:''},{id:'k36',tipo:'Electricidad',lab:'Kilometraje',cod:'—',precio:''},{id:'k37',tipo:'Electricidad',lab:'½ Dieta',cod:'—',precio:''}
+    {id:'k1a',tipo:'Climatización',lab:'H. Normal (Oficial)',cod:'MF9344',precio:'31'},{id:'k1b',tipo:'Climatización',lab:'H. Normal (Peón)',cod:'MF9348',precio:'28.5'},
+    {id:'k2a',tipo:'Climatización',lab:'H. Extra (Oficial)',cod:'MF9345',precio:'38.75'},{id:'k2b',tipo:'Climatización',lab:'H. Extra (Peón)',cod:'MF9349',precio:'35.63'},
+    {id:'k3a',tipo:'Climatización',lab:'H. Nocturna (Oficial)',cod:'MF9346',precio:'38.75'},{id:'k3b',tipo:'Climatización',lab:'H. Nocturna (Peón)',cod:'MF9350',precio:'35.63'},
+    {id:'k4a',tipo:'Climatización',lab:'H. Festiva (Oficial)',cod:'MF9347',precio:'54.25'},{id:'k4b',tipo:'Climatización',lab:'H. Festiva (Peón)',cod:'MF9351',precio:'49.88'},
+    {id:'k5',tipo:'Climatización',lab:'Despl. Normal',cod:'M71077',precio:'28.8'},{id:'k6',tipo:'Climatización',lab:'Despl. Extra',cod:'MB8726',precio:'36'},
+    {id:'k7',tipo:'Climatización',lab:'Despl. Nocturno',cod:'MB8728',precio:'36'},{id:'k8',tipo:'Climatización',lab:'Despl. Festivo',cod:'MB8727',precio:'50.4'},
+    {id:'k9',tipo:'Climatización',lab:'Kilometraje',cod:'MF9352',precio:'0.38'},{id:'k10',tipo:'Climatización',lab:'½ Dieta',cod:'MF9895',precio:'12'},
+    {id:'k11',tipo:'Conductos',lab:'H. Normal',cod:'MF9404',precio:'31'},{id:'k12',tipo:'Conductos',lab:'H. Extra',cod:'MF9405',precio:'38.75'},
+    {id:'k13',tipo:'Conductos',lab:'H. Nocturna',cod:'MF9406',precio:'38.75'},{id:'k14',tipo:'Conductos',lab:'H. Festiva',cod:'MF9407',precio:'54.25'},
+    {id:'k15',tipo:'Conductos',lab:'Despl. Normal',cod:'MK9OVB',precio:'28.8'},{id:'k16',tipo:'Conductos',lab:'Despl. Extra',cod:'MB8723',precio:'36'},
+    {id:'k17',tipo:'Conductos',lab:'Despl. Nocturno',cod:'MB8725',precio:'36'},{id:'k18',tipo:'Conductos',lab:'Despl. Festivo',cod:'MB8724',precio:'50.4'},
+    {id:'k19',tipo:'Conductos',lab:'Kilometraje',cod:'MF9412',precio:'0.38'},{id:'k20',tipo:'Conductos',lab:'½ Dieta',cod:'MF9896',precio:'12'},
+    {id:'k21',tipo:'Obras',lab:'H. Normal',cod:'MA4836',precio:'31'},{id:'k22',tipo:'Obras',lab:'H. Extra',cod:'M71088',precio:'38.75'},
+    {id:'k23',tipo:'Obras',lab:'H. Nocturna',cod:'MA4837',precio:'38.75'},{id:'k24',tipo:'Obras',lab:'H. Festiva',cod:'MA4838',precio:'54.25'},
+    {id:'k25',tipo:'Obras',lab:'Despl. Normal',cod:'M71077',precio:'28.8'},{id:'k26',tipo:'Obras',lab:'Despl. Extra',cod:'MB8726',precio:'36'},
+    {id:'k27',tipo:'Obras',lab:'Despl. Nocturno',cod:'MB8728',precio:'36'},{id:'k28',tipo:'Obras',lab:'Despl. Festivo',cod:'MB8727',precio:'50.4'},
+    {id:'k29',tipo:'Obras',lab:'Kilometraje',cod:'MA4841',precio:'0.38'},{id:'k30',tipo:'Obras',lab:'½ Dieta',cod:'MA4839',precio:'12'},
+    {id:'k31',tipo:'Electricidad',lab:'H. Normal',cod:'—',precio:'31'},{id:'k32',tipo:'Electricidad',lab:'H. Extra',cod:'—',precio:'38.75'},
+    {id:'k33',tipo:'Electricidad',lab:'H. Nocturna',cod:'—',precio:'38.75'},{id:'k34',tipo:'Electricidad',lab:'H. Festiva',cod:'—',precio:'54.25'},
+    {id:'k35',tipo:'Electricidad',lab:'Despl. Normal',cod:'—',precio:'28.8'},{id:'k36',tipo:'Electricidad',lab:'Kilometraje',cod:'—',precio:'0.38'},{id:'k37',tipo:'Electricidad',lab:'½ Dieta',cod:'—',precio:'12'}
   ]
 };
 
@@ -1438,7 +1469,7 @@ function getCat(){
   if(!d.grupos&&d.familias) d.grupos=d.familias;
   return d;
 }
-function setCat(d){localStorage.setItem(CAT_KEY,JSON.stringify(d));}
+function setCat(d){localStorage.setItem(CAT_KEY,JSON.stringify(d));_subirCatalogoAFirestore();}
 
 // Helpers catálogo jerárquico
 function catGetGrupoParaJob(job){
@@ -7065,6 +7096,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
   else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre); }
   _sincronizarClientesDesdeFirestore();
   _sincronizarTecnicosDesdeFirestore();
+  _sincronizarCatalogoDesdeFirestore();
   renderAsgTecnico();
   renderAsgAdmin();
   _migrarOrdenesEnEjecucionAIncidencias();
