@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Migración IRV-10 → v2</title>
+<style>
+  body { font-family: monospace; background: #0f1117; color: #e0e0e0; padding: 20px; max-width: 800px; margin: 0 auto; }
+  h1 { color: #4caf7d; font-size: 1.2rem; }
+  button { background: #4caf7d; color: #000; border: none; padding: 12px 24px; font-size: 1rem; font-weight: 700; border-radius: 6px; cursor: pointer; margin: 8px 4px; }
+  button:disabled { background: #333; color: #666; cursor: not-allowed; }
+  #log { background: #1a1d26; border: 1px solid #2a2d3a; border-radius: 6px; padding: 16px; margin-top: 16px; height: 400px; overflow-y: auto; font-size: .8rem; line-height: 1.6; }
+  .ok { color: #4caf7d; } .err { color: #e05555; } .info { color: #90caf9; } .warn { color: #ffb74d; }
+  #progress { margin-top: 12px; background: #1a1d26; border-radius: 6px; height: 8px; overflow: hidden; }
+  #progressBar { height: 100%; background: #4caf7d; width: 0%; transition: width .3s; }
+  #status { margin-top: 8px; font-size: .85rem; color: #aaa; }
+</style>
+</head>
+<body>
+<h1>🔄 Migración IRV-10 → Nueva estructura</h1>
+<p style="color:#888;font-size:.85rem;">Lee el backup limpio y sube todo a Firestore v2</p>
+
+<div style="margin:16px 0;">
+  <label style="color:#aaa;font-size:.85rem;">Backup limpio (backup_irv10_limpio.json):</label><br>
+  <input type="file" id="fileInput" accept=".json" style="margin-top:8px;color:#e0e0e0;">
+</div>
+
+<button id="btnMigrar" onclick="iniciarMigracion()" disabled>🚀 Iniciar migración</button>
+<button id="btnVerificar" onclick="verificarMigracion()" disabled>🔍 Verificar</button>
+
+<div id="progress"><div id="progressBar"></div></div>
+<div id="status">Cargando Firebase...</div>
+<div id="log"></div>
+
+<!-- Firebase compat (funciona sin módulos ES) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+var _backup = null;
+var _db2 = null;
+var _totalOps = 0;
+var _doneOps = 0;
+
+var CLIENTES = {
+  'mercadona': { nombre: 'Mercadona', tipo: 'fijo' },
+  'c_1779618649261': { nombre: 'Fulgencio', tipo: 'fijo' },
+  'c_1779744364343': { nombre: 'Servicios y Reparaciones', tipo: 'particular' }
+};
+
+var CENTROS = {
+  'c_1779618649261': {
+    'CL0001': { nombre: 'Antonio Redondo', dir: 'Calle Medico Miguel Ramos, Alcantarilla' },
+    'CL0004': { nombre: 'Puebla de Soto', dir: 'Puebla de Soto' }
+  },
+  'c_1779744364343': {
+    'CL0002': { nombre: 'Casa de Carlos Flareluc', dir: '' },
+    'CL0003': { nombre: 'Salvador Valera', dir: '' }
+  }
+};
+
+function log(msg, tipo) {
+  var el = document.getElementById('log');
+  el.innerHTML += '<div class="'+(tipo||'info')+'">'+msg+'</div>';
+  el.scrollTop = el.scrollHeight;
+}
+function setProgress(pct) { document.getElementById('progressBar').style.width = pct + '%'; }
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
+
+// Inicializar Firebase
+try {
+  firebase.initializeApp({
+    apiKey: "AIzaSyA1cRjg3LM3kKQ8gKkOpwZtF2Wo2RnuWxA",
+    authDomain: "irv-grup-v2.firebaseapp.com",
+    projectId: "irv-grup-v2",
+    storageBucket: "irv-grup-v2.firebasestorage.app",
+    messagingSenderId: "245232591850",
+    appId: "1:245232591850:web:afe06356138454e0f38893"
+  });
+  _db2 = firebase.firestore();
+  log('Firebase v2 conectado ✓', 'ok');
+  setStatus('Firebase listo. Carga el backup.');
+} catch(e) {
+  log('Error Firebase: ' + e.message, 'err');
+  setStatus('Error conectando Firebase');
+}
+
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      _backup = JSON.parse(ev.target.result);
+      var partes = _backup.partes || [];
+      var inc = {};
+      partes.forEach(function(p) {
+        var k = p.clienteId+'|'+p.centro+'|'+p.pedido;
+        if (!inc[k]) inc[k] = [];
+        inc[k].push(p);
+      });
+      log('Backup cargado: ' + partes.length + ' partes, ' + Object.keys(inc).length + ' incidencias', 'ok');
+      document.getElementById('btnMigrar').disabled = false;
+      setStatus('Backup listo. Pulsa Iniciar migración.');
+    } catch(err) {
+      log('Error leyendo backup: ' + err.message, 'err');
+    }
+  };
+  reader.readAsText(file);
+});
+
+function sleep(ms) { return new Promise(function(r){ setTimeout(r, ms); }); }
+
+async function iniciarMigracion() {
+  if (!_backup || !_db2) return;
+  document.getElementById('btnMigrar').disabled = true;
+
+  var partes = _backup.partes || [];
+  var catalogo = _backup.catalogo || {};
+  var clientesBackup = _backup.clientes || [];
+
+  log('--- INICIANDO MIGRACIÓN ---', 'warn');
+
+  // Organizar estructura
+  var estructura = {};
+  partes.forEach(function(p) {
+    var cid = p.clienteId;
+    var centro = p.centro;
+    var pedido = p.pedido;
+    if (!estructura[cid]) estructura[cid] = {};
+    if (!estructura[cid][centro]) estructura[cid][centro] = {};
+    if (!estructura[cid][centro][pedido]) estructura[cid][centro][pedido] = [];
+    estructura[cid][centro][pedido].push(p);
+  });
+
+  // Contar operaciones totales
+  _totalOps = 2; // catalogo + config
+  Object.keys(estructura).forEach(function(cid) {
+    _totalOps++;
+    Object.keys(estructura[cid]).forEach(function(centro) {
+      _totalOps++;
+      Object.keys(estructura[cid][centro]).forEach(function(pedido) {
+        _totalOps++;
+        _totalOps += estructura[cid][centro][pedido].length;
+      });
+    });
+  });
+  _doneOps = 0;
+  log('Total operaciones: ' + _totalOps, 'info');
+
+  try {
+    for (var cid of Object.keys(estructura)) {
+      // Cliente
+      var dataCli = Object.assign({}, CLIENTES[cid] || { nombre: cid, tipo: 'fijo' });
+      var cliB = clientesBackup.find(function(c){ return c.id === cid; });
+      if (cliB) { if (cliB.tel) dataCli.tel = cliB.tel; if (cliB.dir) dataCli.dir = cliB.dir; }
+      dataCli.id = cid;
+      dataCli.fechaMigracion = Date.now();
+      await _db2.collection('clientes').doc(cid).set(dataCli);
+      _doneOps++;
+      setProgress((_doneOps/_totalOps)*100);
+      log('✓ Cliente: ' + dataCli.nombre, 'ok');
+
+      for (var centroId of Object.keys(estructura[cid])) {
+        // Centro
+        var dataCentro = {};
+        if (CENTROS[cid] && CENTROS[cid][centroId]) {
+          dataCentro = Object.assign({}, CENTROS[cid][centroId]);
+        } else {
+          var pp = estructura[cid][centroId][Object.keys(estructura[cid][centroId])[0]][0];
+          dataCentro.nombre = pp.tienda || centroId;
+        }
+        dataCentro.id = centroId;
+        dataCentro.clienteId = cid;
+        await _db2.collection('clientes').doc(cid).collection('centros').doc(centroId).set(dataCentro);
+        _doneOps++;
+        setProgress((_doneOps/_totalOps)*100);
+        log('  ✓ Centro: ' + (dataCentro.nombre || centroId), 'ok');
+
+        for (var pedido of Object.keys(estructura[cid][centroId])) {
+          // Incidencia
+          var psInc = estructura[cid][centroId][pedido];
+          var primerP = psInc[0];
+          var ultimoP = psInc[psInc.length-1];
+          var estadoInc = psInc.every(function(p){ return p.estado==='terminado'; }) ? 'terminado' : 'en-ejecucion';
+          var dataInc = {
+            id: pedido,
+            pedido: pedido,
+            clienteId: cid,
+            centroId: centroId,
+            tienda: primerP.tienda || '',
+            job: primerP.job || '',
+            estado: estadoInc,
+            tecnicoPrincipal: (primerP.tecnicos && primerP.tecnicos[0]) || '',
+            tecnicos: primerP.tecnicos || [],
+            fechaApertura: primerP.fecha || '',
+            fechaUltimoParte: ultimoP.fecha || '',
+            numPartes: psInc.length,
+            vistaAdmin: true,
+            fechaMigracion: Date.now()
+          };
+          await _db2.collection('clientes').doc(cid).collection('centros').doc(centroId).collection('incidencias').doc(pedido).set(dataInc);
+          _doneOps++;
+          setProgress((_doneOps/_totalOps)*100);
+          log('    ✓ Incidencia: ' + pedido + ' (' + estadoInc + ')', 'ok');
+
+          // Partes
+          for (var i = 0; i < psInc.length; i++) {
+            var p = psInc[i];
+            var parteId = pedido + '_' + p.fecha + '_' + (i+1);
+            var dataParte = Object.assign({}, p, {
+              id: parteId,
+              clienteId: cid,
+              centroId: centroId,
+              incidenciaId: pedido,
+              fechaMigracion: Date.now()
+            });
+            await _db2.collection('clientes').doc(cid).collection('centros').doc(centroId).collection('incidencias').doc(pedido).collection('partes').doc(parteId).set(dataParte);
+            _doneOps++;
+            setProgress((_doneOps/_totalOps)*100);
+            log('      ✓ Parte: ' + p.fecha, 'ok');
+            await sleep(50); // evitar rate limit
+          }
+        }
+      }
+    }
+
+    // Catálogo
+    if (Object.keys(catalogo).length) {
+      await _db2.collection('config').doc('catalogo').set(catalogo);
+      log('✓ Catálogo subido', 'ok');
+    }
+    _doneOps++;
+
+    // Config
+    await _db2.collection('config').doc('general').set({
+      version: '2.0',
+      fechaMigracion: Date.now(),
+      totalPartes: partes.length
+    });
+    _doneOps++;
+
+    setProgress(100);
+    log('', '');
+    log('✅ MIGRACIÓN COMPLETADA — ' + partes.length + ' partes subidos', 'ok');
+    setStatus('Migración completada. Pulsa Verificar.');
+    document.getElementById('btnVerificar').disabled = false;
+
+  } catch(err) {
+    log('❌ ERROR: ' + err.message, 'err');
+    setStatus('Error: ' + err.message);
+    document.getElementById('btnMigrar').disabled = false;
+  }
+}
+
+async function verificarMigracion() {
+  log('', '');
+  log('--- VERIFICANDO ---', 'warn');
+  try {
+    var snapCli = await _db2.collection('clientes').get();
+    log('Clientes: ' + snapCli.size + (snapCli.size===3?' ✓':' ⚠️ esperado 3'), snapCli.size===3?'ok':'warn');
+
+    var totalCentros=0, totalInc=0, totalPartes=0;
+    for (var cliDoc of snapCli.docs) {
+      var centrosSnap = await _db2.collection('clientes').doc(cliDoc.id).collection('centros').get();
+      totalCentros += centrosSnap.size;
+      for (var centroDoc of centrosSnap.docs) {
+        var incSnap = await _db2.collection('clientes').doc(cliDoc.id).collection('centros').doc(centroDoc.id).collection('incidencias').get();
+        totalInc += incSnap.size;
+        for (var incDoc of incSnap.docs) {
+          var partesSnap = await _db2.collection('clientes').doc(cliDoc.id).collection('centros').doc(centroDoc.id).collection('incidencias').doc(incDoc.id).collection('partes').get();
+          totalPartes += partesSnap.size;
+        }
+      }
+    }
+
+    log('Centros: ' + totalCentros + (totalCentros===30?' ✓':' ⚠️ esperado 30'), totalCentros===30?'ok':'warn');
+    log('Incidencias: ' + totalInc + (totalInc===44?' ✓':' ⚠️ esperado 44'), totalInc===44?'ok':'warn');
+    log('Partes: ' + totalPartes + (totalPartes===78?' ✓':' ⚠️ esperado 78'), totalPartes===78?'ok':'warn');
+
+    if (totalPartes===78 && totalInc===44 && snapCli.size===3) {
+      log('✅ TODO CORRECTO', 'ok');
+    } else {
+      log('⚠️ Revisar los números', 'warn');
+    }
+  } catch(err) {
+    log('Error verificando: ' + err.message, 'err');
+  }
+}
+</script>
+</body>
+</html>
