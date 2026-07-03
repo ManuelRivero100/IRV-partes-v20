@@ -912,6 +912,24 @@ textarea{resize:vertical;min-height:72px}
 <div id="w-consultaAsg" class="win">
   <div id="consultaAsgBody"></div>
 </div>
+<div id="w-migracion" class="win">
+  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="card">
+    <div class="card-title">&#128260; Migración IRV-10 v2</div>
+    <p style="font-size:.85rem;color:var(--text2);margin-bottom:12px;">Sube todos los datos del backup limpio a la nueva estructura de Firestore v2.</p>
+    <div style="margin-bottom:12px;">
+      <label style="font-size:.82rem;color:var(--text2);font-weight:700;">Backup limpio (backup_irv10_limpio.json)</label>
+      <input type="file" id="migFileInput" accept=".json" style="margin-top:6px;width:100%;color:var(--text);">
+    </div>
+    <div class="brow">
+      <button class="btn btn-p" id="btnMigrar" onclick="migIniciar()" disabled>&#128640; Iniciar migración</button>
+      <button class="btn btn-s" id="btnVerificar" onclick="migVerificar()" disabled>&#128269; Verificar</button>
+    </div>
+    <div id="migMsg" class="msg" style="margin-top:8px;"></div>
+  </div>
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-top:12px;height:300px;overflow-y:auto;font-size:.78rem;font-family:monospace;line-height:1.6;" id="migLog"></div>
+  <div style="margin-top:8px;background:var(--surface2);border-radius:var(--r-sm);height:6px;overflow:hidden;"><div id="migBar" style="height:100%;background:var(--green);width:0%;transition:width .3s;"></div></div>
+</div>
 <div class="dialogo" id="dlgCorregir">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#9998; Datos modificados</div>
@@ -1232,6 +1250,9 @@ function renderMenu(){
   if(_esAdminOCreador()){
     items.push({ico:'&#128295;',cls:'ico-catalogo',title:'Materiales',id:'w-mat'});
     items.push({ico:'&#128229;',cls:'ico-other',title:'Asignar incidencia',id:'w-asignar'});
+  }
+  if(window._sesion && window._sesion.rol==='creador'){
+    items.push({ico:'&#128260;',cls:'ico-other',title:'Migración v2',id:'w-migracion'});
   }
   var html='';
   items.forEach(function(item){
@@ -4057,7 +4078,7 @@ function renderAsgTecnico() {
 function renderAsgAdmin() {
   var sec = $('asgAdminSection'); var el = $('asgAdminLista');
   if (!sec || !el) return;
-  var esAdmin = window._sesion && window._sesion.rol === 'admin';
+  var esAdmin = window._sesion && (window._sesion.rol === 'admin' || window._sesion.rol === 'creador');
   if (!esAdmin) { sec.style.display = 'none'; return; }
   _db.collection('incidencias')
     .where('vistaAdmin','==',false)
@@ -7512,6 +7533,215 @@ function confirmarPinCatalogo() {
   document.getElementById('dlgPinCatalogo').classList.remove('show');
   document.getElementById('dlgPinCatalogoPin').value = '';
   goTo('w-catalogo');
+}
+
+// ===== MIGRACIÓN V2 =====
+var _migBackup = null;
+var _migDB2 = null;
+var _migTotalOps = 0;
+var _migDoneOps = 0;
+
+var _MIG_CLIENTES = {
+  'mercadona': { nombre: 'Mercadona', tipo: 'fijo' },
+  'c_1779618649261': { nombre: 'Fulgencio', tipo: 'fijo' },
+  'c_1779744364343': { nombre: 'Servicios y Reparaciones', tipo: 'particular' }
+};
+var _MIG_CENTROS = {
+  'c_1779618649261': {
+    'CL0001': { nombre: 'Antonio Redondo', dir: 'Calle Medico Miguel Ramos, Alcantarilla' },
+    'CL0004': { nombre: 'Puebla de Soto', dir: 'Puebla de Soto' }
+  },
+  'c_1779744364343': {
+    'CL0002': { nombre: 'Casa de Carlos Flareluc', dir: '' },
+    'CL0003': { nombre: 'Salvador Valera', dir: '' }
+  }
+};
+
+function _migLog(msg, tipo) {
+  var el = $('migLog'); if (!el) return;
+  var color = tipo==='ok'?'var(--green)':tipo==='err'?'var(--red)':tipo==='warn'?'var(--amber)':'var(--text2)';
+  el.innerHTML += '<div style="color:'+color+'">'+msg+'</div>';
+  el.scrollTop = el.scrollHeight;
+}
+function _migProgress(pct) { var b=$('migBar'); if(b) b.style.width=pct+'%'; }
+
+// Inicializar Firebase v2 al abrir la sección
+function _migInicializarDB2() {
+  if (_migDB2) return true;
+  try {
+    var app2;
+    var cfg = {
+      apiKey: "AIzaSyA1cRjg3LM3kKQ8gKkOpwZtF2Wo2RnuWxA",
+      authDomain: "irv-grup-v2.firebaseapp.com",
+      projectId: "irv-grup-v2",
+      storageBucket: "irv-grup-v2.firebasestorage.app",
+      messagingSenderId: "245232591850",
+      appId: "1:245232591850:web:afe06356138454e0f38893"
+    };
+    // Evitar reinicializar si ya existe
+    try { app2 = firebase.app('irv-v2'); } catch(e) { app2 = firebase.initializeApp(cfg, 'irv-v2'); }
+    _migDB2 = app2.firestore();
+    _migLog('Firebase v2 conectado ✓', 'ok');
+    return true;
+  } catch(e) {
+    _migLog('Error conectando Firebase v2: ' + e.message, 'err');
+    return false;
+  }
+}
+
+// Cargar backup
+(function(){
+  document.addEventListener('DOMContentLoaded', function(){
+    var fi = $('migFileInput');
+    if (!fi) return;
+    fi.addEventListener('change', function(e) {
+      var file = e.target.files[0]; if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(ev) {
+        try {
+          _migBackup = JSON.parse(ev.target.result);
+          var partes = _migBackup.partes || [];
+          var inc = {};
+          partes.forEach(function(p){ var k=p.clienteId+'|'+p.centro+'|'+p.pedido; if(!inc[k]) inc[k]=0; inc[k]++; });
+          _migLog('Backup cargado: ' + partes.length + ' partes, ' + Object.keys(inc).length + ' incidencias', 'ok');
+          var b=$('btnMigrar'); if(b) b.disabled=false;
+          showMsg('migMsg','Backup listo. Pulsa Iniciar migración.','success');
+        } catch(err) { _migLog('Error leyendo backup: '+err.message,'err'); }
+      };
+      reader.readAsText(file);
+    });
+  });
+})();
+
+function migIniciar() {
+  if (!_migBackup) { showMsg('migMsg','Carga el backup primero.','error'); return; }
+  if (!_migInicializarDB2()) return;
+  var b=$('btnMigrar'); if(b) b.disabled=true;
+  var partes=_migBackup.partes||[];
+  var catalogo=_migBackup.catalogo||{};
+  var clientesBackup=_migBackup.clientes||[];
+  _migLog('--- INICIANDO MIGRACIÓN ---','warn');
+
+  var estructura={};
+  partes.forEach(function(p){
+    var cid=p.clienteId, centro=p.centro, pedido=p.pedido;
+    if(!estructura[cid]) estructura[cid]={};
+    if(!estructura[cid][centro]) estructura[cid][centro]={};
+    if(!estructura[cid][centro][pedido]) estructura[cid][centro][pedido]=[];
+    estructura[cid][centro][pedido].push(p);
+  });
+
+  _migTotalOps=2;
+  Object.keys(estructura).forEach(function(cid){
+    _migTotalOps++;
+    Object.keys(estructura[cid]).forEach(function(centro){
+      _migTotalOps++;
+      Object.keys(estructura[cid][centro]).forEach(function(pedido){
+        _migTotalOps++;
+        _migTotalOps+=estructura[cid][centro][pedido].length;
+      });
+    });
+  });
+  _migDoneOps=0;
+
+  function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+
+  (async function(){
+    try {
+      for(var cid of Object.keys(estructura)){
+        var dataCli=Object.assign({},_MIG_CLIENTES[cid]||{nombre:cid,tipo:'fijo'});
+        var cliB=clientesBackup.find(function(c){return c.id===cid;});
+        if(cliB){ if(cliB.tel) dataCli.tel=cliB.tel; if(cliB.dir) dataCli.dir=cliB.dir; }
+        dataCli.id=cid; dataCli.fechaMigracion=Date.now();
+        await _migDB2.collection('clientes').doc(cid).set(dataCli);
+        _migDoneOps++; _migProgress((_migDoneOps/_migTotalOps)*100);
+        _migLog('✓ Cliente: '+dataCli.nombre,'ok');
+
+        for(var centroId of Object.keys(estructura[cid])){
+          var dataCentro={};
+          if(_MIG_CENTROS[cid]&&_MIG_CENTROS[cid][centroId]){ dataCentro=Object.assign({},_MIG_CENTROS[cid][centroId]); }
+          else { var pp=estructura[cid][centroId][Object.keys(estructura[cid][centroId])[0]][0]; dataCentro.nombre=pp.tienda||centroId; }
+          dataCentro.id=centroId; dataCentro.clienteId=cid;
+          await _migDB2.collection('clientes').doc(cid).collection('centros').doc(centroId).set(dataCentro);
+          _migDoneOps++; _migProgress((_migDoneOps/_migTotalOps)*100);
+          _migLog('  ✓ Centro: '+(dataCentro.nombre||centroId),'ok');
+
+          for(var pedido of Object.keys(estructura[cid][centroId])){
+            var psInc=estructura[cid][centroId][pedido];
+            var primerP=psInc[0], ultimoP=psInc[psInc.length-1];
+            var estadoInc=psInc.every(function(p){return p.estado==='terminado';})?'terminado':'en-ejecucion';
+            var dataInc={
+              id:pedido, pedido:pedido, clienteId:cid, centroId:centroId,
+              tienda:primerP.tienda||'', job:primerP.job||'', estado:estadoInc,
+              tecnicoPrincipal:(primerP.tecnicos&&primerP.tecnicos[0])||'',
+              tecnicos:primerP.tecnicos||[], fechaApertura:primerP.fecha||'',
+              fechaUltimoParte:ultimoP.fecha||'', numPartes:psInc.length,
+              vistaAdmin:true, fechaMigracion:Date.now()
+            };
+            await _migDB2.collection('clientes').doc(cid).collection('centros').doc(centroId).collection('incidencias').doc(pedido).set(dataInc);
+            _migDoneOps++; _migProgress((_migDoneOps/_migTotalOps)*100);
+            _migLog('    ✓ Incidencia: '+pedido+' ('+estadoInc+')','ok');
+
+            for(var i=0;i<psInc.length;i++){
+              var p=psInc[i];
+              var parteId=pedido+'_'+p.fecha+'_'+(i+1);
+              var dataParte=Object.assign({},p,{id:parteId,clienteId:cid,centroId:centroId,incidenciaId:pedido,fechaMigracion:Date.now()});
+              await _migDB2.collection('clientes').doc(cid).collection('centros').doc(centroId).collection('incidencias').doc(pedido).collection('partes').doc(parteId).set(dataParte);
+              _migDoneOps++; _migProgress((_migDoneOps/_migTotalOps)*100);
+              _migLog('      ✓ Parte: '+p.fecha,'ok');
+              await sleep(50);
+            }
+          }
+        }
+      }
+      if(Object.keys(catalogo).length){
+        await _migDB2.collection('config').doc('catalogo').set(catalogo);
+        _migLog('✓ Catálogo subido','ok');
+      }
+      _migDoneOps++;
+      await _migDB2.collection('config').doc('general').set({version:'2.0',fechaMigracion:Date.now(),totalPartes:partes.length});
+      _migDoneOps++;
+      _migProgress(100);
+      _migLog('','');
+      _migLog('✅ MIGRACIÓN COMPLETADA — '+partes.length+' partes subidos','ok');
+      showMsg('migMsg','Migración completada. Pulsa Verificar.','success');
+      var bv=$('btnVerificar'); if(bv) bv.disabled=false;
+    } catch(err) {
+      _migLog('❌ ERROR: '+err.message,'err');
+      showMsg('migMsg','Error: '+err.message,'error');
+      var bm=$('btnMigrar'); if(bm) bm.disabled=false;
+    }
+  })();
+}
+
+function migVerificar() {
+  if (!_migInicializarDB2()) return;
+  _migLog('','');
+  _migLog('--- VERIFICANDO ---','warn');
+  (async function(){
+    try {
+      var snapCli=await _migDB2.collection('clientes').get();
+      _migLog('Clientes: '+snapCli.size+(snapCli.size===3?' ✓':' ⚠️ esperado 3'),snapCli.size===3?'ok':'warn');
+      var totalCentros=0,totalInc=0,totalPartes=0;
+      for(var cliDoc of snapCli.docs){
+        var centrosSnap=await _migDB2.collection('clientes').doc(cliDoc.id).collection('centros').get();
+        totalCentros+=centrosSnap.size;
+        for(var centroDoc of centrosSnap.docs){
+          var incSnap=await _migDB2.collection('clientes').doc(cliDoc.id).collection('centros').doc(centroDoc.id).collection('incidencias').get();
+          totalInc+=incSnap.size;
+          for(var incDoc of incSnap.docs){
+            var partesSnap=await _migDB2.collection('clientes').doc(cliDoc.id).collection('centros').doc(centroDoc.id).collection('incidencias').doc(incDoc.id).collection('partes').get();
+            totalPartes+=partesSnap.size;
+          }
+        }
+      }
+      _migLog('Centros: '+totalCentros+(totalCentros===30?' ✓':' ⚠️ esperado 30'),totalCentros===30?'ok':'warn');
+      _migLog('Incidencias: '+totalInc+(totalInc===44?' ✓':' ⚠️ esperado 44'),totalInc===44?'ok':'warn');
+      _migLog('Partes: '+totalPartes+(totalPartes===78?' ✓':' ⚠️ esperado 78'),totalPartes===78?'ok':'warn');
+      if(totalPartes===78&&totalInc===44&&snapCli.size===3){ _migLog('✅ TODO CORRECTO','ok'); }
+      else { _migLog('⚠️ Revisar los números','warn'); }
+    } catch(err) { _migLog('Error verificando: '+err.message,'err'); }
+  })();
 }
 </script>
 <!-- DIÁLOGO PIN CAMBIO ROL -->
