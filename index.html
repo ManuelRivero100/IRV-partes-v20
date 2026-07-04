@@ -1142,8 +1142,6 @@ function _sincronizarClientesDesdeFirestore(){
       var idx=extra.findIndex(function(c){ return c.id===d.id; });
       if(idx>=0) extra[idx]=d; else { extra.push(d); cambiado=true; }
     });
-    // Subir los que existen solo en local (creados antes de tener sincronización)
-    extra.forEach(function(c){ if(c.id!=='mercadona') _subirClienteAFirestore(c); });
     if(cambiado){ localStorage.setItem('pm_clientes',JSON.stringify(extra)); renderClientes(); }
   }).catch(function(){});
 }
@@ -1158,8 +1156,6 @@ function _sincronizarTecnicosDesdeFirestore(){
       if(idx>=0){ tecs[idx].pin=d.pin; tecs[idx].activo=d.activo!==false; }
       else { tecs.push({id:'tec_'+Date.now()+'_'+idx, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false}); cambiado=true; }
     });
-    // Subir los que existen solo en local (creados antes de tener sincronización)
-    tecs.forEach(function(t){ if(t.pin) _subirTecnicoAFirestore(t); });
     if(cambiado) setTecnicos(tecs);
   }).catch(function(){});
 }
@@ -1610,7 +1606,7 @@ function tecEliminar(id){
 function renderCatTecnicos(){
   var el=$('catTecnicosList'); if(!el) return;
   var tecs=getTecnicos();
-  tecs.forEach(function(t){ if(t.pin) _subirTecnicoAFirestore(t); }); // migrar a Firestore
+
   if(!tecs.length){ el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay técnicos registrados.</div>'; return; }
   el.innerHTML=tecs.map(function(t){
     var inactivo = t.activo === false;
@@ -1636,7 +1632,7 @@ function _subirTecnicoAFirestore(t){
     if(!t.pin || t.pin.length!==4) return; // solo subir si tiene PIN válido
     var docId = t.nombre.toLowerCase().replace(/ /g,'_');
     _db.collection('usuario').doc(docId).set({
-      nombre: t.nombre, pin: t.pin, roles: ['tecnico'], activo: t.activo!==false
+      nombre: t.nombre, pin: t.pin, activo: t.activo!==false
     }, {merge:true}).catch(function(){});
   }catch(e){}
 }
@@ -4041,33 +4037,6 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
     setH(h);
   }
 }
-function _migrarOrdenesEnEjecucionAIncidencias(){
-  if(typeof _db === 'undefined' || !_db) return;
-  var h=getH();
-  var vistos={};
-  h.forEach(function(r){
-    if((r.estado||'terminado')!=='en-ejecucion') return;
-    if(!r.pedido) return;
-    var k=r.pedido+'||'+(r.centro||'');
-    if(vistos[k]) return;
-    vistos[k]=true;
-    var ultimo=null;
-    for(var i=h.length-1;i>=0;i--){
-      if(h[i].pedido===r.pedido && h[i].centro===r.centro){ ultimo=h[i]; break; }
-    }
-    if(!ultimo) return;
-    if((ultimo.estado||'terminado')!=='en-ejecucion') return;
-    _actualizarIncidenciaPorOrden(ultimo.pedido, ultimo.centro, ultimo.estado, {
-      clienteId: ultimo.clienteId||'mercadona',
-      tienda: ultimo.tienda||'', dir: ultimo.dir||'', tel: ultimo.tel||'',
-      job: ultimo.job||'', tecnicoPrincipal: (ultimo.tecnicos&&ultimo.tecnicos[0])||'',
-      creadoPor: ultimo.tecnicos&&ultimo.tecnicos[0]||'',
-      obs: ultimo.obs||'',
-      averiaReportada: ultimo.averiaReportada||''
-    });
-  });
-}
-
 function renderAsgTecnico() {
   var sec = $('asgTecSection'); var el = $('asgTecLista');
   if (!sec || !el) return;
@@ -7234,7 +7203,6 @@ function _aplicarSesion(nombre, rol, multiRol) {
   _sincronizarCatalogoDesdeFirestore();
   renderAsgTecnico();
   renderAsgAdmin();
-  _migrarOrdenesEnEjecucionAIncidencias();
   _reintentarPartesPendientes();
   var sp = document.getElementById('splash');
   if (sp) {
@@ -7482,11 +7450,7 @@ function cerrarSesion() {
   location.reload();
 }
 
-// Comprobar sesión guardada al arrancar
-try {
-  var _s = localStorage.getItem('irv_sesion');
-  if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol); }
-} catch(e) {}
+// Sesión no restaurada al arrancar — siempre muestra login
 
 // Cierre automático tras 10 minutos de inactividad
 var _inactTimer=null;
