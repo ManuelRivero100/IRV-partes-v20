@@ -6947,19 +6947,7 @@ onFechaChange();
 renderWorkers();
 
 </script>
-<script>
-// Limpiar Service Workers y cachés anteriores
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.getRegistrations().then(function(registrations){
-    registrations.forEach(function(r){ r.unregister(); });
-  });
-}
-if('caches' in window){
-  caches.keys().then(function(keys){
-    keys.forEach(function(k){ caches.delete(k); });
-  });
-}
-</script>
+
 
 
 <!-- DIÁLOGO NOMBRE -->
