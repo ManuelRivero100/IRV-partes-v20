@@ -7107,66 +7107,67 @@ function _iniciarSesion() {
   msgEl.textContent = '';
   if (!nombre || pin.length !== 4) { msgEl.textContent = 'Introduce nombre y PIN de 4 digitos.'; return; }
 
-  // Manuel: dos PINes hardcodeados
+  // ===== CREADOR =====
   if (nombre.toLowerCase() === CREADOR.nombre) {
     if (pin === CREADOR.pin) {
-      msgEl.textContent = 'Verificando conexion...';
+      // Creador con PIN principal: necesita internet
+      msgEl.textContent = 'Verificando...';
       _verificarConexionFirestore(function(hayConexion) {
         if (hayConexion) { _entrarConRol(nombre, 'creador'); }
-        else { msgEl.textContent = ''; _mostrarSinConexion(nombre, 'creador'); }
+        else { msgEl.textContent = 'Sin conexion a internet.'; }
       });
       return;
     }
-    if (pin === MANUEL_ADMIN_PIN) { _mostrarSelectorRol(nombre, ['tecnico', 'admin']); return; }
+    if (pin === MANUEL_ADMIN_PIN) {
+      // Creador con PIN admin: necesita internet, muestra selector
+      msgEl.textContent = 'Verificando...';
+      _verificarConexionFirestore(function(hayConexion) {
+        if (hayConexion) { _mostrarSelectorRol(nombre, ['tecnico', 'admin']); }
+        else { msgEl.textContent = 'Sin conexion a internet.'; }
+      });
+      return;
+    }
     msgEl.textContent = 'PIN incorrecto.'; return;
   }
 
-  // Verificar conexión antes de consultar Firestore
+  // ===== TÉCNICOS Y ADMINS =====
+  // Buscar en localStorage
+  var _tecLocal = null;
+  try {
+    var _catLocal = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
+    _tecLocal = (_catLocal.tecnicos||[]).find(function(t){
+      return t.nombre.toLowerCase() === nombre.toLowerCase() && t.pin === pin && t.activo !== false;
+    });
+  } catch(e) {}
+
+  if (!_tecLocal) { msgEl.textContent = 'PIN incorrecto o usuario no encontrado.'; return; }
+
+  // Verificar internet para saber si tiene rol admin en Firestore
   msgEl.textContent = 'Verificando...';
-  var docId = nombre.toLowerCase().replace(/ /g,'_');
-
-  function _intentarLoginLocal(){
-    try {
-      var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
-      var tecs = cat.tecnicos || [];
-      var tec = tecs.find(function(t){ return t.nombre.toLowerCase() === nombre.toLowerCase(); });
-      if (tec) {
-        if (tec.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
-        if (tec.pin && tec.pin === pin) { _entrarConRol(tec.nombre, 'tecnico'); return; }
-        msgEl.textContent = 'PIN incorrecto.'; return;
-      }
-    } catch(e) {}
-    msgEl.textContent = 'Usuario no encontrado.';
-  }
-
   _verificarConexionFirestore(function(hayConexion) {
     if (!hayConexion) {
-      // Sin internet — verificar PIN en local
-      var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
-      var tecs = cat.tecnicos || [];
-      var tec = tecs.find(function(t){ return t.nombre.toLowerCase() === nombre.toLowerCase(); });
-      if (tec && tec.pin === pin) { _mostrarSinConexion(nombre, 'tecnico'); }
-      else { msgEl.textContent = 'Sin conexion a internet.'; }
+      // Sin internet — entra como técnico directo
+      _entrarConRol(_tecLocal.nombre, 'tecnico');
       return;
     }
+    // Con internet — consultar Firestore para ver roles
+    var docId = nombre.toLowerCase().replace(/ /g,'_');
     _db.collection('usuario').doc(docId).get().then(function(snap) {
       if (snap.exists) {
         var u = snap.data();
-        if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
-        if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
         var roles = u.roles || ['tecnico'];
-        var esAdminRol = roles.some(function(r){ return r==='admin'||r==='creador'; });
-        if (esAdminRol) {
-          if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
-          return;
-        }
-        if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
-        return;
+        if (roles.length > 1) { _mostrarSelectorRol(nombre, roles); }
+        else { _entrarConRol(nombre, roles[0]); }
+      } else {
+        // No en Firestore — entra como técnico
+        _entrarConRol(_tecLocal.nombre, 'tecnico');
       }
-      _intentarLoginLocal();
-    }).catch(function() { _intentarLoginLocal(); });
+    }).catch(function() {
+      _entrarConRol(_tecLocal.nombre, 'tecnico');
+    });
   });
 }
+
 
 
 function _mostrarSelectorRol(nombre, roles) {
