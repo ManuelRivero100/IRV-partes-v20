@@ -7451,7 +7451,7 @@ function _renderAsgTecGrupoBody(nom){
     html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
       +'<select onchange="reasignarIncidencia(\''+d.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
       +'<option value="">-- mantener --</option>'
-      +tecs.map(function(t){return '<option value="'+t.nombre.replace(/"/g,'')+'">'+t.nombre+'</option>';}).join('')
+      +tecs.filter(function(t){ return t.nombre !== d.tecnicoPrincipal; }).map(function(t){return '<option value="'+t.nombre.replace(/"/g,'')+'">'+t.nombre+'</option>';}).join('')
       +'</select></div>'
       +'<button class="btn btn-d btn-sm" style="margin-top:8px;" onclick="eliminarIncidencia(\''+d.id+'\')">&#128465; Eliminar</button>';
     html += '</div>';
