@@ -7554,6 +7554,8 @@ function abrirCatalogo() {
   if (rol !== 'admin' && rol !== 'creador') {
     alert('Sin acceso. Solo administrador o creador.'); return;
   }
+  // Creador entra directamente sin PIN
+  if (rol === 'creador') { goTo('w-catalogo'); return; }
   document.getElementById('dlgPinCatalogoPin').value = '';
   document.getElementById('dlgPinCatalogoMsg').textContent = '';
   document.getElementById('dlgPinCatalogo').classList.add('show');
