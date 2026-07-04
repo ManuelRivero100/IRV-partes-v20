@@ -6113,7 +6113,7 @@ function volverAlForm(){
 
 function volverCentros(){histShow(['centrosView']);}
 
-function volverHistOpts(){ if(_secActual){ verSec(_secActual); } else { $('histOpts').style.display='block'; $('secView').style.display='none'; } $('ordenView').style.display='none'; $('parteView').style.display='none'; refreshCounts(); }
+function volverHistOpts(){ $('histOpts').style.display='block'; $('secView').style.display='none'; $('ordenView').style.display='none'; $('parteView').style.display='none'; refreshCounts(); }
 
 function volverIncidencias(){histShow(['incidenciasView']);}
 
@@ -6350,6 +6350,10 @@ function editMatAnadir(){
 function cerrarEditPanel(){var p=document.getElementById('editPanel');if(p)p.style.display='none';}
 function abrirEdicionParte(idx){
   var h=getH(); var r=h[idx]; if(!r) return;
+  // Guardar pedido y centro originales para detectar cambios al guardar
+  r._pedidoOriginal = r.pedido || '';
+  r._centroOriginal = r.centro || '';
+  setH(h);
   // Guardar idx ANTES de nuevo() que lo resetea
   var editIdxTemp=idx;
   // Marcar que no debe abrir el diálogo de inicio de orden
@@ -6516,10 +6520,15 @@ function guardarEdicionParte(){
   }
   setH(h);
   // Subir parte a Firestore sin actualizar la incidencia (edición de datos básicos)
+  // Si cambió pedido o centro, borrar el docId anterior para evitar fantasmas
   try{
     if(typeof _db !== 'undefined' && _db && window._sesion){
-      var docId=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
-      _db.collection('partes').doc(docId).set(Object.assign({},r,{fechaModificacion:Date.now()}),{merge:true}).catch(function(){_marcarPendienteSync(r,true);});
+      var docIdAnterior=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r._centroOriginal+'_'+r._pedidoOriginal).replace(/[\/\s]/g,'-');
+      var docIdNuevo=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
+      if(docIdAnterior !== docIdNuevo){
+        _db.collection('partes').doc(docIdAnterior).delete().catch(function(){});
+      }
+      _db.collection('partes').doc(docIdNuevo).set(Object.assign({},r,{fechaModificacion:Date.now()}),{merge:true}).catch(function(){_marcarPendienteSync(r,true);});
     } else { _marcarPendienteSync(r,true); }
   }catch(e){ _marcarPendienteSync(r,true); }
   showMsg('msgEdit','Guardado correctamente.','success');
