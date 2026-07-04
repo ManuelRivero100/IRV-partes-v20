@@ -7037,6 +7037,27 @@ var _db = firebase.firestore();
 var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
 var MANUEL_ADMIN_PIN = '1212';
 
+// ===== MÓDULO VERIFICACIÓN CONEXIÓN =====
+// Función autocontenida — no depende de nada externo
+// Intenta leer config/general de Firestore con timeout de 3 segundos
+// callback(true) = hay conexión real, callback(false) = sin conexión
+function _verificarConexionFirestore(callback) {
+  var respondido = false;
+  var timer = setTimeout(function() {
+    if (!respondido) { respondido = true; callback(false); }
+  }, 3000);
+  try {
+    _db.collection('config').doc('general').get().then(function() {
+      if (!respondido) { respondido = true; clearTimeout(timer); callback(true); }
+    }).catch(function() {
+      if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
+    });
+  } catch(e) {
+    if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
+  }
+}
+// ===== FIN MÓDULO VERIFICACIÓN CONEXIÓN =====
+
 var _loginPendienteNombre = '';
 var _loginPendienteRol = '';
 
@@ -7062,8 +7083,12 @@ function _iniciarSesion() {
   // Manuel: dos PINes hardcodeados, cada uno entra directo a su rol
   if (nombre.toLowerCase() === CREADOR.nombre) {
     if (pin === CREADOR.pin) {
-      if (!navigator.onLine) { _mostrarSinConexion(nombre, 'creador'); return; }
-      _entrarConRol(nombre, 'creador'); return;
+      msgEl.textContent = 'Verificando conexion...';
+      _verificarConexionFirestore(function(hayConexion) {
+        if (hayConexion) { _entrarConRol(nombre, 'creador'); }
+        else { msgEl.textContent = ''; _mostrarSinConexion(nombre, 'creador'); }
+      });
+      return;
     }
     if (pin === MANUEL_ADMIN_PIN) { _mostrarSelectorRol(nombre, ['tecnico', 'admin']); return; }
     msgEl.textContent = 'PIN incorrecto.'; return;
@@ -7092,7 +7117,17 @@ function _iniciarSesion() {
       if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
       var roles = u.roles || ['tecnico'];
       var esAdminRol = roles.some(function(r){ return r==='admin'||r==='creador'; });
-      if (esAdminRol && !navigator.onLine) { _mostrarSinConexion(nombre, roles[0]); return; }
+      if (esAdminRol) {
+        msgEl.textContent = 'Verificando conexion...';
+        _verificarConexionFirestore(function(hayConexion) {
+          if (hayConexion) {
+            if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
+          } else {
+            msgEl.textContent = ''; _mostrarSinConexion(nombre, roles[0]);
+          }
+        });
+        return;
+      }
       if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
       return;
     }
@@ -7395,9 +7430,11 @@ try {
   if (_s) {
     var _ses = JSON.parse(_s);
     if (_ses.nombre && _ses.rol) {
-      if ((_ses.rol === 'admin' || _ses.rol === 'creador') && !navigator.onLine) {
-        // Sin internet: entrar como tecnico
-        _aplicarSesion(_ses.nombre, 'tecnico', false);
+      if (_ses.rol === 'admin' || _ses.rol === 'creador') {
+        _verificarConexionFirestore(function(hayConexion) {
+          if (hayConexion) { _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol); }
+          else { _aplicarSesion(_ses.nombre, 'tecnico', false); }
+        });
       } else {
         _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol);
       }
