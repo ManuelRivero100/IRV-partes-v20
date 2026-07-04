@@ -7131,7 +7131,7 @@ function _iniciarSesion() {
       msgEl.textContent = 'Verificando...';
       _verificarConexionFirestore(function(hayConexion) {
         if (hayConexion) { _mostrarSelectorRol(nombre, ['tecnico', 'admin']); }
-        else { msgEl.textContent = 'Sin conexion a internet.'; }
+        else { msgEl.textContent = ''; _mostrarSinConexion(nombre, 'tecnico'); }
       });
       return;
     }
