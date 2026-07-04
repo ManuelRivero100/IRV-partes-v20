@@ -917,6 +917,7 @@ textarea{resize:vertical;min-height:72px}
   </div>
 </div>
 <div id="w-consultaAsg" class="win">
+  <button class="back" id="consultaAsgBack" onclick="goTo('w-clientes')">&#8592; Volver</button>
   <div id="consultaAsgBody"></div>
 </div>
 <div id="w-migracion" class="win">
@@ -4085,7 +4086,7 @@ function renderAsgTecnico() {
 function renderAsgAdmin() {
   var sec = $('asgAdminSection'); var el = $('asgAdminLista');
   if (!sec || !el) return;
-  var esAdmin = window._sesion && (window._sesion.rol === 'admin' || window._sesion.rol === 'creador');
+  var esAdmin = window._sesion && window._sesion.rol === 'admin';
   if (!esAdmin) { sec.style.display = 'none'; return; }
   _db.collection('incidencias')
     .where('vistaAdmin','==',false)
@@ -4117,7 +4118,8 @@ function verAsgAdminAviso(id, clienteId) {
       + '<div class="rrow info-row"><span class="rc">T&eacute;cnico</span><span class="rl">'+(d.tecnicoPrincipal||'')+'</span><span class="rv"></span></div>'
       + (d.descripcion?'<div class="rrow info-row"><span class="rc">Aver&iacute;a</span><span class="rl">'+d.descripcion+'</span><span class="rv"></span></div>':'')
       + '</div>'
-      + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="verAsgAdminReasignar(\''+clienteId+'\')">&#128260; Ver / reasignar</button>';
+      + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="verAsgAdminReasignar(\''+clienteId+'\')">&#128260; Ver / reasignar</button>'
+      + '<button class="btn btn-s btn-full" style="margin-top:8px;" onclick="history.back()">&#8592; Volver</button>';
     $('consultaAsgBody').innerHTML = html;
     goTo('w-consultaAsg');
   });
