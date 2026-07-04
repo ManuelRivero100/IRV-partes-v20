@@ -1152,9 +1152,17 @@ function _sincronizarTecnicosDesdeFirestore(){
     var cambiado=false;
     snap.forEach(function(doc){
       var d=doc.data();
+      var roles = d.roles || ['tecnico'];
       var idx=tecs.findIndex(function(t){ return t.nombre===d.nombre; });
-      if(idx>=0){ tecs[idx].pin=d.pin; tecs[idx].activo=d.activo!==false; }
-      else { tecs.push({id:'tec_'+Date.now()+'_'+idx, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false}); cambiado=true; }
+      if(idx>=0){
+        tecs[idx].pin=d.pin;
+        tecs[idx].activo=d.activo!==false;
+        tecs[idx].roles=roles;
+        cambiado=true;
+      } else {
+        tecs.push({id:'tec_'+Date.now()+'_'+idx, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false, roles:roles});
+        cambiado=true;
+      }
     });
     if(cambiado) setTecnicos(tecs);
   }).catch(function(){});
@@ -7142,12 +7150,23 @@ function _iniciarSesion() {
 
   if (!_tecLocal) { msgEl.textContent = 'PIN incorrecto o usuario no encontrado.'; return; }
 
-  // Verificar internet para saber si tiene rol admin en Firestore
+  // Verificar si tiene rol admin en el catálogo local
+  var _tieneRolAdmin = false;
+  if (_tecLocal.roles) {
+    _tieneRolAdmin = _tecLocal.roles.some(function(r){ return r==='admin'||r==='creador'; });
+  }
+
+  // Verificar internet
   msgEl.textContent = 'Verificando...';
   _verificarConexionFirestore(function(hayConexion) {
     if (!hayConexion) {
-      // Sin internet — entra como técnico directo
-      _entrarConRol(_tecLocal.nombre, 'tecnico');
+      if (_tieneRolAdmin) {
+        // Tiene rol admin — mostrar panel sin conexión
+        _mostrarSinConexion(nombre, 'tecnico');
+      } else {
+        // Técnico puro — entra directo
+        _entrarConRol(_tecLocal.nombre, 'tecnico');
+      }
       return;
     }
     // Con internet — consultar Firestore para ver roles
@@ -7188,6 +7207,16 @@ function _mostrarSelectorRol(nombre, roles) {
 }
 
 function _entrarConRol(nombre, rol, multiRol) {
+  // Guardar si tiene rol admin para detectarlo sin internet la próxima vez
+  try {
+    var _rolInfo = JSON.parse(localStorage.getItem('irv_roles') || '{}');
+    if (rol === 'admin' || rol === 'creador' || !!multiRol) {
+      _rolInfo[nombre.toLowerCase()] = 'admin';
+    } else if (!_rolInfo[nombre.toLowerCase()]) {
+      _rolInfo[nombre.toLowerCase()] = 'tecnico';
+    }
+    localStorage.setItem('irv_roles', JSON.stringify(_rolInfo));
+  } catch(e) {}
   _aplicarSesion(nombre, rol, !!multiRol);
 }
 
