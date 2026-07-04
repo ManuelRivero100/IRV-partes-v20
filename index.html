@@ -6021,10 +6021,40 @@ function verParte(idx){
   var fF=r.fecha?r.fecha.split('-').reverse().join('/'):'--';
   var eb='';  // El estado es de la orden, no del parte
   var matHTML='';
+  // Calcular precios si cliente de cobro
+  var _preciosHTML='';
+  if(curCliente&&curCliente.precios===true&&r.codigos&&r.codigos.length){
+    var _precioTot=0, _hTot=0;
+    var _lineas=r.codigos.map(function(c){
+      var p=getPrecioPorCod(c.cod,c.lab,r.job||curJob||'');
+      var sub=p*c.v;
+      _precioTot+=sub;
+      if(c.u==='h'&&(c.lab||'').indexOf('Dsp')===-1) _hTot+=c.v;
+      var valStr=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?c.v+' dieta':fmtH(c.v);
+      return '<div class="rrow" style="display:flex;justify-content:space-between;padding:3px 0;font-size:.82rem;">'+
+        '<span style="color:var(--text2);">'+c.cod+' &middot; '+c.lab+'</span>'+
+        '<span style="display:flex;gap:12px;">'+
+        '<span>'+valStr+'</span>'+
+        (p>0?'<span style="color:var(--green);font-weight:600;min-width:70px;text-align:right;">'+fmtPrecio(sub)+'</span>':'<span style="min-width:70px;"></span>')+
+        '</span></div>';
+    }).join('');
+    if(_precioTot>0){
+      _preciosHTML='<div class="divider"></div>'+
+        '<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px;">Desglose de precios</div>'+
+        _lineas+
+        '<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-weight:700;">'+
+        '<span>TOTAL</span>'+
+        '<span style="display:flex;gap:12px;">'+
+        (_hTot>0?'<span>'+fmtH(_hTot)+'</span>':'<span></span>')+
+        '<span style="color:var(--green);min-width:70px;text-align:right;">'+fmtPrecio(_precioTot)+'</span>'+
+        '</span></div>';
+    }
+  }
   $('parteBody').innerHTML=
     '<div class="card"><div class="card-title">&#128203; '+r.tienda+' &middot; '+fF+'</div>'+
 
     (r.detalle||'<div style="color:var(--text2);padding:10px">Sin detalle.</div>')+
+    _preciosHTML+
     (r.obs?'<div class="divider"></div><div class="rrow obs-row" style="height:auto"><span class="rc" style="align-self:flex-start;padding-top:8px">Obs.</span><span class="rl" style="white-space:pre-wrap;word-break:break-word;height:auto;flex:1">'+r.obs+'</span></div>':'')+
     '<div class="divider"></div><div class="brow" style="margin-bottom:8px;">'+
     '<button class="btn btn-s btn-sm" onclick="hacerPDF('+idx+')">PDF</button>'+
