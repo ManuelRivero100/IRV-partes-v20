@@ -7107,7 +7107,7 @@ function _iniciarSesion() {
   msgEl.textContent = '';
   if (!nombre || pin.length !== 4) { msgEl.textContent = 'Introduce nombre y PIN de 4 digitos.'; return; }
 
-  // Manuel: dos PINes hardcodeados, cada uno entra directo a su rol
+  // Manuel: dos PINes hardcodeados
   if (nombre.toLowerCase() === CREADOR.nombre) {
     if (pin === CREADOR.pin) {
       msgEl.textContent = 'Verificando conexion...';
@@ -7121,9 +7121,10 @@ function _iniciarSesion() {
     msgEl.textContent = 'PIN incorrecto.'; return;
   }
 
-  // Buscar primero en Firestore (admins con multi-rol)
+  // Verificar conexión antes de consultar Firestore
   msgEl.textContent = 'Verificando...';
   var docId = nombre.toLowerCase().replace(/ /g,'_');
+
   function _intentarLoginLocal(){
     try {
       var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
@@ -7137,42 +7138,36 @@ function _iniciarSesion() {
     } catch(e) {}
     msgEl.textContent = 'Usuario no encontrado.';
   }
-  _db.collection('usuario').doc(docId).get().then(function(snap) {
-    if (snap.exists) {
-      var u = snap.data();
-      if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
-      if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
-      var roles = u.roles || ['tecnico'];
-      var esAdminRol = roles.some(function(r){ return r==='admin'||r==='creador'; });
-      if (esAdminRol) {
-        msgEl.textContent = 'Verificando conexion...';
-        _verificarConexionFirestore(function(hayConexion) {
-          if (hayConexion) {
-            if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
-          } else {
-            msgEl.textContent = ''; _mostrarSinConexion(nombre, roles[0]);
-          }
-        });
-        return;
-      }
-      if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
+
+  _verificarConexionFirestore(function(hayConexion) {
+    if (!hayConexion) {
+      // Sin internet — verificar PIN en local
+      var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
+      var tecs = cat.tecnicos || [];
+      var tec = tecs.find(function(t){ return t.nombre.toLowerCase() === nombre.toLowerCase(); });
+      if (tec && tec.pin === pin) { _mostrarSinConexion(nombre, 'tecnico'); }
+      else { msgEl.textContent = 'Sin conexion a internet.'; }
       return;
     }
-    // No está en Firestore: buscar en técnicos localStorage
-    _intentarLoginLocal();
-  }).catch(function() {
-    // Sin internet — verificar si el usuario tiene rol admin en local
-    var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
-    var tecs = cat.tecnicos || [];
-    var tec = tecs.find(function(t){ return t.nombre.toLowerCase() === nombre.toLowerCase(); });
-    if (tec && tec.pin === pin) {
-      // Tiene PIN correcto — mostrar aviso de sin conexión con opción de continuar como técnico
-      _mostrarSinConexion(nombre, 'tecnico');
-    } else {
+    _db.collection('usuario').doc(docId).get().then(function(snap) {
+      if (snap.exists) {
+        var u = snap.data();
+        if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
+        if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+        var roles = u.roles || ['tecnico'];
+        var esAdminRol = roles.some(function(r){ return r==='admin'||r==='creador'; });
+        if (esAdminRol) {
+          if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
+          return;
+        }
+        if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
+        return;
+      }
       _intentarLoginLocal();
-    }
+    }).catch(function() { _intentarLoginLocal(); });
   });
 }
+
 
 function _mostrarSelectorRol(nombre, roles) {
   document.getElementById('loginForm').style.display = 'none';
@@ -7576,7 +7571,7 @@ function confirmarCambioRol() {
     } else {
       msg.textContent = 'PIN incorrecto.';
     }
-  });
+  }).catch(function(){ msg.textContent = 'Error de conexión.'; });
 }
 
 
@@ -7598,28 +7593,27 @@ function confirmarPinCatalogo() {
   var pin = document.getElementById('dlgPinCatalogoPin').value.trim();
   var msg = document.getElementById('dlgPinCatalogoMsg');
   var sesion = window._sesion;
-  var esCreador = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
-  // Verificar PIN
-  var pinOk = false;
-  if (esCreador && pin === '1212') { pinOk = true; }
-  if (!pinOk) {
-    // Buscar en Firestore para admin
-    var docId = sesion.nombre.toLowerCase().replace(/ /g,'_');
-    _db.collection('usuario').doc(docId).get().then(function(snap) {
-      if (snap.exists && snap.data().pin === pin) {
-        document.getElementById('dlgPinCatalogo').classList.remove('show');
-        document.getElementById('dlgPinCatalogoPin').value = '';
-        goTo('w-catalogo');
-      } else {
-        msg.textContent = 'PIN incorrecto.';
-      }
-    });
+  var esCreador = sesion && sesion.rol === 'creador';
+  // Creador entra directamente sin PIN
+  if (esCreador) {
+    document.getElementById('dlgPinCatalogo').classList.remove('show');
+    document.getElementById('dlgPinCatalogoPin').value = '';
+    goTo('w-catalogo');
     return;
   }
-  document.getElementById('dlgPinCatalogo').classList.remove('show');
-  document.getElementById('dlgPinCatalogoPin').value = '';
-  goTo('w-catalogo');
+  // Admin: verificar PIN en Firestore
+  var docId = sesion.nombre.toLowerCase().replace(/ /g,'_');
+  _db.collection('usuario').doc(docId).get().then(function(snap) {
+    if (snap.exists && snap.data().pin === pin) {
+      document.getElementById('dlgPinCatalogo').classList.remove('show');
+      document.getElementById('dlgPinCatalogoPin').value = '';
+      goTo('w-catalogo');
+    } else {
+      msg.textContent = 'PIN incorrecto.';
+    }
+  }).catch(function(){ msg.textContent = 'Error de conexión.'; });
 }
+
 
 // ===== MIGRACIÓN V2 =====
 var _migBackup = null;
