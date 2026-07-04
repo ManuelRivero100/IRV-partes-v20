@@ -7737,10 +7737,10 @@ function migVerificar() {
           }
         }
       }
-      _migLog('Centros: '+totalCentros+(totalCentros===30?' ✓':' ⚠️ esperado 30'),totalCentros===30?'ok':'warn');
-      _migLog('Incidencias: '+totalInc+(totalInc===44?' ✓':' ⚠️ esperado 44'),totalInc===44?'ok':'warn');
-      _migLog('Partes: '+totalPartes+(totalPartes===78?' ✓':' ⚠️ esperado 78'),totalPartes===78?'ok':'warn');
-      if(totalPartes===78&&totalInc===44&&snapCli.size===3){ _migLog('✅ TODO CORRECTO','ok'); }
+      _migLog('Centros: '+totalCentros+(totalCentros===31?' ✓':' ⚠️ esperado 31'),totalCentros===31?'ok':'warn');
+      _migLog('Incidencias: '+totalInc+(totalInc===45?' ✓':' ⚠️ esperado 45'),totalInc===45?'ok':'warn');
+      _migLog('Partes: '+totalPartes+(totalPartes===80?' ✓':' ⚠️ esperado 80'),totalPartes===80?'ok':'warn');
+      if(totalPartes===80&&totalInc===45&&snapCli.size===3){ _migLog('✅ TODO CORRECTO','ok'); }
       else { _migLog('⚠️ Revisar los números','warn'); }
     } catch(err) { _migLog('Error verificando: '+err.message,'err'); }
   })();
