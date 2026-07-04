@@ -460,8 +460,8 @@ textarea{resize:vertical;min-height:72px}
     </div>
     <div id="loginSinConexion" style="display:none;text-align:center;">
       <div style="font-size:2rem;margin-bottom:12px;">&#128225;</div>
-      <div style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px;">Sin conexion</div>
-      <div style="font-size:.85rem;color:var(--text2);margin-bottom:20px;" id="loginSinConexionMsg">Como administrador o creador necesitas conexion a internet. Puedes continuar como tecnico.</div>
+      <div style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px;">Sin conexión</div>
+      <div style="font-size:.85rem;color:var(--text2);margin-bottom:20px;" id="loginSinConexionMsg">Sin conexión a internet. Para trabajar como administrador necesitas conexión. Puedes continuar como técnico.</div>
       <button class="btn btn-p btn-full" id="loginSinConexionBtn" onclick="_loginSinConexionContinuar()" style="margin-bottom:10px;">&#128295; Continuar como tecnico</button>
       <button class="btn btn-s btn-full" onclick="document.getElementById('loginSinConexion').style.display='none';document.getElementById('loginForm').style.display='block';">&#10005; Cancelar</button>
     </div>
@@ -7160,7 +7160,18 @@ function _iniciarSesion() {
     }
     // No está en Firestore: buscar en técnicos localStorage
     _intentarLoginLocal();
-  }).catch(function() { _intentarLoginLocal(); });
+  }).catch(function() {
+    // Sin internet — verificar si el usuario tiene rol admin en local
+    var cat = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
+    var tecs = cat.tecnicos || [];
+    var tec = tecs.find(function(t){ return t.nombre.toLowerCase() === nombre.toLowerCase(); });
+    if (tec && tec.pin === pin) {
+      // Tiene PIN correcto — mostrar aviso de sin conexión con opción de continuar como técnico
+      _mostrarSinConexion(nombre, 'tecnico');
+    } else {
+      _intentarLoginLocal();
+    }
+  });
 }
 
 function _mostrarSelectorRol(nombre, roles) {
