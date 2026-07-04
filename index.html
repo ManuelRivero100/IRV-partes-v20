@@ -7028,14 +7028,16 @@ if('serviceWorker' in navigator){
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script>
-firebase.initializeApp({
-  apiKey: "AIzaSyCYQTHbtfp5MJwv34knrhVOPmHZDUQzuiQ",
-  authDomain: "irv-grup.firebaseapp.com",
-  projectId: "irv-grup",
-  storageBucket: "irv-grup.firebasestorage.app",
-  messagingSenderId: "179090613524",
-  appId: "1:179090613524:web:c8116a87bce66719d68e01"
-});
+try {
+  firebase.initializeApp({
+    apiKey: "AIzaSyCYQTHbtfp5MJwv34knrhVOPmHZDUQzuiQ",
+    authDomain: "irv-grup.firebaseapp.com",
+    projectId: "irv-grup",
+    storageBucket: "irv-grup.firebasestorage.app",
+    messagingSenderId: "179090613524",
+    appId: "1:179090613524:web:c8116a87bce66719d68e01"
+  });
+} catch(e) { /* App ya inicializada */ }
 var _db = firebase.firestore();
 var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
 var MANUEL_ADMIN_PIN = '1212';
