@@ -457,6 +457,13 @@ textarea{resize:vertical;min-height:72px}
       </div>
       <div id="loginRolBtns"></div>
     </div>
+    <div id="loginSinConexion" style="display:none;text-align:center;">
+      <div style="font-size:2rem;margin-bottom:12px;">&#128225;</div>
+      <div style="font-size:1rem;font-weight:700;color:var(--text);margin-bottom:8px;">Sin conexion</div>
+      <div style="font-size:.85rem;color:var(--text2);margin-bottom:20px;" id="loginSinConexionMsg">Como administrador o creador necesitas conexion a internet. Puedes continuar como tecnico.</div>
+      <button class="btn btn-p btn-full" id="loginSinConexionBtn" onclick="_loginSinConexionContinuar()" style="margin-bottom:10px;">&#128295; Continuar como tecnico</button>
+      <button class="btn btn-s btn-full" onclick="document.getElementById('loginSinConexion').style.display='none';document.getElementById('loginForm').style.display='block';">&#10005; Cancelar</button>
+    </div>
   </div>
 </div>
 <div id="splash" onclick="this.style.pointerEvents='none';document.body.style.overflow='';this.classList.add('fade-out');var s=this;setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},600);">
@@ -1564,7 +1571,7 @@ function migrarTecnicos(){
   });
   if(changed) setH(h);
 }
-function setTecnicos(arr){ var cat=getCat(); cat.tecnicos=arr; setCat(cat); }
+function setTecnicos(arr){ var cat=getCat(); cat.tecnicos=arr; setCat(cat); _subirCatalogoAFirestore(); }
 
 function tecToggleJob(job,btn){
   var idx=_tecJobs.indexOf(job);
@@ -7042,16 +7049,34 @@ var _db = firebase.firestore();
 var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
 var MANUEL_ADMIN_PIN = '1212';
 
+var _loginPendienteNombre = '';
+var _loginPendienteRol = '';
+
+function _loginSinConexionContinuar() {
+  _entrarConRol(_loginPendienteNombre, 'tecnico');
+}
+
+function _mostrarSinConexion(nombre, rol) {
+  _loginPendienteNombre = nombre;
+  _loginPendienteRol = rol;
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('loginRolSel').style.display = 'none';
+  document.getElementById('loginSinConexion').style.display = 'block';
+}
+
 function _iniciarSesion() {
   var nombre = document.getElementById('loginNombre').value.trim();
   var pin = document.getElementById('loginPin').value.trim();
   var msgEl = document.getElementById('loginMsg');
   msgEl.textContent = '';
-  if (!nombre || pin.length !== 4) { msgEl.textContent = 'Introduce nombre y PIN de 4 dígitos.'; return; }
+  if (!nombre || pin.length !== 4) { msgEl.textContent = 'Introduce nombre y PIN de 4 digitos.'; return; }
 
   // Manuel: dos PINes hardcodeados, cada uno entra directo a su rol
   if (nombre.toLowerCase() === CREADOR.nombre) {
-    if (pin === CREADOR.pin) { _entrarConRol(nombre, 'creador'); return; }
+    if (pin === CREADOR.pin) {
+      if (!navigator.onLine) { _mostrarSinConexion(nombre, 'creador'); return; }
+      _entrarConRol(nombre, 'creador'); return;
+    }
     if (pin === MANUEL_ADMIN_PIN) { _mostrarSelectorRol(nombre, ['tecnico', 'admin']); return; }
     msgEl.textContent = 'PIN incorrecto.'; return;
   }
@@ -7078,6 +7103,8 @@ function _iniciarSesion() {
       if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
       if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
       var roles = u.roles || ['tecnico'];
+      var esAdminRol = roles.some(function(r){ return r==='admin'||r==='creador'; });
+      if (esAdminRol && !navigator.onLine) { _mostrarSinConexion(nombre, roles[0]); return; }
       if (roles.length === 1) { _entrarConRol(nombre, roles[0]); } else { _mostrarSelectorRol(nombre, roles); }
       return;
     }
@@ -7377,7 +7404,17 @@ function cerrarSesion() {
 // Comprobar sesión guardada al arrancar
 try {
   var _s = localStorage.getItem('irv_sesion');
-  if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol); }
+  if (_s) {
+    var _ses = JSON.parse(_s);
+    if (_ses.nombre && _ses.rol) {
+      if ((_ses.rol === 'admin' || _ses.rol === 'creador') && !navigator.onLine) {
+        // Sin internet: entrar como tecnico
+        _aplicarSesion(_ses.nombre, 'tecnico', false);
+      } else {
+        _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol);
+      }
+    }
+  }
 } catch(e) {}
 
 // Cierre automático tras 10 minutos de inactividad
