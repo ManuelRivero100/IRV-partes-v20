@@ -7427,19 +7427,7 @@ function cerrarSesion() {
 // Comprobar sesión guardada al arrancar
 try {
   var _s = localStorage.getItem('irv_sesion');
-  if (_s) {
-    var _ses = JSON.parse(_s);
-    if (_ses.nombre && _ses.rol) {
-      if (_ses.rol === 'admin' || _ses.rol === 'creador') {
-        _verificarConexionFirestore(function(hayConexion) {
-          if (hayConexion) { _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol); }
-          else { _aplicarSesion(_ses.nombre, 'tecnico', false); }
-        });
-      } else {
-        _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol);
-      }
-    }
-  }
+  if (_s) { var _ses = JSON.parse(_s); if (_ses.nombre && _ses.rol) _aplicarSesion(_ses.nombre, _ses.rol, _ses.multiRol); }
 } catch(e) {}
 
 // Cierre automático tras 10 minutos de inactividad
