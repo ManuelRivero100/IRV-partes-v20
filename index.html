@@ -7181,8 +7181,7 @@ function _mostrarSelectorRol(nombre, roles) {
 }
 
 function _entrarConRol(nombre, rol, multiRol) {
-  try { localStorage.setItem('irv_sesion', JSON.stringify({ nombre: nombre, rol: rol, multiRol: !!multiRol })); } catch(e) {}
-  location.reload();
+  _aplicarSesion(nombre, rol, !!multiRol);
 }
 
 function _aplicarSesion(nombre, rol, multiRol) {
