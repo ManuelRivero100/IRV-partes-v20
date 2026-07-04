@@ -4119,7 +4119,7 @@ function verAsgAdminAviso(id, clienteId) {
       + (d.descripcion?'<div class="rrow info-row"><span class="rc">Aver&iacute;a</span><span class="rl">'+d.descripcion+'</span><span class="rv"></span></div>':'')
       + '</div>'
       + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="verAsgAdminReasignar(\''+clienteId+'\')">&#128260; Ver / reasignar</button>'
-      + '<button class="btn btn-s btn-full" style="margin-top:8px;" onclick="history.back()">&#8592; Volver</button>';
+      + '<button class="btn btn-s btn-full" style="margin-top:8px;" onclick="goTo('w-clientes')">&#8592; Volver</button>';
     $('consultaAsgBody').innerHTML = html;
     goTo('w-consultaAsg');
   });
