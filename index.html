@@ -4871,7 +4871,10 @@ function renderWorkers(){
       return '<div onmousedown="tecSeleccionar('+i+',\''+t.nombre.replace(/\'/g,'\\\'')+'\')" style="padding:10px 14px;font-size:.88rem;cursor:pointer;border-bottom:1px solid var(--border2);">'+t.nombre+'</div>';
     }).join('');
     var _dropHtml='<div id="'+_dropId+'" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:99;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.4);">'+_dropItems+'</div>';
-    var _inp='<input type="text" id="wInp'+i+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;width:100%;" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value" onfocus="tecMostrarDrop('+i+')" onblur="tecOcultarDrop('+i+')">';
+    var _esAdminEditando = window._sesion && window._sesion.rol === 'admin' && window._editIdx !== null;
+    var _inp = _esAdminEditando
+      ? '<span style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;color:var(--text);display:inline-block;">'+(wNames[i]||'—')+'</span>'
+      : '<input type="text" id="wInp'+i+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;width:100%;" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value" onfocus="tecMostrarDrop('+i+')" onblur="tecOcultarDrop('+i+')">';
     if(nr&&i===0){
       html+='<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador 1<span class="wbadge wbadge-auto">Oficial</span></span><div style="position:relative;flex:1;min-width:120px;">'+_inp+_dropHtml+'</div></div>';
     } else if(nr){
