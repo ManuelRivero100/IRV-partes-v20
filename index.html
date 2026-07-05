@@ -7156,17 +7156,40 @@ function _iniciarSesion() {
     return;
   }
 
-  // 2. Creador (PIN hardcodeado, no está en catálogo de técnicos)
-  if (nombre.toLowerCase() === CREADOR.nombre && pin === CREADOR.pin) {
-    msgEl.textContent = 'Verificando...';
-    _verificarConexionFirestore(function(hayConexion) {
+  // 2. No está en local — verificar en Firestore si hay internet
+  // Cubre: Manuel con PIN 1212, y cualquier usuario que no tenga datos locales aún
+  msgEl.textContent = 'Verificando...';
+  _verificarConexionFirestore(function(hayConexion) {
+    // Caso especial: creador con PIN 1030
+    if (nombre.toLowerCase() === CREADOR.nombre && pin === CREADOR.pin) {
       if (hayConexion) { _entrarConRol(nombre, 'creador'); }
       else { msgEl.textContent = 'Sin conexion a internet.'; }
-    });
-    return;
-  }
+      return;
+    }
 
-  msgEl.textContent = 'PIN incorrecto o usuario no encontrado.';
+    if (!hayConexion) {
+      msgEl.textContent = 'Sin conexion a internet.';
+      return;
+    }
+
+    // Con internet — consultar Firestore
+    var docId = nombre.toLowerCase().replace(/ /g,'_');
+    _db.collection('usuario').doc(docId).get().then(function(snap) {
+      if (snap.exists) {
+        var u = snap.data();
+        if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
+        if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+        var roles = u.roles || ['tecnico'];
+        // Filtrar rol creador — el creador entra solo con PIN 1030
+        roles = roles.filter(function(r){ return r !== 'creador'; });
+        if (roles.length === 0) roles = ['tecnico'];
+        if (roles.length > 1) { _mostrarSelectorRol(nombre, roles); }
+        else { _entrarConRol(nombre, roles[0]); }
+      } else {
+        msgEl.textContent = 'PIN incorrecto o usuario no encontrado.';
+      }
+    }).catch(function() { msgEl.textContent = 'Error de conexion.'; });
+  });
 }
 
 
