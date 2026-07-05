@@ -7115,31 +7115,7 @@ function _iniciarSesion() {
   msgEl.textContent = '';
   if (!nombre || pin.length !== 4) { msgEl.textContent = 'Introduce nombre y PIN de 4 digitos.'; return; }
 
-  // ===== CREADOR =====
-  if (nombre.toLowerCase() === CREADOR.nombre) {
-    if (pin === CREADOR.pin) {
-      // Creador con PIN principal: necesita internet
-      msgEl.textContent = 'Verificando...';
-      _verificarConexionFirestore(function(hayConexion) {
-        if (hayConexion) { _entrarConRol(nombre, 'creador'); }
-        else { msgEl.textContent = 'Sin conexion a internet.'; }
-      });
-      return;
-    }
-    if (pin === MANUEL_ADMIN_PIN) {
-      // Creador con PIN admin: necesita internet, muestra selector
-      msgEl.textContent = 'Verificando...';
-      _verificarConexionFirestore(function(hayConexion) {
-        if (hayConexion) { _mostrarSelectorRol(nombre, ['tecnico', 'admin']); }
-        else { msgEl.textContent = ''; _mostrarSinConexion(nombre, 'tecnico'); }
-      });
-      return;
-    }
-    msgEl.textContent = 'PIN incorrecto.'; return;
-  }
-
-  // ===== TÉCNICOS Y ADMINS =====
-  // Buscar en localStorage
+  // 1. Buscar en localStorage (técnicos y admins con PIN guardado)
   var _tecLocal = null;
   try {
     var _catLocal = JSON.parse(localStorage.getItem('pm_catalogo') || '{}');
@@ -7148,43 +7124,49 @@ function _iniciarSesion() {
     });
   } catch(e) {}
 
-  if (!_tecLocal) { msgEl.textContent = 'PIN incorrecto o usuario no encontrado.'; return; }
-
-  // Verificar si tiene rol admin en el catálogo local
-  var _tieneRolAdmin = false;
-  if (_tecLocal.roles) {
-    _tieneRolAdmin = _tecLocal.roles.some(function(r){ return r==='admin'||r==='creador'; });
+  if (_tecLocal) {
+    // Está en local — verificar internet para ver si tiene rol admin
+    var _tieneRolAdmin = _tecLocal.roles && _tecLocal.roles.some(function(r){ return r==='admin'||r==='creador'; });
+    msgEl.textContent = 'Verificando...';
+    _verificarConexionFirestore(function(hayConexion) {
+      if (!hayConexion) {
+        if (_tieneRolAdmin) {
+          // Tiene rol admin pero sin internet — mostrar panel
+          msgEl.textContent = '';
+          _mostrarSinConexion(nombre, 'tecnico');
+        } else {
+          // Técnico puro — entra directo
+          _entrarConRol(_tecLocal.nombre, 'tecnico');
+        }
+        return;
+      }
+      // Con internet — consultar Firestore para ver roles actualizados
+      var docId = nombre.toLowerCase().replace(/ /g,'_');
+      _db.collection('usuario').doc(docId).get().then(function(snap) {
+        if (snap.exists) {
+          var u = snap.data();
+          var roles = u.roles || ['tecnico'];
+          if (roles.length > 1) { _mostrarSelectorRol(nombre, roles); }
+          else { _entrarConRol(nombre, roles[0]); }
+        } else {
+          _entrarConRol(_tecLocal.nombre, 'tecnico');
+        }
+      }).catch(function() { _entrarConRol(_tecLocal.nombre, 'tecnico'); });
+    });
+    return;
   }
 
-  // Verificar internet
-  msgEl.textContent = 'Verificando...';
-  _verificarConexionFirestore(function(hayConexion) {
-    if (!hayConexion) {
-      if (_tieneRolAdmin) {
-        // Tiene rol admin — mostrar panel sin conexión
-        _mostrarSinConexion(nombre, 'tecnico');
-      } else {
-        // Técnico puro — entra directo
-        _entrarConRol(_tecLocal.nombre, 'tecnico');
-      }
-      return;
-    }
-    // Con internet — consultar Firestore para ver roles
-    var docId = nombre.toLowerCase().replace(/ /g,'_');
-    _db.collection('usuario').doc(docId).get().then(function(snap) {
-      if (snap.exists) {
-        var u = snap.data();
-        var roles = u.roles || ['tecnico'];
-        if (roles.length > 1) { _mostrarSelectorRol(nombre, roles); }
-        else { _entrarConRol(nombre, roles[0]); }
-      } else {
-        // No en Firestore — entra como técnico
-        _entrarConRol(_tecLocal.nombre, 'tecnico');
-      }
-    }).catch(function() {
-      _entrarConRol(_tecLocal.nombre, 'tecnico');
+  // 2. Creador (PIN hardcodeado, no está en catálogo de técnicos)
+  if (nombre.toLowerCase() === CREADOR.nombre && pin === CREADOR.pin) {
+    msgEl.textContent = 'Verificando...';
+    _verificarConexionFirestore(function(hayConexion) {
+      if (hayConexion) { _entrarConRol(nombre, 'creador'); }
+      else { msgEl.textContent = 'Sin conexion a internet.'; }
     });
-  });
+    return;
+  }
+
+  msgEl.textContent = 'PIN incorrecto o usuario no encontrado.';
 }
 
 
