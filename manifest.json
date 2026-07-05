@@ -2,7 +2,7 @@
   "name": "Partes IRV-10",
   "short_name": "IRV-10",
   "description": "Gestión de partes de trabajo IRV-10",
-  "start_url": "/IRV-partes-v20/",
+  "start_url": "https://manuelrivero100.github.io/IRV-partes-v20/",
   "display": "standalone",
   "background_color": "#12141c",
   "theme_color": "#2d9e5f",
