@@ -4725,6 +4725,11 @@ function _esAdminOCreador() {
 function renderClientes(){
   var lista=getClientes();
   var h=getHVisible();
+  // Técnico: mostrar solo clientes donde tiene partes
+  if(window._sesion && window._sesion.rol==='tecnico'){
+    var clientesConPartes=new Set(h.map(function(r){ return r.clienteId||'mercadona'; }));
+    lista=lista.filter(function(c){ return clientesConPartes.has(c.id); });
+  }
   var stats={};
   lista.forEach(function(c){stats[c.id]={activas:0,ultimaFin:''};});
   var ordenes={};
