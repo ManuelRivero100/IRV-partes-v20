@@ -4737,15 +4737,21 @@ function renderClientes(){
   var stats={};
   lista.forEach(function(c){stats[c.id]={activas:0,ultimaFin:''};});
   var ordenes={};
+  var _miNombreL = window._sesion ? window._sesion.nombre.toLowerCase() : '';
+  var _esTec = window._sesion && window._sesion.rol === 'tecnico';
   h.forEach(function(r){
     var cid=r.clienteId||'mercadona';
     var k=cid+'||'+r.pedido+'||'+(r.centro||'');
-    if(!ordenes[k]) ordenes[k]={cid:cid,estado:'terminado',fecha:''};
+    if(!ordenes[k]) ordenes[k]={cid:cid,estado:'terminado',fecha:'',esPrincipal:false};
     if(r.fecha>ordenes[k].fecha){ordenes[k].fecha=r.fecha;ordenes[k].estado=r.estado||'terminado';}
+    // Marcar si el técnico es principal en algún parte de esta incidencia
+    if(_esTec && r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===_miNombreL){
+      ordenes[k].esPrincipal=true;
+    }
   });
   Object.values(ordenes).forEach(function(o){
     if(!stats[o.cid]) return;
-    if(o.estado==='en-ejecucion'){stats[o.cid].activas++;}
+    if(o.estado==='en-ejecucion' && (!_esTec || o.esPrincipal)){stats[o.cid].activas++;}
     else{if(o.fecha>stats[o.cid].ultimaFin)stats[o.cid].ultimaFin=o.fecha;}
   });
   lista=lista.slice().sort(function(a,b){
@@ -7347,24 +7353,50 @@ function _aplicarSesion(nombre, rol, multiRol) {
 
 function _sincronizarPartesDesdeFirestore(soloTecnico, callback) {
   if (typeof _db === 'undefined' || !_db) { if(callback) callback(); return; }
-  var query = soloTecnico ? _db.collection('partes').where('tecnicoPrincipal','==',soloTecnico) : _db.collection('partes');
-  query.get().then(function(snap){
-    var h = getH();
+
+  function _procesarSnap(snap, h) {
     var nuevos = 0;
     snap.forEach(function(doc){
       var d = doc.data();
       var idx = h.findIndex(function(x){ return x.fecha===d.fecha && x.pedido===d.pedido && x.centro===d.centro; });
       if (idx >= 0) {
-        // Ya existe local: actualizar solo si Firestore es más reciente
         if ((d.fechaModificacion||0) > (h[idx]._fm||0)) { d._fm = d.fechaModificacion; h[idx] = d; }
       } else {
         d._fm = d.fechaModificacion;
         h.push(d); nuevos++;
       }
     });
-    if (nuevos > 0 || snap.size > 0) { setH(h); }
-    if(callback) callback(); else { renderClientes(); refreshCounts(); renderAsgTecnico(); }
-  }).catch(function(){ if(callback) callback(); });
+    return nuevos;
+  }
+
+  if (soloTecnico) {
+    // Usar nombre exacto del catálogo para la consulta (case-sensitive en Firestore)
+    var _tec = getTecnicos().find(function(t){ return t.nombre.toLowerCase() === soloTecnico.toLowerCase(); });
+    if (_tec) soloTecnico = _tec.nombre;
+    // Descargar partes como principal Y como ayudante
+    var h = getH();
+    var pendientes = 2;
+    function _done() {
+      pendientes--;
+      if (pendientes === 0) {
+        setH(h);
+        if(callback) callback(); else { renderClientes(); refreshCounts(); renderAsgTecnico(); }
+      }
+    }
+    _db.collection('partes').where('tecnicoPrincipal','==',soloTecnico).get().then(function(snap){
+      _procesarSnap(snap, h); _done();
+    }).catch(function(){ _done(); });
+    _db.collection('partes').where('tecnicos','array-contains',soloTecnico).get().then(function(snap){
+      _procesarSnap(snap, h); _done();
+    }).catch(function(){ _done(); });
+  } else {
+    _db.collection('partes').get().then(function(snap){
+      var h = getH();
+      _procesarSnap(snap, h);
+      setH(h);
+      if(callback) callback(); else { renderClientes(); refreshCounts(); renderAsgTecnico(); }
+    }).catch(function(){ if(callback) callback(); });
+  }
 }
 
 // (definición de _esAdminOCreador movida arriba, junto a renderClientes)
