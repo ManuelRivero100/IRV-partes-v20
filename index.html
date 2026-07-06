@@ -7348,6 +7348,9 @@ function _sincronizarPartesDesdeFirestore(soloTecnico) {
       }
     });
     if (nuevos > 0 || snap.size > 0) { setH(h); }
+    renderClientes();
+    refreshCounts();
+    renderAsgTecnico();
   }).catch(function(){});
 }
 
