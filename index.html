@@ -1094,7 +1094,7 @@ function goTo(id){
     });
     var rtv=$('resumenTotalView'); if(rtv) rtv.style.display='none';
     var rcv=$('resumenCentroView'); if(rcv) rcv.style.display='none';
-    var ho=$('histOpts'); if(ho) ho.style.display='block';
+    var ho=$('histOpts'); if(ho) ho.style.display='block'; renderHistTecBtns();
     window._ordenActual=null;
     window._incidenciasCache=[];
     _centrosCache=[];
@@ -6253,7 +6253,7 @@ function volverAlForm(){
 
 function volverCentros(){histShow(['centrosView']);}
 
-function volverHistOpts(){ $('histOpts').style.display='block'; $('secView').style.display='none'; $('ordenView').style.display='none'; $('parteView').style.display='none'; refreshCounts(); }
+function volverHistOpts(){ $('histOpts').style.display='block'; $('secView').style.display='none'; $('ordenView').style.display='none'; $('parteView').style.display='none'; refreshCounts(); renderHistTecBtns(); }
 
 function volverIncidencias(){histShow(['incidenciasView']);}
 
