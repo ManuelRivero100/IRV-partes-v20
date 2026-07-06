@@ -7162,7 +7162,7 @@ renderWorkers();
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js').then(function(reg){
+    navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).then(function(reg){
       console.log('SW registered');
       // Recargar cuando se activa un nuevo SW
       reg.addEventListener('updatefound', function(){
