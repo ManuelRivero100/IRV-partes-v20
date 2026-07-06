@@ -7388,6 +7388,8 @@ function _sincronizarPartesDesdeFirestore(soloTecnico, callback) {
       var d = doc.data();
       var idx = h.findIndex(function(x){ return x.fecha===d.fecha && x.pedido===d.pedido && x.centro===d.centro; });
       if (idx >= 0) {
+        // Siempre actualizar el estado desde Firestore (puede cambiar al reabrir sin actualizar fechaModificacion)
+        if (d.estado && d.estado !== h[idx].estado) { h[idx].estado = d.estado; }
         if ((d.fechaModificacion||0) > (h[idx]._fm||0)) { d._fm = d.fechaModificacion; h[idx] = d; }
       } else {
         d._fm = d.fechaModificacion;
