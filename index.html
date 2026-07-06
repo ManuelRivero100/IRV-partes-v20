@@ -6183,10 +6183,7 @@ function verSecTecnico(nomTecnico){
     var badge=g.estado==='en-ejecucion'?'<span class="badge badge-a">En ejecuci&oacute;n</span>':'<span class="badge badge-g">Finalizado</span>';
     var enc=encodeURIComponent(g.pedido)+'||'+encodeURIComponent(g.centro);
     var subTitle=g.actObras?g.actObras+' &middot; '+g.job:'Orden '+g.pedido+' &middot; '+g.job;
-    return '<div class="hist-item" onclick="verOrden(''+enc+'')">'+
-      '<div><div class="hi-title">'+dot+g.tienda+'</div>'+
-      '<div class="hi-sub">'+subTitle+' &middot; '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+badge+'</div>'+
-      '<div class="hi-date">'+fr+'</div></div>';
+    return '<div class="hist-item" onclick="verOrden(\''+enc+'\')">'+'<div><div class="hi-title">'+dot+g.tienda+'</div>'+'<div class="hi-sub">'+subTitle+' &middot; '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+badge+'</div>'+'<div class="hi-date">'+fr+'</div></div>';
   }).join('');
 }
 
