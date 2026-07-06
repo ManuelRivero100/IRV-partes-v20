@@ -704,6 +704,10 @@ textarea{resize:vertical;min-height:72px}
   <button class="back" onclick="volverAlForm()">&#8592; Volver al formulario</button>
   <div class="card"><div class="card-title">&#9989; Parte generado</div><div id="out"></div></div>
   <div class="card"><div class="card-title">&#128221; Observaciones</div>
+    <div class="field" id="fieldDescIncidencia" style="display:none;">
+      <label style="color:var(--amber);font-weight:700;">&#128203; Descripci&oacute;n de la incidencia</label>
+      <textarea id="descIncidencia" style="background:var(--surface2);color:var(--text2);font-size:.85rem;" readonly placeholder="Sin descripci&oacute;n de incidencia&hellip;"></textarea>
+    </div>
     <div class="field"><textarea id="obs" placeholder="Observaciones adicionales (opcional)&hellip;"></textarea></div>
     <div class="brow">
       <button class="btn btn-p" onclick="mostrarDialogoEstado()" id="gbtn">&#128190; Guardar parte</button>
@@ -1212,6 +1216,7 @@ var _editIdx = null;
 var _nocturnoConfirmado = false;
 var _incidenciasCache = [];
 var _averiaReportada = '';
+var _descIncidencia = '';
 
 
 
@@ -3245,6 +3250,7 @@ function generarCore(){
     estado:'en-ejecucion', materiales:msGetSel(), codigos:codigos,
     clienteId:curCliente?curCliente.id:'mercadona', cod_v:3,
     averiaReportada:_averiaReportada||'',
+    descIncidencia:($('descIncidencia')&&$('descIncidencia').value)||'',
     tecnicos:(function(){
       var tecs=getTecnicos();
       return wNames.filter(function(n){return n&&n.trim();}).map(function(nom){
@@ -3329,6 +3335,7 @@ function resetearEstadoCompleto(){
 function nuevo(){
   _editIdx=null;
   ['pedido','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
+  var _fd=$('fieldDescIncidencia'); if(_fd) _fd.style.display='none'; var _dd=$('descIncidencia'); if(_dd) _dd.value='';
   $('w').value='2'; $('job').value=''; $('link').value='No';
   curJob=''; curLink='No'; wRoles=[];
   wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
@@ -4171,14 +4178,32 @@ function ejecutarAsgTec() {
   $('tienda').value = d.tienda || '';
   $('dir').value = d.dir || '';
   $('tel').value = d.tel || '';
-  if (d.km) { $('km').value = d.km; $('kmE').value = d.km; }
-  if (d.tr) { $('tr').value = d.tr; $('trE').value = d.tr; }
+  // Buscar datos del centro en historial — igual que el autocomplete
+  var _h = getH();
+  var _parteRef = null;
+  for(var _i = _h.length-1; _i >= 0; _i--) {
+    var _r = _h[_i];
+    if((_r.clienteId||'mercadona') === d.clienteId && _r.centro === d.centro && _r.km) {
+      _parteRef = _r; break;
+    }
+  }
+  if(_parteRef) {
+    if(_parteRef.km){ $('km').value=_parteRef.km; $('kmE').value=_parteRef.km; }
+    if(_parteRef.tr){ $('tr').value=_parteRef.tr; $('trE').value=_parteRef.tr; }
+    if(!$('dir').value && _parteRef.dir) $('dir').value=_parteRef.dir;
+    if(!$('tel').value && _parteRef.tel) $('tel').value=_parteRef.tel;
+    if(!$('tienda').value && _parteRef.tienda) $('tienda').value=_parteRef.tienda;
+  }
   if (d.job) {
     document.querySelectorAll('#jobTgl button').forEach(function(b){
       if (b.textContent.trim() === d.job) setJob(d.job, b);
     });
   }
-  if (d.descripcion) { $('obs').value = d.descripcion; }
+  if (d.descripcion) {
+    var fd = $('fieldDescIncidencia');
+    var dd = $('descIncidencia');
+    if(fd && dd){ fd.style.display='block'; dd.value = d.descripcion; }
+  }
   if (d.pedido) ocultarLectura();
 }
 
