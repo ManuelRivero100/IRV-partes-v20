@@ -4032,7 +4032,8 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
   if(typeof _db === 'undefined' || !_db || !pedido) return;
   _db.collection('incidencias').where('pedido','==',pedido).where('centro','==',centro).get().then(function(snap){
     if(snap.empty){
-      if(datosParte && estado!=='terminado'){
+      if(datosParte){
+        // Crear incidencia siempre — incluido cuando se cierra en el primer parte
         _db.collection('incidencias').add({
           clienteId: datosParte.clienteId||'mercadona',
           pedido: pedido, centro: centro||'',
@@ -6154,10 +6155,12 @@ function renderHistTecBtns(){
   var h = getHVisible();
 
   if(rol === 'tecnico'){
-    // Técnico: botón "Mis incidencias" — donde es principal
+    // Técnico: botón "Mis incidencias" — donde es principal, filtrado por cliente actual
     var miNombre = window._sesion.nombre.toLowerCase();
+    var cliId = curCliente && curCliente.id;
     var count = {};
     h.forEach(function(r){
+      if((r.clienteId||'mercadona') !== cliId) return;
       if(r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase() === miNombre){
         var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
         count[k] = true;
@@ -6171,9 +6174,11 @@ function renderHistTecBtns(){
   }
 
   if(rol === 'admin' || rol === 'creador'){
-    // Admin/Creador: un botón por cada técnico con incidencias como principal
+    // Admin/Creador: un botón por cada técnico con incidencias como principal, filtrado por cliente actual
+    var cliId = curCliente && curCliente.id;
     var tecs = {};
     h.forEach(function(r){
+      if((r.clienteId||'mercadona') !== cliId) return;
       if(r.tecnicos && r.tecnicos[0]){
         var t = r.tecnicos[0];
         var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
@@ -6199,7 +6204,8 @@ function verSecTecnico(nomTecnico){
   $('histOpts').style.display='none'; $('secView').style.display='block'; $('ordenView').style.display='none'; $('parteView').style.display='none';
   $('centrosView').style.display='none'; $('incidenciasView').style.display='none';
   var h = getHVisible();
-  var ords = getOrdenes();
+  var cliId = curCliente && curCliente.id;
+  var ords = getOrdenes().filter(function(g){ return (g.partes[0] && (g.partes[0].r.clienteId||'mercadona')) === cliId; });
   // Filtrar incidencias donde este técnico fue principal
   var nomL = nomTecnico.toLowerCase();
   ords = ords.filter(function(g){
