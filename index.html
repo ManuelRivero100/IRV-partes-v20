@@ -4069,10 +4069,10 @@ function renderAsgTecnico() {
     .where('tecnicoPrincipal','==',miNombre)
     .where('estado','in',['pendiente','en-ejecucion'])
     .get().then(function(snap){
-      if (snap.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
       var html = '';
       snap.forEach(function(doc){
         var d = doc.data();
+        if (d.vista === true) return; // ya vista por el técnico
         var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
         html += '<div class="act-list-item" onclick="abrirAsgTecOpciones(\''+doc.id+'\')">'
           + '<span class="act-num">&#128229;</span>'
@@ -4080,8 +4080,8 @@ function renderAsgTecnico() {
           + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+'</div></div>'
           + '</div>';
       });
-      el.innerHTML = html;
-      sec.style.display = 'block';
+      if (!html) { sec.style.display = 'none'; el.innerHTML=''; }
+      else { el.innerHTML = html; sec.style.display = 'block'; }
     }).catch(function(){ sec.style.display = 'none'; });
 }
 
@@ -6351,7 +6351,7 @@ function _finalizarGuardado(estado){
   h.push(r); setH(h);
   _subirParteAFirestore(r);
   if (_asgTecActual && _asgTecActual.id) {
-    _db.collection('incidencias').doc(_asgTecActual.id).update({ estado: 'en-ejecucion' }).then(function(){ renderAsgTecnico(); }).catch(function(){});
+    _db.collection('incidencias').doc(_asgTecActual.id).update({ estado: 'en-ejecucion', vista: true }).then(function(){ renderAsgTecnico(); }).catch(function(){});
     _asgTecActual = null;
   }
   showMsg('msgRes','Guardado correctamente.','success');
