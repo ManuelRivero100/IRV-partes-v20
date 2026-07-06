@@ -7013,7 +7013,7 @@ function iniciarSplash() {
               splash.classList.add("fade-out");
               setTimeout(function(){
                 var splashEl = document.getElementById("splash");
-                if(splashEl) splashEl.parentNode.removeChild(splashEl);
+                if(splashEl) splashEl.style.display = 'none'; // Ocultar pero no eliminar — se reutiliza al login
                 document.body.style.overflow = "";
                 document.body.style.height   = "";
               }, 600);
@@ -7313,16 +7313,21 @@ function _aplicarSesion(nombre, rol, multiRol) {
   var histTools = document.getElementById('histAdminTools');
   if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
-  // Mostrar overlay de carga mientras Firestore sincroniza
-  var _overlay = document.createElement('div');
-  _overlay.id = 'loadingOverlay';
-  _overlay.style.cssText = 'position:fixed;inset:0;background:#12141c;z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;';
-  _overlay.innerHTML = '<div style="font-size:2rem;">&#128295;</div><div style="color:#4caf7d;font-size:.9rem;letter-spacing:.1em;">Actualizando...</div>';
-  document.body.appendChild(_overlay);
+  // Mostrar splash mientras Firestore sincroniza
+  var _splashSync = document.getElementById('splash');
+  if (_splashSync) {
+    _splashSync.classList.remove('fade-out');
+    _splashSync.style.display = 'flex';
+    _splashSync.style.opacity = '1';
+    _splashSync.style.pointerEvents = 'auto';
+  }
 
   function _ocultarOverlay() {
-    var ov = document.getElementById('loadingOverlay');
-    if (ov) { ov.style.opacity='0'; ov.style.transition='opacity .4s'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }, 400); }
+    var sp = document.getElementById('splash');
+    if (sp) {
+      sp.classList.add('fade-out');
+      setTimeout(function(){ if(sp.parentNode) sp.parentNode.removeChild(sp); }, 600);
+    }
     renderClientes();
     refreshCounts();
     renderAsgTecnico();
