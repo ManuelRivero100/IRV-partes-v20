@@ -7313,24 +7313,16 @@ function _aplicarSesion(nombre, rol, multiRol) {
   var histTools = document.getElementById('histAdminTools');
   if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
-  // Mostrar splash mientras sincroniza con Firestore
-  var sp = document.getElementById('splash');
-  if (!sp) {
-    sp = document.createElement('div');
-    sp.id = 'splash';
-    sp.style.cssText = 'position:fixed;inset:0;background:#12141c;z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;';
-    sp.innerHTML = '<div style="font-size:2rem;">&#128295;</div><div style="color:#4caf7d;font-size:.9rem;letter-spacing:.1em;">Cargando...</div>';
-    document.body.appendChild(sp);
-  } else {
-    sp.style.display = 'flex';
-    sp.style.opacity = '1';
-    sp.style.pointerEvents = 'auto';
-    sp.classList.remove('fade-out');
-  }
+  // Mostrar overlay de carga mientras Firestore sincroniza
+  var _overlay = document.createElement('div');
+  _overlay.id = 'loadingOverlay';
+  _overlay.style.cssText = 'position:fixed;inset:0;background:#12141c;z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;';
+  _overlay.innerHTML = '<div style="font-size:2rem;">&#128295;</div><div style="color:#4caf7d;font-size:.9rem;letter-spacing:.1em;">Actualizando...</div>';
+  document.body.appendChild(_overlay);
 
-  function _ocultarSplash() {
-    var s = document.getElementById('splash');
-    if (s) { s.classList.add('fade-out'); setTimeout(function(){ if(s.parentNode) s.parentNode.removeChild(s); }, 600); }
+  function _ocultarOverlay() {
+    var ov = document.getElementById('loadingOverlay');
+    if (ov) { ov.style.opacity='0'; ov.style.transition='opacity .4s'; setTimeout(function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }, 400); }
     renderClientes();
     refreshCounts();
     renderAsgTecnico();
@@ -7343,9 +7335,9 @@ function _aplicarSesion(nombre, rol, multiRol) {
   _sincronizarCatalogoDesdeFirestore();
   _reintentarPartesPendientes();
 
-  if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(null, _ocultarSplash); }
-  else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre, _ocultarSplash); }
-  else { _ocultarSplash(); }
+  if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(null, _ocultarOverlay); }
+  else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre, _ocultarOverlay); }
+  else { _ocultarOverlay(); }
 }
 
 function _sincronizarPartesDesdeFirestore(soloTecnico, callback) {
