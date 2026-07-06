@@ -4021,8 +4021,11 @@ function cerrarIncidenciaActual(){
 function reabrirIncidenciaActual(){
   var o=window._ordenActual;if(!o)return;
   var h=getH();
-  h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro){r.estado='en-ejecucion';_subirParteAFirestore(r);}});
+  var primerParte=null;
+  h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro){r.estado='en-ejecucion';_subirParteAFirestore(r);if(!primerParte)primerParte=r;}});
   setH(h);
+  // Actualizar incidencia en Firestore
+  if(primerParte) _actualizarIncidenciaPorOrden(o.pedido,o.centro,'en-ejecucion',primerParte);
   verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
 }
 function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
