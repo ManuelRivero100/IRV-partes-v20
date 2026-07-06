@@ -727,6 +727,7 @@ textarea{resize:vertical;min-height:72px}
         <div class="opt-count" id="cntFin">--</div>
       </div>
     </div>
+    <div id="histTecBtns" style="margin-top:10px;"></div>
     <div style="margin-top:14px">
       <div class="card"><div class="card-title">&#128269; Buscar</div>
         <div class="g2">
@@ -1335,7 +1336,7 @@ function getHVisible(){
   var h=getH();
   if(window._sesion && window._sesion.rol==='tecnico'){
     var miNombre=window._sesion.nombre.toLowerCase();
-    h=h.filter(function(r){ return r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre; });
+    h=h.filter(function(r){ return r.tecnicos && r.tecnicos.some(function(t){ return t.toLowerCase()===miNombre; }); });
   }
   return h;
 }
@@ -4050,7 +4051,10 @@ function renderAsgTecnico() {
   if (!sec || !el) return;
   var esTecnico = window._sesion && window._sesion.rol === 'tecnico';
   if (!esTecnico) { sec.style.display = 'none'; return; }
+  // Usar el nombre exacto del catálogo para la comparación (case-sensitive en Firestore)
   var miNombre = window._sesion.nombre;
+  var _tec = getTecnicos().find(function(t){ return t.nombre.toLowerCase() === miNombre.toLowerCase(); });
+  if (_tec) miNombre = _tec.nombre;
   _db.collection('incidencias')
     .where('tecnicoPrincipal','==',miNombre)
     .where('estado','in',['pendiente','en-ejecucion'])
@@ -6108,6 +6112,82 @@ function verResumenTotal(){
   if(el){el.style.display='block';}
   var el2=document.getElementById('centrosView');
   if(el2){el2.style.display='none';}
+}
+
+function renderHistTecBtns(){
+  var el = $('histTecBtns'); if(!el) return;
+  var rol = window._sesion && window._sesion.rol;
+  var h = getHVisible();
+
+  if(rol === 'tecnico'){
+    // Técnico: botón "Mis incidencias" — donde es principal
+    var miNombre = window._sesion.nombre.toLowerCase();
+    var count = {};
+    h.forEach(function(r){
+      if(r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase() === miNombre){
+        var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
+        count[k] = true;
+      }
+    });
+    var total = Object.keys(count).length;
+    el.innerHTML = total > 0
+      ? '<div class="hist-opts"><div class="hist-opt" style="background:var(--surface2);border:1px solid var(--border);" onclick="verSecTecnico(\''+window._sesion.nombre+'\')"><div class="opt-ico">&#128203;</div><div class="opt-title">Mis incidencias</div><div class="opt-count">'+total+'</div></div></div>'
+      : '';
+    return;
+  }
+
+  if(rol === 'admin' || rol === 'creador'){
+    // Admin/Creador: un botón por cada técnico con incidencias como principal
+    var tecs = {};
+    h.forEach(function(r){
+      if(r.tecnicos && r.tecnicos[0]){
+        var t = r.tecnicos[0];
+        var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
+        if(!tecs[t]) tecs[t] = {};
+        tecs[t][k] = true;
+      }
+    });
+    var names = Object.keys(tecs).sort();
+    if(!names.length){ el.innerHTML=''; return; }
+    el.innerHTML = '<div style="font-size:.72rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Por técnico</div>'
+      + '<div class="hist-opts" style="flex-wrap:wrap;">'
+      + names.map(function(t){
+          var cnt = Object.keys(tecs[t]).length;
+          var tEnc = t.replace(/'/g,"\'");
+          return '<div class="hist-opt" style="background:var(--surface2);border:1px solid var(--border);" onclick="verSecTecnico(\''+tEnc+'\')"><div class="opt-ico">&#128100;</div><div class="opt-title" style="font-size:.8rem;">'+t+'</div><div class="opt-count">'+cnt+'</div></div>';
+        }).join('')
+      + '</div>';
+  }
+}
+
+function verSecTecnico(nomTecnico){
+  _secActual = 'tec_'+nomTecnico;
+  $('histOpts').style.display='none'; $('secView').style.display='block'; $('ordenView').style.display='none'; $('parteView').style.display='none';
+  $('centrosView').style.display='none'; $('incidenciasView').style.display='none';
+  var h = getHVisible();
+  var ords = getOrdenes();
+  // Filtrar incidencias donde este técnico fue principal
+  var nomL = nomTecnico.toLowerCase();
+  ords = ords.filter(function(g){
+    return g.partes.some(function(p){ return p.r.tecnicos && p.r.tecnicos[0] && p.r.tecnicos[0].toLowerCase()===nomL; });
+  });
+  var hdr = $('secHdr');
+  hdr.className = 'hist-sec-hdr fin';
+  hdr.innerHTML = '&#128100; '+nomTecnico+' &mdash; '+ords.length+' '+(ords.length===1?'incidencia':'incidencias');
+  if(!ords.length){ $('secList').innerHTML='<div class="empty"><div class="empty-ico">📋</div><div>Sin incidencias.</div></div>'; return; }
+  $('secList').innerHTML=ords.map(function(g){
+    var f1=g.fechaMin.split('-').reverse().join('/');
+    var f2=g.fechaMax.split('-').reverse().join('/');
+    var fr=f1===f2?f1:f1+' → '+f2;
+    var dot='<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+(g.estado==='en-ejecucion'?'var(--amber)':'var(--green)')+';margin-right:6px;vertical-align:middle;flex-shrink:0;"></span>';
+    var badge=g.estado==='en-ejecucion'?'<span class="badge badge-a">En ejecuci&oacute;n</span>':'<span class="badge badge-g">Finalizado</span>';
+    var enc=encodeURIComponent(g.pedido)+'||'+encodeURIComponent(g.centro);
+    var subTitle=g.actObras?g.actObras+' &middot; '+g.job:'Orden '+g.pedido+' &middot; '+g.job;
+    return '<div class="hist-item" onclick="verOrden(''+enc+'')">'+
+      '<div><div class="hi-title">'+dot+g.tienda+'</div>'+
+      '<div class="hi-sub">'+subTitle+' &middot; '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+badge+'</div>'+
+      '<div class="hi-date">'+fr+'</div></div>';
+  }).join('');
 }
 
 function verSec(sec){
