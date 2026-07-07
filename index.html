@@ -1531,6 +1531,7 @@ function catAddFlotante(nom,grupoId){
   if(!cat.flotantes.find(function(f){return f.nom.toLowerCase()===nom.toLowerCase()&&f.grupoId===grupoId;})){
     cat.flotantes.push({nom:nom,grupoId:grupoId,fecha:new Date().toISOString().slice(0,10)});
     setCat(cat);
+    _subirCatalogoAFirestore();
   }
 }
 function catFlotantesCount(){
@@ -2270,7 +2271,7 @@ function catClasificarFlotante(fi){
   if(!mats.find(function(m){return m.nom.toLowerCase()===fl.nom.toLowerCase();}))mats.push({nom:fl.nom});
   var ri=cat.flotantes.findIndex(function(x){return x.nom===fl.nom&&x.grupoId===g.id;});
   if(ri>=0)cat.flotantes.splice(ri,1);
-  setCat(cat);renderCatGrupoBody();catActualizarBadge();
+  setCat(cat);renderCatGrupoBody();catActualizarBadge();_subirCatalogoAFirestore();
 }
 function catDescartarFlotante(fi){
   var cat=getCat();
@@ -2279,7 +2280,7 @@ function catDescartarFlotante(fi){
   var fl=gFlots[fi];if(!fl)return;
   var ri=cat.flotantes.findIndex(function(x){return x.nom===fl.nom&&x.grupoId===g.id;});
   if(ri>=0)cat.flotantes.splice(ri,1);
-  setCat(cat);renderCatGrupoBody();catActualizarBadge();
+  setCat(cat);renderCatGrupoBody();catActualizarBadge();_subirCatalogoAFirestore();
 }
 function catVerFlotantes(){
   // Ir al primer grupo que tenga flotantes
@@ -4400,15 +4401,15 @@ function msRender(cid){
     html+='<div id="msExtrasList"></div>';
         // Single add button at the bottom
     html+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);">'
-      +'<div style="font-size:.72rem;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">+ A&#241;adir material</div>'
+      +'<div style="font-size:.72rem;color:var(--text2);margin-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">'+(_puedeAnadirFlotante()?'+ A&#241;adir material':'Buscar material')+'</div>'
       +'<div style="display:flex;gap:8px;">'
       +'<div style="flex:1;position:relative;">'
-      +'<input id="msAddGlobal" class="ac-inp" style="width:100%;padding:8px 11px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.88rem;color:var(--text);background:var(--surface2);outline:none;font-family:inherit;" placeholder="Buscar o a&#241;adir..." oninput="msAcGlobal(this.value)" onfocus="msAddGlobalFocus(this)" autocomplete="off">'
+      +'<input id="msAddGlobal" class="ac-inp" style="width:100%;padding:8px 11px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.88rem;color:var(--text);background:var(--surface2);outline:none;font-family:inherit;" placeholder="Buscar material..." oninput="msAcGlobal(this.value)" onfocus="msAddGlobalFocus(this)" autocomplete="off">'
       +'<div id="msAcGlobalBox" style="position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);z-index:100;max-height:200px;overflow-y:auto;display:none;box-shadow:0 4px 16px rgba(0,0,0,.3);"></div>'
       +'</div>'
       +'<button style="padding:8px 14px;background:var(--green);color:#fff;border:none;border-radius:var(--r-sm);font-weight:700;font-size:.9rem;cursor:pointer;" onclick="msAcGlobalConfirm()">+</button>'
       +'</div>'
-      +'<div style="font-size:.68rem;color:var(--text3);margin-top:5px;">Si no existe se a&#241;ade como flotante al cat&#225;logo</div>'
+      +(_puedeAnadirFlotante()?'<div style="font-size:.68rem;color:var(--text3);margin-top:5px;">Si no existe se a&#241;ade como flotante al cat&#225;logo</div>':'')
       +'</div>';
     el.innerHTML=html;
     msRenderExtras();
@@ -4536,6 +4537,10 @@ function msRenderExtras(){
   });
   el.innerHTML=h;
 }
+function _puedeAnadirFlotante(){
+  var rol=window._sesion && window._sesion.rol;
+  return rol==='admin'||rol==='creador';
+}
 function msAcGlobal(val){
   val=val.trim();
   var box=$('msAcGlobalBox');if(!box)return;
@@ -4548,7 +4553,7 @@ function msAcGlobal(val){
     html+='<div class="ms-ac-item" data-nom="'+nom.replace(/"/g,'&quot;')+'" onmousedown="msAcGlobalSel(this.dataset.nom)" style="padding:9px 12px;font-size:.86rem;cursor:pointer;border-bottom:1px solid var(--border2);">🔧 '+nom+'</div>';
   });
   var exacto=todos.find(function(n){return n.toLowerCase()===val.toLowerCase();});
-  if(!exacto){
+  if(!exacto && _puedeAnadirFlotante()){
     html+='<div class="ms-ac-item" onmousedown="msAcGlobalNuevo()" style="padding:9px 12px;font-size:.86rem;cursor:pointer;color:var(--text3);font-style:italic;">➕ Añadir como flotante: "'+val+'"</div>';
   }
   box.innerHTML=html;
@@ -4562,6 +4567,7 @@ function msAcGlobalSel(nom){
   msRenderExtras();
 }
 function msAcGlobalNuevo(){
+  if(!_puedeAnadirFlotante()) return;
   var inp=$('msAddGlobal');
   var val=inp?inp.value.trim():'';if(!val)return;
   var g=catGetGrupoParaJob(curJob);
@@ -4587,7 +4593,15 @@ function msAcGlobalConfirm(){
   var g=catGetGrupoParaJob(curJob);
   var todos=g?catAllMatsGrupo(g.id):[];
   var exacto=todos.find(function(n){return n.toLowerCase()===val.toLowerCase();});
-  if(exacto) msAcGlobalSel(exacto); else msAcGlobalNuevo();
+  if(exacto){ msAcGlobalSel(exacto); return; }
+  if(!_puedeAnadirFlotante()){
+    var t=document.createElement('div');
+    t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--red);color:#fff;padding:8px 16px;border-radius:20px;font-size:.82rem;font-weight:600;z-index:999;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.3);';
+    t.textContent='Material no encontrado en el catálogo';
+    document.body.appendChild(t);setTimeout(function(){t.remove();},2500);
+    return;
+  }
+  msAcGlobalNuevo();
 }
 function msToggleSec(si){
   var s=msGetSecciones(_MS.catJob||curJob),sec=s[si];if(!sec)return;
