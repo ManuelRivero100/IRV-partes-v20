@@ -4056,7 +4056,7 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
       }
       return;
     }
-    snap.forEach(function(doc){ doc.ref.update({estado:estado}); });
+    snap.forEach(function(doc){ doc.ref.update({estado:estado, vista:true}); });
   }).catch(function(){});
   if(estado==='terminado'){
     _db.collection('partes').where('pedido','==',pedido).where('centro','==',centro).get().then(function(snap){
