@@ -4765,6 +4765,14 @@ function _esAdminOCreador() {
   var rol = window._sesion && window._sesion.rol;
   return rol === 'admin' || rol === 'creador';
 }
+function _getEstadoIncidencia(pedido, centro) {
+  try {
+    var estados = JSON.parse(localStorage.getItem('pm_incidencias_estados') || '{}');
+    var k = (pedido||'') + '||' + (centro||'');
+    return estados[k] || null;
+  } catch(e) { return null; }
+}
+
 function renderClientes(){
   var lista=getClientes();
   var h=getHVisible();
@@ -4782,7 +4790,10 @@ function renderClientes(){
     var cid=r.clienteId||'mercadona';
     var k=cid+'||'+r.pedido+'||'+(r.centro||'');
     if(!ordenes[k]) ordenes[k]={cid:cid,estado:'terminado',fecha:'',esPrincipal:false};
-    if(r.fecha>ordenes[k].fecha){ordenes[k].fecha=r.fecha;ordenes[k].estado=r.estado||'terminado';}
+    if(r.fecha>ordenes[k].fecha){ordenes[k].fecha=r.fecha;}
+    // Usar estado de incidencia de Firestore si está disponible
+    var _estInc = _getEstadoIncidencia(r.pedido, r.centro);
+    ordenes[k].estado = _estInc || r.estado || 'terminado';
     // Marcar si el técnico es principal en algún parte de esta incidencia
     if(_esTec && r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===_miNombreL){
       ordenes[k].esPrincipal=true;
@@ -7433,14 +7444,6 @@ function _sincronizarEstadosIncidencias(soloTecnico) {
     });
     localStorage.setItem('pm_incidencias_estados', JSON.stringify(estados));
   }).catch(function(){});
-}
-
-function _getEstadoIncidencia(pedido, centro) {
-  try {
-    var estados = JSON.parse(localStorage.getItem('pm_incidencias_estados') || '{}');
-    var k = (pedido||'') + '||' + (centro||'');
-    return estados[k] || null;
-  } catch(e) { return null; }
 }
 
 function _sincronizarPartesDesdeFirestore(soloTecnico, callback) {
