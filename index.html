@@ -4020,13 +4020,23 @@ function cerrarIncidenciaActual(){
 }
 function reabrirIncidenciaActual(){
   var o=window._ordenActual;if(!o)return;
-  var h=getH();
-  var primerParte=null;
-  h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro){r.estado='en-ejecucion';_subirParteAFirestore(r);if(!primerParte)primerParte=r;}});
-  setH(h);
-  // Actualizar incidencia en Firestore
-  if(primerParte) _actualizarIncidenciaPorOrden(o.pedido,o.centro,'en-ejecucion',primerParte);
-  verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
+  // Solo cambiar el estado de la incidencia en Firestore — no tocar los partes
+  _db.collection('incidencias')
+    .where('pedido','==',o.pedido)
+    .where('centro','==',o.centro)
+    .get().then(function(snap){
+      snap.forEach(function(doc){
+        _db.collection('incidencias').doc(doc.id).update({estado:'en-ejecucion'});
+      });
+      // Actualizar estado local
+      try {
+        var estados = JSON.parse(localStorage.getItem('pm_incidencias_estados')||'{}');
+        estados[(o.pedido||'')+'||'+(o.centro||'')] = 'en-ejecucion';
+        localStorage.setItem('pm_incidencias_estados', JSON.stringify(estados));
+      } catch(e) {}
+      refreshCounts();
+      verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
+    }).catch(function(){ verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro)); });
 }
 function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
   if(typeof _db === 'undefined' || !_db || !pedido) return;
@@ -5045,7 +5055,9 @@ function getOrdenes(filtro){
   Object.keys(grupos).forEach(function(k){
     var g=grupos[k];
     g.partes.sort(function(a,b){return a.r.fecha.localeCompare(b.r.fecha);});
-    g.estado=g.partes[g.partes.length-1].r.estado||'terminado';
+    // Usar estado de incidencia de Firestore si está disponible, si no usar el último parte
+    var _estadoInc = _getEstadoIncidencia(g.pedido, g.centro);
+    g.estado = _estadoInc || g.partes[g.partes.length-1].r.estado || 'terminado';
     if(!filtro||g.estado===filtro) res.push(g);
   });
   return res.sort(function(a,b){ return b.fechaMax.localeCompare(a.fechaMax); });
@@ -7393,9 +7405,42 @@ function _aplicarSesion(nombre, rol, multiRol) {
   _sincronizarCatalogoDesdeFirestore();
   _reintentarPartesPendientes();
 
-  if (rol === 'admin' || rol === 'creador') { _sincronizarPartesDesdeFirestore(null, _ocultarOverlay); }
-  else if (rol === 'tecnico') { _sincronizarPartesDesdeFirestore(nombre, _ocultarOverlay); }
+  if (rol === 'admin' || rol === 'creador') {
+    _sincronizarEstadosIncidencias();
+    _sincronizarPartesDesdeFirestore(null, _ocultarOverlay);
+  }
+  else if (rol === 'tecnico') {
+    _sincronizarEstadosIncidencias(nombre);
+    _sincronizarPartesDesdeFirestore(nombre, _ocultarOverlay);
+  }
   else { _ocultarOverlay(); }
+}
+
+function _sincronizarEstadosIncidencias(soloTecnico) {
+  if (typeof _db === 'undefined' || !_db) return;
+  var query = _db.collection('incidencias');
+  if (soloTecnico) {
+    var _tec = getTecnicos().find(function(t){ return t.nombre.toLowerCase() === soloTecnico.toLowerCase(); });
+    var nom = _tec ? _tec.nombre : soloTecnico;
+    query = query.where('tecnicoPrincipal','==',nom);
+  }
+  query.get().then(function(snap){
+    var estados = {};
+    snap.forEach(function(doc){
+      var d = doc.data();
+      var k = (d.pedido||'') + '||' + (d.centro||'');
+      estados[k] = d.estado || 'en-ejecucion';
+    });
+    localStorage.setItem('pm_incidencias_estados', JSON.stringify(estados));
+  }).catch(function(){});
+}
+
+function _getEstadoIncidencia(pedido, centro) {
+  try {
+    var estados = JSON.parse(localStorage.getItem('pm_incidencias_estados') || '{}');
+    var k = (pedido||'') + '||' + (centro||'');
+    return estados[k] || null;
+  } catch(e) { return null; }
 }
 
 function _sincronizarPartesDesdeFirestore(soloTecnico, callback) {
