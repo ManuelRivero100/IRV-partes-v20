@@ -1055,7 +1055,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-07-08-agenda-14';
+var APP_BUILD_ID = 'build-2026-07-08-agenda-18';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -2362,34 +2362,80 @@ function catActualizarBadge(){
   var ab=$('catAgendaBadge');
   if(ab){ var np=agendaPendientesCount(); ab.textContent=np; ab.style.display=np>0?'inline-block':'none'; }
 }
+function _agDomId(key){ return key.replace(/[^a-zA-Z0-9]/g,'_'); }
+function _agCard(p, esPendiente, clientes){
+  var cli=clientes.find(function(c){return c.id===p.clienteId;});
+  var nombreCli=cli?cli.nombre:p.clienteId;
+  var id=_agDomId(p._key);
+  var acciones=esPendiente
+    ? '<button class="btn btn-p btn-sm" data-key="'+p._key+'" onclick="catAceptarAgenda(this.dataset.key)">&#10003; Aceptar</button>'
+      +'<button class="btn btn-d btn-sm" data-key="'+p._key+'" onclick="catDescartarAgenda(this.dataset.key)">&#10005; Descartar</button>'
+    : '<button class="btn btn-p btn-sm" data-key="'+p._key+'" onclick="catGuardarAgenda(this.dataset.key)">&#128190; Guardar cambios</button>'
+      +'<button class="btn btn-d btn-sm" data-key="'+p._key+'" onclick="catDescartarAgenda(this.dataset.key)">&#10005; Eliminar</button>';
+  return '<div class="card" style="margin-bottom:10px;">'
+    +'<div style="font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">'+nombreCli+' &middot; '+p.centro+(p.creadoPor?' &middot; creado por '+p.creadoPor:'')+'</div>'
+    +'<div class="field"><label>Nombre / Tienda</label><input id="agNom_'+id+'" value="'+(p.tienda||'').replace(/"/g,'&quot;')+'"></div>'
+    +'<div class="field"><label>Direcci&oacute;n</label><input id="agDir_'+id+'" value="'+(p.dir||'').replace(/"/g,'&quot;')+'"></div>'
+    +'<div class="field"><label>Tel&eacute;fono</label><input id="agTel_'+id+'" value="'+(p.tel||'').replace(/"/g,'&quot;')+'"></div>'
+    +'<div class="brow">'+acciones+'</div></div>';
+}
+var _agClienteAbierto=null;
+function catToggleAgCliente(clienteId){
+  _agClienteAbierto=_agClienteAbierto===clienteId?null:clienteId;
+  renderCatAgenda();
+}
 function renderCatAgenda(){
   var el=$('catAgendaList'); if(!el) return;
   var a=getAgenda();
-  var pendientes=Object.keys(a).filter(function(k){return a[k].estado==='pendiente';}).map(function(k){return Object.assign({_key:k},a[k]);});
-  pendientes.sort(function(x,y){return (y.fechaCreacion||0)-(x.fechaCreacion||0);});
-  if(!pendientes.length){
-    el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay sitios pendientes de revisar.</div>';
+  var clientes=getClientes();
+  var todas=Object.keys(a).map(function(k){ return Object.assign({_key:k},a[k]); });
+  todas.sort(function(x,y){ return (y.fechaCreacion||0)-(x.fechaCreacion||0); });
+  if(!todas.length){
+    el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">Sin sitios guardados todav&iacute;a.</div>';
     return;
   }
-  var clientes=getClientes();
-  el.innerHTML=pendientes.map(function(p,i){
-    var cli=clientes.find(function(c){return c.id===p.clienteId;});
-    var nombreCli=cli?cli.nombre:p.clienteId;
-    return '<div class="card" style="margin-bottom:10px;">'
-      +'<div style="font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">'+nombreCli+' &middot; '+p.centro+' &middot; creado por '+(p.creadoPor||'?')+'</div>'
-      +'<div class="field"><label>Nombre / Tienda</label><input id="agEditNom_'+i+'" value="'+(p.tienda||'').replace(/"/g,'&quot;')+'"></div>'
-      +'<div class="field"><label>Direcci&oacute;n</label><input id="agEditDir_'+i+'" value="'+(p.dir||'').replace(/"/g,'&quot;')+'"></div>'
-      +'<div class="field"><label>Tel&eacute;fono</label><input id="agEditTel_'+i+'" value="'+(p.tel||'').replace(/"/g,'&quot;')+'"></div>'
-      +'<div class="brow">'
-      +'<button class="btn btn-p btn-sm" data-key="'+p._key+'" data-i="'+i+'" onclick="catAceptarAgenda(this.dataset.key,parseInt(this.dataset.i))">&#10003; Aceptar</button>'
-      +'<button class="btn btn-d btn-sm" data-key="'+p._key+'" onclick="catDescartarAgenda(this.dataset.key)">&#10005; Descartar</button>'
-      +'</div></div>';
-  }).join('');
+  var porCliente={};
+  todas.forEach(function(p){
+    var cid=p.clienteId||'mercadona';
+    if(!porCliente[cid]) porCliente[cid]=[];
+    porCliente[cid].push(p);
+  });
+  var html='';
+  Object.keys(porCliente).forEach(function(cid){
+    var sitios=porCliente[cid];
+    var cli=clientes.find(function(c){return c.id===cid;});
+    var nombreCli=cli?cli.nombre:cid;
+    var pendCount=sitios.filter(function(p){return p.estado==='pendiente';}).length;
+    var isAb=_agClienteAbierto===cid;
+    html+='<div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:8px;overflow:hidden;">'
+      +'<div style="display:flex;align-items:center;padding:11px 13px;cursor:pointer;gap:8px;" data-cid="'+cid+'" onclick="catToggleAgCliente(this.dataset.cid)">'
+      +'<span style="flex:1;font-size:.9rem;font-weight:700;">'+nombreCli+'</span>'
+      +(pendCount?'<span style="background:var(--amber);color:#fff;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;">'+pendCount+'</span>':'')
+      +'<span style="font-size:.72rem;color:var(--text3);">'+sitios.length+'</span>'
+      +'<span style="color:var(--text3);font-size:.8rem;">'+(isAb?'▲':'▼')+'</span></div>';
+    if(isAb){
+      var pendientes=sitios.filter(function(p){return p.estado==='pendiente';});
+      var aceptadas=sitios.filter(function(p){return p.estado!=='pendiente';});
+      html+='<div style="border-top:1px solid var(--border);padding:10px;">';
+      if(pendientes.length){
+        html+='<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--amber);margin-bottom:7px;">Pendientes de revisar</div>';
+        html+=pendientes.map(function(p){ return _agCard(p,true,clientes); }).join('');
+      }
+      html+='<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:10px 0 7px;">Todos los sitios ('+aceptadas.length+')</div>';
+      html+= aceptadas.length
+        ? aceptadas.map(function(p){ return _agCard(p,false,clientes); }).join('')
+        : '<div style="font-size:.82rem;color:var(--text3);padding:6px 0;">Sin sitios aceptados todav&iacute;a.</div>';
+      html+='</div>';
+    }
+    html+='</div>';
+  });
+  el.innerHTML=html;
 }
-function catAceptarAgenda(key,i){
+function catAceptarAgenda(key){
   var a=getAgenda();
   var p=a[key]; if(!p) return;
-  var nomEl=$('agEditNom_'+i), dirEl=$('agEditDir_'+i), telEl=$('agEditTel_'+i);
+  var id=_agDomId(key);
+  var nomEl=$('agNom_'+id), dirEl=$('agDir_'+id), telEl=$('agTel_'+id);
   var data=Object.assign({},p,{
     tienda:nomEl?nomEl.value.trim():p.tienda,
     dir:dirEl?dirEl.value.trim():p.dir,
@@ -2401,6 +2447,23 @@ function catAceptarAgenda(key,i){
     a[key]=data; setAgenda(a);
     catActualizarBadge();
     renderCatAgenda();
+  }).catch(function(){});
+}
+function catGuardarAgenda(key){
+  var a=getAgenda();
+  var p=a[key]; if(!p) return;
+  var id=_agDomId(key);
+  var nomEl=$('agNom_'+id), dirEl=$('agDir_'+id), telEl=$('agTel_'+id);
+  var data=Object.assign({},p,{
+    tienda:nomEl?nomEl.value.trim():p.tienda,
+    dir:dirEl?dirEl.value.trim():p.dir,
+    tel:telEl?telEl.value.trim():p.tel
+  });
+  var docId=key.replace(/[\/\s]/g,'-');
+  _db.collection('agenda').doc(docId).set(data).then(function(){
+    a[key]=data; setAgenda(a);
+    renderCatAgenda();
+    showMsg && typeof showMsg==='function' ? null : null;
   }).catch(function(){});
 }
 function catDescartarAgenda(key){
@@ -4592,16 +4655,18 @@ function msToggleCatItem(secId,ssi,mi){
   var m=mats[mi];if(!m)return;
   var wasSelected=!!_MS.sel[m.nom];
   if(wasSelected) delete _MS.sel[m.nom]; else _MS.sel[m.nom]=1;
+  if(!wasSelected){
+    // Al marcar un material, cerrar la sección/subsección: ya se ve arriba en "Materiales del parte",
+    // no hace falta dejarlo también abierto abajo (evita verlo duplicado y la confusión de "¿lo marqué dos veces?").
+    _MS.secAbierta=null;
+    _MS.subAbierta=null;
+  }
   msRender('parteMatCard');
-  // If just selected, focus the qty input after render
+  // If just selected, focus the qty input de la lista de arriba ("Materiales del parte")
   if(!wasSelected){
     setTimeout(function(){
-      var rows=document.querySelectorAll('.mat-sel-row.checked .mat-sel-qty.visible');
-      // Find the one for this material
-      rows.forEach(function(inp){
-        var nameEl=inp.parentElement.querySelector('.mat-sel-name');
-        if(nameEl&&nameEl.textContent===m.nom) inp.select();
-      });
+      var input=document.querySelector('input[data-nom="'+m.nom.replace(/"/g,'&quot;')+'"]');
+      if(input) input.select();
     },50);
   }
 }
@@ -7509,10 +7574,17 @@ var _actualizacionPeriodicaIniciada = false;
 function _iniciarActualizacionPeriodica(){
   if(_actualizacionPeriodicaIniciada) return; // solo un intervalo activo, aunque se cambie de rol o se recargue varias veces
   _actualizacionPeriodicaIniciada = true;
+  // Chequeo de versión del código: gratis (solo lee el index.html estático de GitHub Pages,
+  // no consulta Firestore), así que puede ir mucho más seguido sin coste real.
   setInterval(function(){
-    if(document.visibilityState !== 'visible') return; // app en segundo plano o móvil bloqueado, no gastar batería/datos
-    _comprobarVersionNueva(); // esto SIEMPRE se comprueba, haya o no sesión iniciada
-    if(!window._sesion) return; // el resto de datos solo tiene sentido con sesión
+    if(document.visibilityState !== 'visible') return;
+    _comprobarVersionNueva();
+  }, 15000); // cada 15 segundos
+  // Datos (agenda, clientes, técnicos, notificaciones): sí consultan Firestore, que cobra
+  // por lectura — este se queda en 2 minutos para no generar coste innecesario.
+  setInterval(function(){
+    if(document.visibilityState !== 'visible') return;
+    if(!window._sesion) return;
     _sincronizarClientesDesdeFirestore();
     _sincronizarTecnicosDesdeFirestore();
     _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
@@ -7528,6 +7600,9 @@ function _comprobarVersionNueva(){
   fetch(urlSinCache, {cache:'no-store'}).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_BUILD_ID\s*=\s*'([^']+)'/);
     if(m && m[1] !== APP_BUILD_ID){
+      if(window._sesion){
+        return; // hay una sesión activa — nunca interrumpir, se reintenta en el próximo ciclo hasta que no haya nadie logueado
+      }
       Promise.all([
         caches.keys().then(function(keys){ return Promise.all(keys.map(function(k){ return caches.delete(k); })); }),
         navigator.serviceWorker.getRegistrations().then(function(regs){ return Promise.all(regs.map(function(r){ return r.unregister(); })); })
