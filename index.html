@@ -514,10 +514,15 @@ textarea{resize:vertical;min-height:72px}
     <button class="cat-tab active" onclick="catTab('materiales',this)">&#128295; Materiales</button>
     <button class="cat-tab" onclick="catTab('conceptos',this)">&#9201; Conceptos</button>
     <button class="cat-tab" onclick="catTab('tecnicos',this)">&#128119; T&eacute;cnicos</button>
+    <button class="cat-tab" onclick="catTab('agenda',this)">&#128220; Agenda<span id="catAgendaBadge" style="display:none;background:var(--amber);color:#fff;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:5px;">0</span></button>
   </div>
   <div id="catTabMat">
     <div id="catFamiliasList"></div>
     
+  </div>
+  <div id="catTabAgenda" style="display:none">
+    <div style="font-size:.78rem;color:var(--text2);margin-bottom:12px;padding:8px 12px;background:var(--amber-light);border-radius:var(--r-sm);">&#9432; Sitios nuevos a&ntilde;adidos por t&eacute;cnicos, pendientes de revisar.</div>
+    <div id="catAgendaList"></div>
   </div>
   <div id="catTabTec" style="display:none">
     <div id="catTecnicosList"></div>
@@ -1368,7 +1373,6 @@ function agendaBuscar(clienteId,centro){
 }
 function _subirAgendaEntry(clienteId,centro,tienda,dir,tel,km,tr){
   clienteId=clienteId||'mercadona';
-  if(clienteId!=='mercadona') return; // por ahora solo Mercadona
   if(!centro) return;
   if(!dir && !tel) return; // sin datos útiles, no merece la pena crear la entrada
   if(typeof _db === 'undefined' || !_db) return;
@@ -1382,31 +1386,33 @@ function _subirAgendaEntry(clienteId,centro,tienda,dir,tel,km,tr){
       var a=getAgenda(); a[k]=snap.data(); setAgenda(a); // ya existía en Firestore, la adoptamos local
       return;
     }
-    var data={clienteId:clienteId,centro:centro,tienda:tienda||'',dir:dir||'',tel:tel||'',km:km||'',tr:tr||'',creadoPor:(window._sesion&&window._sesion.nombre)||'',fechaCreacion:Date.now()};
+    var esAdmin=window._sesion && (window._sesion.rol==='admin'||window._sesion.rol==='creador');
+    var data={clienteId:clienteId,centro:centro,tienda:tienda||'',dir:dir||'',tel:tel||'',km:km||'',tr:tr||'',creadoPor:(window._sesion&&window._sesion.nombre)||'',fechaCreacion:Date.now(),estado:esAdmin?'aceptada':'pendiente',vistaAdmin:false};
     ref.set(data).then(function(){
       var a=getAgenda(); a[k]=data; setAgenda(a);
     }).catch(function(){});
   }).catch(function(){});
 }
-// Migración puntual: alimenta la agenda con los centros de Mercadona que ya existen en el historial.
+// Migración puntual: alimenta la agenda con los sitios que ya existen en el historial (todos los clientes).
 // Ejecutar UNA VEZ desde consola, logueado como admin/creador (solo esa sesión tiene el historial completo local).
-// No sobreescribe nada: _subirAgendaEntry ya comprueba si el centro existe antes de crear.
+// No sobreescribe nada: _subirAgendaEntry ya comprueba si el sitio existe antes de crear.
 function migrarAgendaDesdeHistorial(){
   var h=getH();
   var candidatos={};
   h.forEach(function(r){
-    if((r.clienteId||'mercadona')!=='mercadona') return;
     if(!r.centro) return;
-    var actual=candidatos[r.centro];
-    if(!actual || (r.fecha||'')>(actual.fecha||'')) candidatos[r.centro]=r;
+    var cid=r.clienteId||'mercadona';
+    var k=cid+'||'+r.centro;
+    var actual=candidatos[k];
+    if(!actual || (r.fecha||'')>(actual.fecha||'')) candidatos[k]={r:r,clienteId:cid};
   });
   var claves=Object.keys(candidatos);
-  console.log('Centros de Mercadona encontrados en el historial local: '+claves.length);
-  claves.forEach(function(centro){
-    var r=candidatos[centro];
-    _subirAgendaEntry('mercadona',centro,r.tienda,r.dir,r.tel,r.km,r.tr);
+  console.log('Sitios encontrados en el historial local: '+claves.length);
+  claves.forEach(function(k){
+    var c=candidatos[k], r=c.r;
+    _subirAgendaEntry(c.clienteId,r.centro,r.tienda,r.dir,r.tel,r.km,r.tr);
   });
-  console.log('Migración lanzada para '+claves.length+' centros. Espera unos segundos y revisa con: JSON.parse(localStorage.getItem(\'pm_agenda\')||\'{}\')');
+  console.log('Migración lanzada para '+claves.length+' sitios. Espera unos segundos y revisa con: JSON.parse(localStorage.getItem(\'pm_agenda\')||\'{}\')');
 }
 
 // Siguiente número IRV global (único en toda la app)
@@ -1727,13 +1733,15 @@ function tecToggleActivo(id, activarAhora){
 function catTab(tab,btn){
   document.querySelectorAll('.cat-tab').forEach(function(b){b.classList.remove('active');});
   btn.classList.add('active');
-  var m=$('catTabMat'),c=$('catTabConc'),f=$('catFamiliaView'),tc=$('catTabTec');
+  var m=$('catTabMat'),c=$('catTabConc'),f=$('catFamiliaView'),tc=$('catTabTec'),ag=$('catTabAgenda');
   m.style.display=tab==='materiales'?'block':'none';
   c.style.display=tab==='conceptos'?'block':'none';
   if(tc) tc.style.display=tab==='tecnicos'?'block':'none';
+  if(ag) ag.style.display=tab==='agenda'?'block':'none';
   if(f) f.style.display='none';
   if(tab==='materiales') renderCatGrupos();
   else if(tab==='tecnicos') renderCatTecnicos();
+  else if(tab==='agenda') renderCatAgenda();
   else renderCatConceptos();
 }
 
@@ -2338,12 +2346,68 @@ function catVerFlotantes(){
   var conFlot=cat.grupos.find(function(g){return (cat.flotantes||[]).some(function(f){return f.grupoId===g.id;});});
   if(conFlot) catAbrirGrupo(conFlot.id);
 }
+function agendaPendientesCount(){
+  var a=getAgenda();
+  return Object.keys(a).filter(function(k){return a[k].estado==='pendiente';}).length;
+}
 function catActualizarBadge(){
   // Actualiza badge en icono catálogo del inicio
-  var n=catFlotantesCount();
+  var n=catFlotantesCount()+agendaPendientesCount();
   document.querySelectorAll('[data-cat-badge]').forEach(function(b){
     b.textContent=n;b.style.display=n>0?'block':'none';
   });
+  var ab=$('catAgendaBadge');
+  if(ab){ var np=agendaPendientesCount(); ab.textContent=np; ab.style.display=np>0?'inline-block':'none'; }
+}
+function renderCatAgenda(){
+  var el=$('catAgendaList'); if(!el) return;
+  var a=getAgenda();
+  var pendientes=Object.keys(a).filter(function(k){return a[k].estado==='pendiente';}).map(function(k){return Object.assign({_key:k},a[k]);});
+  pendientes.sort(function(x,y){return (y.fechaCreacion||0)-(x.fechaCreacion||0);});
+  if(!pendientes.length){
+    el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay sitios pendientes de revisar.</div>';
+    return;
+  }
+  var clientes=getClientes();
+  el.innerHTML=pendientes.map(function(p,i){
+    var cli=clientes.find(function(c){return c.id===p.clienteId;});
+    var nombreCli=cli?cli.nombre:p.clienteId;
+    return '<div class="card" style="margin-bottom:10px;">'
+      +'<div style="font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">'+nombreCli+' &middot; '+p.centro+' &middot; creado por '+(p.creadoPor||'?')+'</div>'
+      +'<div class="field"><label>Nombre / Tienda</label><input id="agEditNom_'+i+'" value="'+(p.tienda||'').replace(/"/g,'&quot;')+'"></div>'
+      +'<div class="field"><label>Direcci&oacute;n</label><input id="agEditDir_'+i+'" value="'+(p.dir||'').replace(/"/g,'&quot;')+'"></div>'
+      +'<div class="field"><label>Tel&eacute;fono</label><input id="agEditTel_'+i+'" value="'+(p.tel||'').replace(/"/g,'&quot;')+'"></div>'
+      +'<div class="brow">'
+      +'<button class="btn btn-p btn-sm" data-key="'+p._key+'" data-i="'+i+'" onclick="catAceptarAgenda(this.dataset.key,parseInt(this.dataset.i))">&#10003; Aceptar</button>'
+      +'<button class="btn btn-d btn-sm" data-key="'+p._key+'" onclick="catDescartarAgenda(this.dataset.key)">&#10005; Descartar</button>'
+      +'</div></div>';
+  }).join('');
+}
+function catAceptarAgenda(key,i){
+  var a=getAgenda();
+  var p=a[key]; if(!p) return;
+  var nomEl=$('agEditNom_'+i), dirEl=$('agEditDir_'+i), telEl=$('agEditTel_'+i);
+  var data=Object.assign({},p,{
+    tienda:nomEl?nomEl.value.trim():p.tienda,
+    dir:dirEl?dirEl.value.trim():p.dir,
+    tel:telEl?telEl.value.trim():p.tel,
+    estado:'aceptada'
+  });
+  var docId=key.replace(/[\/\s]/g,'-');
+  _db.collection('agenda').doc(docId).set(data).then(function(){
+    a[key]=data; setAgenda(a);
+    catActualizarBadge();
+    renderCatAgenda();
+  }).catch(function(){});
+}
+function catDescartarAgenda(key){
+  if(!confirm('¿Eliminar este sitio de la agenda?')) return;
+  var docId=key.replace(/[\/\s]/g,'-');
+  _db.collection('agenda').doc(docId).delete().then(function(){
+    var a=getAgenda(); delete a[key]; setAgenda(a);
+    catActualizarBadge();
+    renderCatAgenda();
+  }).catch(function(){});
 }
 function catVerFlotantesGlobal(){
   var cat=getCat();var n=(cat.flotantes||[]).length;
@@ -5384,10 +5448,12 @@ function borrarHistConfirm(ok){
 
 function getNextCodLugar(){
   // Contador global para todos los clientes no-Mercadona
-  var h=getH();
+  // Usa la agenda (espejo completo sincronizado de Firestore, igual para todos)
+  // en vez del historial de partes, que para un técnico solo contiene los suyos propios.
+  var a=getAgenda();
   var maxN=0;
-  h.forEach(function(r){
-    var c=r.centro||'';
+  Object.keys(a).forEach(function(k){
+    var c=a[k].centro||'';
     var m=c.match(/^CL(\d+)$/);
     if(m) maxN=Math.max(maxN,parseInt(m[1]));
   });
@@ -5402,28 +5468,56 @@ function buscarRefNoMerc(val){
   if(!val||val.length<1){ box.classList.remove('show'); box.innerHTML=''; return; }
   var h=getH();
   var clienteId=curCliente.id;
-  var seen={}, results=[];
+  var seen={}, activas=[];
   for(var i=h.length-1;i>=0;i--){
     var r=h[i];
     if((r.clienteId||'mercadona')!==clienteId) continue;
+    if((r.estado||'terminado')!=='en-ejecucion') continue;
     var k=r.centro; // CL0001 etc
     if(seen[k]) continue;
     seen[k]=true;
     if((r.tienda||'').toLowerCase().includes(val.toLowerCase())){
-      results.push({r:r,idx:i});
+      activas.push({r:r,idx:i});
     }
   }
-  if(!results.length){ box.classList.remove('show'); box.innerHTML=''; return; }
+  var agendaItems=[];
+  if(!activas.length){
+    var a=getAgenda();
+    Object.keys(a).forEach(function(k2){
+      var ag=a[k2];
+      if(ag.clienteId!==clienteId) return;
+      if((ag.tienda||'').toLowerCase().includes(val.toLowerCase())) agendaItems.push(ag);
+    });
+  }
+  if(!activas.length && !agendaItems.length){ box.classList.remove('show'); box.innerHTML=''; return; }
   var h2='';
-  results.forEach(function(x){
+  activas.forEach(function(x){
     var cod=x.r.centro||'';
     var nombre=x.r.tienda||'';
     h2+='<div class="ac-item" onclick="seleccionarRefNoMerc('+x.idx+')">'+
       '<span style="font-size:.75rem;color:var(--green);font-weight:700;margin-right:6px;">'+cod+'</span>'+nombre+
+      ' <span class="badge badge-a" style="font-size:.66rem;">En ejecuci&oacute;n</span>'+
       '<div style="font-size:.72rem;color:var(--text2);">'+( x.r.dir||'' )+'</div></div>';
+  });
+  agendaItems.forEach(function(ag){
+    h2+='<div class="ac-item" onclick="seleccionarRefAgenda(\''+clienteId+'\',\''+ag.centro+'\')">'+
+      '<span style="font-size:.75rem;color:var(--green);font-weight:700;margin-right:6px;">'+ag.centro+'</span>'+ag.tienda+
+      ' <span class="badge badge-g" style="font-size:.66rem;">Agenda</span>'+
+      '<div style="font-size:.72rem;color:var(--text2);">'+(ag.dir||'')+'</div></div>';
   });
   box.innerHTML=h2;
   box.classList.add('show');
+}
+
+function seleccionarRefAgenda(clienteId,centro){
+  var ag=agendaBuscar(clienteId,centro); if(!ag) return;
+  $('tienda').value=ag.tienda||'';
+  $('dir').value=ag.dir||'';
+  $('tel').value=ag.tel||'';
+  if(ag.km){ $('km').value=ag.km; $('tr').value=ag.tr||''; $('kmE').value=ag.km; $('trE').value=ag.tr||''; }
+  window._centroSeleccionado=ag.centro;
+  var box=document.getElementById('acRef');
+  if(box){ box.classList.remove('show'); box.innerHTML=''; }
 }
 
 function seleccionarRefNoMerc(idx){
