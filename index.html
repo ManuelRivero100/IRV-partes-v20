@@ -1055,7 +1055,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-07-08-agenda-9';
+var APP_BUILD_ID = 'build-2026-07-08-agenda-10';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -4182,6 +4182,11 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
     var h=getH();
     h.forEach(function(r){ if(r.pedido===pedido && r.centro===centro) r.estado='terminado'; });
     setH(h);
+    try {
+      var estados = JSON.parse(localStorage.getItem('pm_incidencias_estados')||'{}');
+      estados[(pedido||'')+'||'+(centro||'')] = 'terminado';
+      localStorage.setItem('pm_incidencias_estados', JSON.stringify(estados));
+    } catch(e) {}
   }
 }
 function renderAsgTecnico() {
