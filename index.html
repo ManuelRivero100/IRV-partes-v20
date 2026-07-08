@@ -809,19 +809,6 @@ textarea{resize:vertical;min-height:72px}
     <button class="back" onclick="msCerrarEdit()">&#8592; Materiales</button>
     <div class="card" id="matEditCard"></div>
   </div>
-  <!-- IDs del sistema antiguo de materiales - necesarios para funciones internas -->
-  <div style="display:none">
-    <div id="matOptsGrid"></div>
-    <div id="matListView">
-      <div id="matListTit"></div>
-      <div id="matListItems"></div>
-    </div>
-    <div id="matEditView">
-      <div id="matEditTit"></div>
-      <div id="matEditItems"></div>
-    </div>
-    <div id="matOpts"></div>
-  </div>
 </div>
 
 <!-- W-STATS -->
@@ -1356,8 +1343,6 @@ function getHVisibleStats(){
 function getMats(){ return JSON.parse(localStorage.getItem('pm_mats')||'{}'); }
 function setMats(d){ localStorage.setItem('pm_mats',JSON.stringify(d)); }
 function jkm(job){ return job==='Climatización'?'Climatizacion':job; }
-function getMJ(job){ return (getMats()[jkm(job)])||[]; }
-function normalizeMat(m){ return typeof m==='string'?{cod:'',nom:m}:m; }
 
 // Siguiente número IRV global (único en toda la app)
 function nextIRV(){
@@ -3998,7 +3983,6 @@ function _agregarGrupoACliente(nombre){
     if(!mats[k]||!mats[k].length){ mats[k]=lista; setMats(mats); }
   }
   // Refrescar UI
-  renderMatOpts();
   renderJobTgl();
 }
 
@@ -4084,7 +4068,7 @@ function renderAsgTecnico() {
       var html = '';
       snap.forEach(function(doc){
         var d = doc.data();
-        if (d.vista === true || d.estado === 'en-ejecucion') return; // ya vista, o ya tiene partes guardados (estado solo pasa a en-ejecucion al guardar un parte)
+        if (d.vista === true) return; // ya vista por el técnico
         var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
         html += '<div class="act-list-item" onclick="abrirAsgTecOpciones(\''+doc.id+'\')">'
           + '<span class="act-num">&#128229;</span>'
@@ -5013,14 +4997,6 @@ function showMsg(id,txt,type){
 
 // ===== UTILS =====
 
-function getMatsUsados(){
-  var r=[];
-  document.querySelectorAll('#matCheckList .mat-check-input').forEach(function(inp){
-    var v=inp.value.trim(); if(v&&+v>0) r.push({cod:inp.getAttribute('data-cod')||'',nombre:inp.getAttribute('data-nombre'),cantidad:+v});
-  });
-  return r;
-}
-
 function fmtH(v){
   var r=Math.round(v*100)/100;
   var w=Math.floor(r); var d=Math.round((r-w)*100)/100;
@@ -5157,21 +5133,6 @@ function mostrarDlgInicioOrden(){
     }).join('');
   }
   $('dlgInicioOrden').classList.add('show');
-}
-
-function renderMatOpts(){
-  if(!curCliente) return;
-  var jobs=curCliente.jobs||['Climatización','Conductos','Obras'];
-  var icos={'Climatización':'❄️','Conductos':'💨','Obras':'🏗️'};
-  var m=getMats();
-  var mog=$('matOptsGrid'); if(!mog) return;
-  mog.innerHTML=jobs.map(function(j){
-    var cnt=(m[jkm(j)]||[]).length;
-    var ico=icos[j]||'🔧';
-    return '<div class="mat-opt" onclick="verMatJob(\''+j+'\')">'+
-      '<div class="mo-ico">'+ico+'</div><div class="mo-title">'+j+'</div>'+
-      '<div class="mo-count">'+cnt+' material'+(cnt===1?'':'es')+'</div></div>';
-  }).join('');
 }
 
 function setJob(v,btn){
@@ -5342,23 +5303,6 @@ function resetAE(){
 }
 
 // ===== LEER ORDEN =====
-
-function renderMatChecklist(job){
-  var mats=getMJ(job).map(normalizeMat);
-  $('cardMatForm').style.display=mats.length?'block':'none';
-  var sinCod=mats.filter(function(m){ return !m.cod; }).length;
-  var esMerc2=curCliente&&curCliente.tipo==='mercadona';
-  var alertHtml=(sinCod&&esMerc2)?'<div class="mat-sin-cod-alert" style="margin-bottom:8px;">&#9888;&#65039; '+sinCod+' material'+(sinCod===1?'':'es')+' sin c&oacute;digo.</div>':'';
-  var mcl=$('matCheckList'); if(!mcl) return;
-  mcl.innerHTML=alertHtml+mats.map(function(m){
-    var cb=m.cod?m.cod:'S/C'; var cc=m.cod?'mat-check-cod':'mat-check-cod sin-cod';
-    return '<div class="mat-check-item">'+
-      '<span class="'+cc+'">'+cb+'</span>'+
-      '<span class="mat-check-name">'+m.nom+'</span>'+
-      '<input class="mat-check-input" type="number" min="0" placeholder="0" data-nombre="'+m.nom+'" data-cod="'+(m.cod||'')+'">'+
-      '</div>';
-  }).join('');
-}
 
 function getGrupKey(r){ return r.pedido+'||'+r.centro; }
 
@@ -6075,19 +6019,6 @@ function setLink(v,btn){
 // ===== TRABAJADORES =====
 var wRoles=[],wNames=[];
 
-function verMatJob(job){
-  _matJob=job; $('matOpts').style.display='none'; $('matListView').style.display='block'; $('matEditView').style.display='none';
-  $('matListTit').innerHTML='&#128295; '+job;
-  var mats=getMJ(job).map(normalizeMat);
-  mats.sort(function(a,b){ if(!a.cod&&b.cod) return -1; if(a.cod&&!b.cod) return 1; return 0; });
-  var sinCod=mats.filter(function(m){ return !m.cod; }).length;
-  var esMerc=curCliente&&curCliente.tipo==='mercadona';
-  var alertHtml=(sinCod&&esMerc)?'<div class="mat-sin-cod-alert">&#9888;&#65039; '+sinCod+' material'+(sinCod===1?'':'es')+' sin c&oacute;digo. Ve a <strong>Actualizar lista</strong>.</div>':'';
-  $('matListItems').innerHTML=alertHtml+(mats.length
-    ?mats.map(function(m){ var cb=m.cod?m.cod:'S/C'; var cc=m.cod?'mat-cod-badge':'mat-cod-badge sin-cod'; return '<div class="mat-list-item"><span class="'+cc+'">'+cb+'</span><span class="mat-list-name">'+m.nom+'</span></div>'; }).join('')
-    :'<div class="empty"><div class="empty-ico">📦</div><div>Sin materiales.</div></div>');
-}
-
 function verParte(idx){
   $('ordenView').style.display='none'; $('parteView').style.display='block';
   var all=getH(); var r=all[idx]; if(!r) return;
@@ -6627,18 +6558,6 @@ function abrirEdicionParte(idx){
   window.scrollTo(0,0);
 }
 
-function agregarMatEdit(){
-  var cod=$('nuevoMatEdit').value.trim().toUpperCase();
-  var nom=$('nuevoMatEditNom').value.trim();
-  if(!nom){ alert('Introduce el nombre.'); return; }
-  if(!cod&&curCliente&&curCliente.tipo==='mercadona'){ alert('Introduce el código.'); return; }
-  var a=getMats(); var k=jkm(_matJob); if(!a[k]) a[k]=[];
-  if(a[k].some(function(m){ return normalizeMat(m).cod===cod; })){ alert('Ese código ya existe.'); return; }
-  a[k].push({cod:cod,nom:nom}); setMats(a);
-  $('nuevoMatEdit').value=''; $('nuevoMatEditNom').value='';
-  irMatEdit();
-}
-
 function avisoCruzado(referencia,nombreCliente,idx){
   $('acCentro').classList.remove('show');
   window._avisoCruzadoCliente=nombreCliente;
@@ -6667,8 +6586,6 @@ function avisoCruzadoIdx(idx){
 function borrarParteOk(i){
   var h=getH(); h.splice(i,1); setH(h); volverSec(); verSec(_secActual);
 }
-
-function cancelarAddMat(){ $('addMatForm').style.display='none'; $('nuevoMatNombre').value=''; $('nuevoMatCod').value=''; $('nuevoMatCantidad').value=''; }
 
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
@@ -6719,46 +6636,12 @@ function guardarEdicionParte(){
   setTimeout(function(){verParte(_editIdx);},700);
 }
 
-function guardarNuevoMat(){
-  var n=$('nuevoMatNombre').value.trim();
-  var cod=$('nuevoMatCod').value.trim().toUpperCase();
-  var c=$('nuevoMatCantidad').value.trim();
-  if(!n) return;
-  var a=getMats(); var k=jkm(curJob); if(!a[k]) a[k]=[];
-  if(cod&&a[k].some(function(m){ return normalizeMat(m).cod===cod; })){ alert('Ese código ya existe.'); return; }
-  a[k].push({cod:cod,nom:n}); setMats(a);
-  var d=document.createElement('div'); d.className='mat-check-item';
-  var cb=cod?cod:'S/C'; var cc=cod?'mat-check-cod':'mat-check-cod sin-cod';
-  d.innerHTML='<span class="'+cc+'">'+cb+'</span>'+
-    '<span class="mat-check-name">'+n+'</span>'+
-    '<input class="mat-check-input" type="number" min="0" value="'+(c||'')+'" data-nombre="'+n+'" data-cod="'+cod+'">';
-  $('matCheckList').appendChild(d);
-  cancelarAddMat();
-}
-
 function histShow(ids){
   ['histOpts','secView','centrosView','incidenciasView','ordenView','parteView',
    'resumenTotalView','resumenCentroView'].forEach(function(id){
     var el=document.getElementById(id);
     if(el)el.style.display=ids.indexOf(id)>=0?'block':'none';
   });
-}
-
-function irMatEdit(){
-  $('matListView').style.display='none'; $('matEditView').style.display='block';
-  $('matEditTit').innerHTML='&#9998; '+_matJob;
-  var mats=getMJ(_matJob).map(normalizeMat);
-  mats.sort(function(a,b){ if(!a.cod&&b.cod) return -1; if(a.cod&&!b.cod) return 1; return 0; });
-  var esMercEdit=curCliente&&curCliente.tipo==='mercadona';
-  $('matEditItems').innerHTML=mats.length
-    ?mats.map(function(m,i){
-      var sc=esMercEdit&&!m.cod;
-      return '<div class="mat-edit-item'+(sc?' sin-cod-row':'')+'">'+
-        '<input class="mat-input-cod'+(sc?' req':'')+'" data-idx="'+i+'" value="'+(m.cod||'')+'" placeholder="'+(esMercEdit?'COD':'Opcional')+'" maxlength="10" oninput="this.value=this.value.toUpperCase()">'+
-        '<input style="flex:1;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.86rem;" data-idx-nom="'+i+'" value="'+m.nom+'">'+
-        '<button class="btn btn-d btn-sm" onclick="quitarMatEdit('+i+')">&#x2715;</button></div>';
-    }).join('')
-    :'<div style="font-size:.82rem;color:var(--text3);padding:8px 0;">Sin materiales a&uacute;n.</div>';
 }
 
 function jk(job){ return job==='Climatización'?'Climatizacion':job; }
@@ -6781,11 +6664,6 @@ function pedirReabrirOrden(idx){
   window._reabrirPedido=r.pedido; window._reabrirCentro=r.centro;
   window._reabrirIdx=idx;
   $('dlgReabrir').classList.add('show');
-}
-
-function quitarMatEdit(i){
-  var a=getMats(); var k=jkm(_matJob); if(!a[k]) return;
-  a[k].splice(i,1); setMats(a); irMatEdit();
 }
 
 function rQ(m){ return Math.ceil(m/15)*15; }
@@ -6846,8 +6724,6 @@ function seleccionarOrdenReabrir(idx){
 function tl(a,b){ return '('+fT(a)+') - ('+fT(b)+')'; }
 
 function tm(x){ if(!x) return 0; var p=x.split(':'); return +p[0]*60+(+p[1]); }
-
-function toggleAddMat(){ $('addMatForm').style.display=$('addMatForm').style.display==='none'?'block':'none'; }
 
 function verCentros(){
   var h=getHVisible();
@@ -6931,10 +6807,6 @@ function verIncidenciasCentro(centro){
   $('incidenciasList').innerHTML=html||'<div class="empty">Sin incidencias.</div>';
   histShow(['incidenciasView']);
 }
-
-function volverMatList(){ $('matListView').style.display='block'; $('matEditView').style.display='none'; verMatJob(_matJob); }
-
-function volverMatOpts(){ $('matOpts').style.display='block'; $('matListView').style.display='none'; $('matEditView').style.display='none'; }
 
 function initApp(){
   // Migrar técnicos de partes antiguos al cargar
