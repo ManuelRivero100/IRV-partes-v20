@@ -1055,7 +1055,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-07-08-agenda-10';
+var APP_BUILD_ID = 'build-2026-07-08-agenda-11';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -6997,6 +6997,7 @@ function verIncidenciasCentro(centro){
 }
 
 function initApp(){
+  _iniciarActualizacionPeriodica(); // arranca ya, incluso antes de iniciar sesión
   // Migrar técnicos de partes antiguos al cargar
   setTimeout(migrarTecnicos, 500);
   if(localStorage.getItem('pm_mats_v')!=='4'){ setMats(MATS_DEF); localStorage.setItem('pm_mats_v','4'); }
@@ -7506,11 +7507,12 @@ function _aplicarSesion(nombre, rol, multiRol) {
 
 var _actualizacionPeriodicaIniciada = false;
 function _iniciarActualizacionPeriodica(){
-  if(_actualizacionPeriodicaIniciada) return; // solo un intervalo activo, aunque se cambie de rol varias veces
+  if(_actualizacionPeriodicaIniciada) return; // solo un intervalo activo, aunque se cambie de rol o se recargue varias veces
   _actualizacionPeriodicaIniciada = true;
   setInterval(function(){
-    if(!window._sesion) return; // sin sesión, no hay nada que refrescar
     if(document.visibilityState !== 'visible') return; // app en segundo plano o móvil bloqueado, no gastar batería/datos
+    _comprobarVersionNueva(); // esto SIEMPRE se comprueba, haya o no sesión iniciada
+    if(!window._sesion) return; // el resto de datos solo tiene sentido con sesión
     _sincronizarClientesDesdeFirestore();
     _sincronizarTecnicosDesdeFirestore();
     _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
@@ -7518,7 +7520,6 @@ function _iniciarActualizacionPeriodica(){
     renderAsgTecnico();
     renderAsgAdmin();
     catActualizarBadge();
-    _comprobarVersionNueva();
   }, 120000); // cada 2 minutos: margen cómodo bajo el límite gratuito de lecturas de Firestore
 }
 
