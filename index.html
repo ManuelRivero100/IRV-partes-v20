@@ -1388,6 +1388,26 @@ function _subirAgendaEntry(clienteId,centro,tienda,dir,tel,km,tr){
     }).catch(function(){});
   }).catch(function(){});
 }
+// Migración puntual: alimenta la agenda con los centros de Mercadona que ya existen en el historial.
+// Ejecutar UNA VEZ desde consola, logueado como admin/creador (solo esa sesión tiene el historial completo local).
+// No sobreescribe nada: _subirAgendaEntry ya comprueba si el centro existe antes de crear.
+function migrarAgendaDesdeHistorial(){
+  var h=getH();
+  var candidatos={};
+  h.forEach(function(r){
+    if((r.clienteId||'mercadona')!=='mercadona') return;
+    if(!r.centro) return;
+    var actual=candidatos[r.centro];
+    if(!actual || (r.fecha||'')>(actual.fecha||'')) candidatos[r.centro]=r;
+  });
+  var claves=Object.keys(candidatos);
+  console.log('Centros de Mercadona encontrados en el historial local: '+claves.length);
+  claves.forEach(function(centro){
+    var r=candidatos[centro];
+    _subirAgendaEntry('mercadona',centro,r.tienda,r.dir,r.tel,r.km,r.tr);
+  });
+  console.log('Migración lanzada para '+claves.length+' centros. Espera unos segundos y revisa con: JSON.parse(localStorage.getItem(\'pm_agenda\')||\'{}\')');
+}
 
 // Siguiente número IRV global (único en toda la app)
 function nextIRV(){
