@@ -1054,6 +1054,9 @@ REGLAS DE MODIFICACIÓN
 =======================================================================
 */
 
+// Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
+var APP_BUILD_ID = 'build-2026-07-08-agenda-6';
+
 var $ = function(id){ return document.getElementById(id); };
 
 
@@ -7510,7 +7513,17 @@ function _iniciarActualizacionPeriodica(){
     renderAsgTecnico();
     renderAsgAdmin();
     catActualizarBadge();
+    _comprobarVersionNueva();
   }, 120000); // cada 2 minutos: margen cómodo bajo el límite gratuito de lecturas de Firestore
+}
+
+function _comprobarVersionNueva(){
+  fetch(location.href, {cache:'no-store'}).then(function(r){ return r.text(); }).then(function(t){
+    var m = t.match(/APP_BUILD_ID\s*=\s*'([^']+)'/);
+    if(m && m[1] !== APP_BUILD_ID){
+      location.reload();
+    }
+  }).catch(function(){}); // sin conexión — no pasa nada, se comprobará en el siguiente ciclo
 }
 
 function _sincronizarEstadosIncidencias(soloTecnico) {
