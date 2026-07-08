@@ -1055,7 +1055,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-07-08-agenda-6';
+var APP_BUILD_ID = 'build-2026-07-08-agenda-8';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -7518,10 +7518,14 @@ function _iniciarActualizacionPeriodica(){
 }
 
 function _comprobarVersionNueva(){
-  fetch(location.href, {cache:'no-store'}).then(function(r){ return r.text(); }).then(function(t){
+  var urlSinCache = location.href.split('#')[0].split('?')[0] + '?_cb=' + Date.now();
+  fetch(urlSinCache, {cache:'no-store'}).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_BUILD_ID\s*=\s*'([^']+)'/);
     if(m && m[1] !== APP_BUILD_ID){
-      location.reload();
+      Promise.all([
+        caches.keys().then(function(keys){ return Promise.all(keys.map(function(k){ return caches.delete(k); })); }),
+        navigator.serviceWorker.getRegistrations().then(function(regs){ return Promise.all(regs.map(function(r){ return r.unregister(); })); })
+      ]).then(function(){ location.reload(true); }).catch(function(){ location.reload(true); });
     }
   }).catch(function(){}); // sin conexión — no pasa nada, se comprobará en el siguiente ciclo
 }
