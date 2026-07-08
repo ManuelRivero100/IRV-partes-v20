@@ -7493,6 +7493,24 @@ function _aplicarSesion(nombre, rol, multiRol) {
     _sincronizarPartesDesdeFirestore(nombre, _ocultarOverlay);
   }
   else { _ocultarOverlay(); }
+  _iniciarActualizacionPeriodica();
+}
+
+var _actualizacionPeriodicaIniciada = false;
+function _iniciarActualizacionPeriodica(){
+  if(_actualizacionPeriodicaIniciada) return; // solo un intervalo activo, aunque se cambie de rol varias veces
+  _actualizacionPeriodicaIniciada = true;
+  setInterval(function(){
+    if(!window._sesion) return; // sin sesión, no hay nada que refrescar
+    if(document.visibilityState !== 'visible') return; // app en segundo plano o móvil bloqueado, no gastar batería/datos
+    _sincronizarClientesDesdeFirestore();
+    _sincronizarTecnicosDesdeFirestore();
+    _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
+    _sincronizarAgendaDesdeFirestore();
+    renderAsgTecnico();
+    renderAsgAdmin();
+    catActualizarBadge();
+  }, 120000); // cada 2 minutos: margen cómodo bajo el límite gratuito de lecturas de Firestore
 }
 
 function _sincronizarEstadosIncidencias(soloTecnico) {
