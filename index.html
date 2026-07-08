@@ -1055,7 +1055,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-07-08-agenda-11';
+var APP_BUILD_ID = 'build-2026-07-08-agenda-12';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -6997,7 +6997,7 @@ function verIncidenciasCentro(centro){
 }
 
 function initApp(){
-  _iniciarActualizacionPeriodica(); // arranca ya, incluso antes de iniciar sesión
+  setTimeout(_iniciarActualizacionPeriodica, 0); // arranca ya, incluso antes de iniciar sesión (con setTimeout: la función vive en un <script> posterior)
   // Migrar técnicos de partes antiguos al cargar
   setTimeout(migrarTecnicos, 500);
   if(localStorage.getItem('pm_mats_v')!=='4'){ setMats(MATS_DEF); localStorage.setItem('pm_mats_v','4'); }
