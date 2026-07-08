@@ -1137,6 +1137,19 @@ function _sincronizarClientesDesdeFirestore(){
     if(cambiado){ localStorage.setItem('pm_clientes',JSON.stringify(extra)); renderClientes(); }
   }).catch(function(){});
 }
+function _sincronizarAgendaDesdeFirestore(){
+  if(typeof _db === 'undefined' || !_db) return;
+  _db.collection('agenda').get().then(function(snap){
+    var a=getAgenda();
+    var cambiado=false;
+    snap.forEach(function(doc){
+      var d=doc.data();
+      var k=agendaKey(d.clienteId,d.centro);
+      if(JSON.stringify(a[k])!==JSON.stringify(d)){ a[k]=d; cambiado=true; }
+    });
+    if(cambiado) setAgenda(a);
+  }).catch(function(){});
+}
 function _sincronizarTecnicosDesdeFirestore(){
   if(typeof _db === 'undefined' || !_db) return;
   _db.collection('usuario').where('roles','array-contains','tecnico').get().then(function(snap){
@@ -1343,6 +1356,38 @@ function getHVisibleStats(){
 function getMats(){ return JSON.parse(localStorage.getItem('pm_mats')||'{}'); }
 function setMats(d){ localStorage.setItem('pm_mats',JSON.stringify(d)); }
 function jkm(job){ return job==='Climatización'?'Climatizacion':job; }
+
+// ===== AGENDA DE TIENDAS (Mercadona por ahora) =====
+function getAgenda(){ return JSON.parse(localStorage.getItem('pm_agenda')||'{}'); }
+function setAgenda(d){ localStorage.setItem('pm_agenda',JSON.stringify(d)); }
+function agendaKey(clienteId,centro){ return (clienteId||'mercadona')+'_'+(centro||''); }
+function agendaBuscar(clienteId,centro){
+  if(!centro) return null;
+  var a=getAgenda();
+  return a[agendaKey(clienteId,centro)]||null;
+}
+function _subirAgendaEntry(clienteId,centro,tienda,dir,tel,km,tr){
+  clienteId=clienteId||'mercadona';
+  if(clienteId!=='mercadona') return; // por ahora solo Mercadona
+  if(!centro) return;
+  if(!dir && !tel) return; // sin datos útiles, no merece la pena crear la entrada
+  if(typeof _db === 'undefined' || !_db) return;
+  var k=agendaKey(clienteId,centro);
+  var local=getAgenda();
+  if(local[k]) return; // ya la tenemos local, no hace falta ni consultar Firestore
+  var docId=k.replace(/[\/\s]/g,'-');
+  var ref=_db.collection('agenda').doc(docId);
+  ref.get().then(function(snap){
+    if(snap.exists) {
+      var a=getAgenda(); a[k]=snap.data(); setAgenda(a); // ya existía en Firestore, la adoptamos local
+      return;
+    }
+    var data={clienteId:clienteId,centro:centro,tienda:tienda||'',dir:dir||'',tel:tel||'',km:km||'',tr:tr||'',creadoPor:(window._sesion&&window._sesion.nombre)||'',fechaCreacion:Date.now()};
+    ref.set(data).then(function(){
+      var a=getAgenda(); a[k]=data; setAgenda(a);
+    }).catch(function(){});
+  }).catch(function(){});
+}
 
 // Siguiente número IRV global (único en toda la app)
 function nextIRV(){
@@ -4177,21 +4222,18 @@ function ejecutarAsgTec() {
   $('tienda').value = d.tienda || '';
   $('dir').value = d.dir || '';
   $('tel').value = d.tel || '';
-  // Buscar datos del centro en historial — igual que el autocomplete
-  var _h = getH();
-  var _parteRef = null;
-  for(var _i = _h.length-1; _i >= 0; _i--) {
-    var _r = _h[_i];
-    if((_r.clienteId||'mercadona') === d.clienteId && _r.centro === d.centro && _r.km) {
-      _parteRef = _r; break;
+  if(d.km){ $('km').value=d.km; $('kmE').value=d.km; }
+  if(d.tr){ $('tr').value=d.tr; $('trE').value=d.tr; }
+  // Si la asignación no traía km/tr/dir/tel/tienda, completar desde la agenda compartida
+  if(!$('km').value || !$('dir').value || !$('tel').value || !$('tienda').value){
+    var ag = agendaBuscar(d.clienteId, d.centro);
+    if(ag){
+      if(!$('km').value && ag.km){ $('km').value=ag.km; $('kmE').value=ag.km; }
+      if(!$('tr').value && ag.tr){ $('tr').value=ag.tr; $('trE').value=ag.tr; }
+      if(!$('dir').value && ag.dir) $('dir').value=ag.dir;
+      if(!$('tel').value && ag.tel) $('tel').value=ag.tel;
+      if(!$('tienda').value && ag.tienda) $('tienda').value=ag.tienda;
     }
-  }
-  if(_parteRef) {
-    if(_parteRef.km){ $('km').value=_parteRef.km; $('kmE').value=_parteRef.km; }
-    if(_parteRef.tr){ $('tr').value=_parteRef.tr; $('trE').value=_parteRef.tr; }
-    if(!$('dir').value && _parteRef.dir) $('dir').value=_parteRef.dir;
-    if(!$('tel').value && _parteRef.tel) $('tel').value=_parteRef.tel;
-    if(!$('tienda').value && _parteRef.tienda) $('tienda').value=_parteRef.tienda;
   }
   if (d.job) {
     document.querySelectorAll('#jobTgl button').forEach(function(b){
@@ -5401,7 +5443,7 @@ function buscarPorCentroORef(val){
     if(seen[k]) continue;
     seen[k]=true;
     if((r.estado||'terminado')==='en-ejecucion') activas.push({r:r,idx:i});
-    else cerradas.push({r:r,idx:i});
+    else if(!esMerc) cerradas.push({r:r,idx:i}); // Mercadona ya no usa el historial local para esto, usa la agenda
   }
   var otrosClientes=[];
   if(!esMerc){
@@ -5420,6 +5462,11 @@ function buscarPorCentroORef(val){
       otrosClientes.push({r:r2,idx:j,nombreCliente:nombreCliente});
     }
   }
+  var agendaItem=null;
+  if(esMerc && !activas.length){
+    var ag=agendaBuscar(clienteId,val.trim());
+    if(ag) agendaItem=ag;
+  }
   var html='';
   activas.forEach(function(x){
     var label=esMerc?'Centro '+x.r.centro+' &mdash; '+x.r.tienda:x.r.tienda;
@@ -5433,6 +5480,11 @@ function buscarPorCentroORef(val){
     html+='<div class="ac-item" style="color:var(--text2)" onclick="rellenarDatos('+x.idx+',false)">'+
       '<span style="margin-right:6px;">&#128203;</span>'+label2+
       ' <span class="badge badge-g" style="font-size:.66rem;">Datos anteriores</span></div>';
+  }
+  if(agendaItem){
+    html+='<div class="ac-item" onclick="rellenarDesdeAgenda(\''+clienteId+'\',\''+agendaItem.centro+'\')">'+
+      '<span style="margin-right:6px;">&#128179;</span>Centro '+agendaItem.centro+' &mdash; '+agendaItem.tienda+
+      ' <span class="badge badge-g" style="font-size:.66rem;">Agenda</span></div>';
   }
   otrosClientes.forEach(function(x){
     html+='<div class="ac-item" style="color:var(--amber)" onclick="avisoCruzadoIdx('+x.idx+')">'+
@@ -6275,6 +6327,7 @@ function _subirParteAFirestore(parte){
       _marcarPendienteSync(parte, true);
     });
     if(parte.pedido) _actualizarIncidenciaPorOrden(parte.pedido, parte.centro, parte.estado||'en-ejecucion', datos);
+    _subirAgendaEntry(parte.clienteId, parte.centro, parte.tienda, parte.dir, parte.tel, parte.km, parte.tr);
   }catch(e){ _marcarPendienteSync(parte, true); }
 }
 
@@ -6693,6 +6746,19 @@ function rellenarDatos(idx, soloOrdenActiva){
     document.querySelectorAll('#jobTgl button').forEach(function(b){
       if(b.textContent===r.job) setJob(r.job,b);
     });
+  }
+  $('acOrden').classList.remove('show'); $('acCentro').classList.remove('show');
+}
+function rellenarDesdeAgenda(clienteId,centro){
+  var ag=agendaBuscar(clienteId,centro); if(!ag) return;
+  $('centro').value=ag.centro||'';
+  $('tienda').value=ag.tienda||'';
+  $('dir').value=ag.dir||'';
+  $('tel').value=ag.tel||'';
+  if(ag.km){
+    $('km').value=ag.km; $('tr').value=ag.tr||'';
+    $('kmE').value=ag.km; $('trE').value=ag.tr||'';
+    $('kmS').value=''; $('trS').value='';
   }
   $('acOrden').classList.remove('show'); $('acCentro').classList.remove('show');
 }
@@ -7301,6 +7367,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
   _sincronizarClientesDesdeFirestore();
   _sincronizarTecnicosDesdeFirestore();
   _sincronizarCatalogoDesdeFirestore();
+  _sincronizarAgendaDesdeFirestore();
   _reintentarPartesPendientes();
 
   if (rol === 'admin' || rol === 'creador') {
@@ -7428,14 +7495,14 @@ function leerAsg(){
 
 function buscarKmAsg(centro){
   centro=(centro||'').trim(); if(!centro) return;
-  var h=getH();
-  for(var i=h.length-1;i>=0;i--){
-    var r=h[i];
-    if((r.centro||'')===centro && r.km){
-      if(!$('asgKm').value){ $('asgKm').value=r.km; }
-      if(!$('asgTr').value && r.tr){ $('asgTr').value=r.tr; }
-      break;
-    }
+  if(!curCliente) return;
+  var ag=agendaBuscar(curCliente.id,centro);
+  if(ag){
+    if(!$('asgKm').value && ag.km){ $('asgKm').value=ag.km; }
+    if(!$('asgTr').value && ag.tr){ $('asgTr').value=ag.tr; }
+    if(!$('asgDir').value && ag.dir){ $('asgDir').value=ag.dir; }
+    if(!$('asgTel').value && ag.tel){ $('asgTel').value=ag.tel; }
+    if(!$('asgTienda').value && ag.tienda){ $('asgTienda').value=ag.tienda; }
   }
 }
 
@@ -7493,6 +7560,7 @@ function guardarAsignacion() {
     };
     _db.collection('incidencias').add(data).then(function(){
       showMsg('asgMsg','✓ Incidencia asignada.','success');
+      _subirAgendaEntry(data.clienteId, data.centro, data.tienda, data.dir, data.tel, data.km, data.tr);
       $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
       _asgJob=''; _asgTec='';
       document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
@@ -7999,6 +8067,7 @@ function migVerificar() {
       <button class="btn btn-s" onclick="document.getElementById('dlgPinCatalogo').classList.remove('show');document.getElementById('dlgPinCatalogoPin').value='';">Cancelar</button>
     </div>
   </div>
+</div>
 </div>
 </body>
 </html>
