@@ -4643,15 +4643,6 @@ function msRender(cid){
             });
           }
         });
-      } else if(hasSel){
-        allM.filter(function(n){return !!_MS.sel[n];}).forEach(function(nom){
-          var q=_MS.sel[nom]||1;
-          html+='<div class="mat-sel-row checked">'
-            +'<input type="checkbox" class="mat-sel-check" checked data-nom="'+nom.replace(/"/g,'&quot;')+'" onclick="msDeSelCat(this.dataset.nom)" style="cursor:pointer;">'
-            +'<span class="mat-sel-name" data-nom="'+nom.replace(/"/g,'&quot;')+'" onclick="msDeSelCat(this.dataset.nom)" style="cursor:pointer;">'+nom+'</span>'
-            +'<input type="number" class="mat-sel-qty visible" value="'+q+'" min="1" onclick="event.stopPropagation()" onfocus="this.select()" oninput="msUpdQtyEl(this)">'
-            +'</div>';
-        });
       }
     });
     html+='<div id="msExtrasList"></div>';
@@ -4742,7 +4733,6 @@ function msToggleCatItem(secId,ssi,mi){
     },50);
   }
 }
-function msDeSelCat(nom){ delete _MS.sel[nom]; msRender('parteMatCard'); }
 function msUpdQty(nom,val){ if(_MS.sel[nom]!==undefined) _MS.sel[nom]=parseFloat(val)||1; }
 function msSaveQtys(){
   document.querySelectorAll('[id^="msq_"]').forEach(function(inp){
