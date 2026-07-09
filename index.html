@@ -1434,8 +1434,10 @@ function migrarAgendaDesdeHistorial(){
 // Migración puntual: sincroniza en Firestore el estado 'terminado' de incidencias que ya están
 // cerradas en el historial local, pero se cerraron antes de que existiera este mecanismo de sync.
 // Ejecutar UNA VEZ desde consola, logueado como admin/creador (solo esa sesión tiene el historial completo local).
-// Segura: reutiliza _actualizarIncidenciaPorOrden (mismo camino ya probado en la app), y solo actúa
-// sobre pedidos que YA están cerrados localmente — nunca toca uno que siga en ejecución.
+// Segura: solo actúa sobre pedidos que YA están cerrados localmente — nunca toca uno que siga en ejecución.
+// A diferencia de _actualizarIncidenciaPorOrden, aquí las incidencias que hay que crear se marcan
+// vistaAdmin:true desde el principio — son datos históricos ya conocidos, no deben generar
+// una notificación de "incidencia nueva" en la pantalla del admin.
 function migrarCierresDesdeHistorial(){
   var h=getH();
   var candidatos={};
@@ -1450,11 +1452,21 @@ function migrarCierresDesdeHistorial(){
   console.log('Incidencias cerradas encontradas en el historial local: '+claves.length);
   claves.forEach(function(k){
     var r=candidatos[k];
-    var datos=Object.assign({}, r, {
-      tecnicoPrincipal:(r.tecnicos&&r.tecnicos[0])||'',
-      creadoPor:(r.tecnicos&&r.tecnicos[0])||''
-    });
-    _actualizarIncidenciaPorOrden(r.pedido, r.centro, 'terminado', datos);
+    _db.collection('incidencias').where('pedido','==',r.pedido).where('centro','==',r.centro).get().then(function(snap){
+      if(snap.empty){
+        _db.collection('incidencias').add({
+          clienteId: r.clienteId||'mercadona',
+          pedido: r.pedido, centro: r.centro||'',
+          tienda: r.tienda||'', dir: r.dir||'', tel: r.tel||'',
+          job: r.job||'', tecnicoPrincipal: (r.tecnicos&&r.tecnicos[0])||'',
+          creadoPor: (r.tecnicos&&r.tecnicos[0])||'', estado: 'terminado',
+          descripcion: r.averiaReportada||r.obs||'',
+          vista: true, vistaAdmin: true, fechaCreacion: Date.now()
+        }).catch(function(){});
+        return;
+      }
+      snap.forEach(function(doc){ doc.ref.update({estado:'terminado', vista:true}); });
+    }).catch(function(){});
   });
   console.log('Migración lanzada para '+claves.length+' incidencias cerradas. Espera unos segundos y revisa con la consulta a Firestore.');
 }
@@ -4489,9 +4501,9 @@ function ejecutarSolicitudReabrir(id) {
       _sincronizarRegistroGlobal();
       renderAsgAdmin();
       goTo('w-clientes');
-      alert('Incidencia reabierta y asignada a '+tec+'.');
+      _toast('Incidencia reabierta y asignada a '+tec+'.');
     }).catch(function(){
-      alert('No se pudo reabrir. Comprueba la conexión e inténtalo de nuevo.');
+      _toast('No se pudo reabrir. Comprueba la conexión e inténtalo de nuevo.', 'var(--red)');
     });
   });
 }
@@ -4934,10 +4946,7 @@ function msAcGlobalConfirm(){
   var exacto=todos.find(function(n){return n.toLowerCase()===val.toLowerCase();});
   if(exacto){ msAcGlobalSel(exacto); return; }
   if(!_puedeAnadirFlotante()){
-    var t=document.createElement('div');
-    t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--red);color:#fff;padding:8px 16px;border-radius:20px;font-size:.82rem;font-weight:600;z-index:999;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.3);';
-    t.textContent='Material no encontrado en el catálogo';
-    document.body.appendChild(t);setTimeout(function(){t.remove();},2500);
+    _toast('Material no encontrado en el catálogo', 'var(--red)');
     return;
   }
   msAcGlobalNuevo();
@@ -5349,6 +5358,13 @@ function showMsg(id,txt,type){
   m.className='msg show '+type;
   setTimeout(function(){ m.className='msg'; },5000);
 }
+function _toast(msg, color){
+  var t=document.createElement('div');
+  t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);max-width:88%;background:'+(color||'var(--green)')+';color:#fff;padding:10px 18px;border-radius:20px;font-size:.85rem;font-weight:600;z-index:999;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.3);';
+  t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); },3500);
+}
 
 // ===== UTILS =====
 
@@ -5482,7 +5498,7 @@ function mostrarDlgInicioOrden(){
         var k=pedido+'||'+g.centro;
         if(seen[k]) return;
         seen[k]=true;
-        activas.push({r:{pedido:pedido,centro:g.centro,clienteId:g.clienteId,tienda:'',fecha:''},idx:null});
+        activas.push({r:{pedido:pedido,centro:g.centro,clienteId:g.clienteId,tienda:g.tienda||'',fecha:''},idx:null});
       });
     } catch(e){}
   }
@@ -6413,12 +6429,12 @@ function _confirmarSolicitudReabrir(){
   var pedido=window._reabrirPedido;
   var miNombre=window._sesion.nombre;
   if(typeof _db === 'undefined' || !_db){
-    alert('Sin conexión — no se puede enviar la solicitud ahora mismo. Inténtalo cuando tengas internet.');
+    _toast('Sin conexión — no se puede enviar la solicitud ahora mismo. Inténtalo cuando tengas internet.', 'var(--red)');
     return;
   }
   _db.collection('incidencias').where('pedido','==',pedido).get().then(function(snap){
     if(snap.empty){
-      alert('No se encontró esa incidencia en el servidor. Actualiza e inténtalo de nuevo.');
+      _toast('No se encontró esa incidencia en el servidor. Actualiza e inténtalo de nuevo.', 'var(--red)');
       return;
     }
     var doc=snap.docs[0];
@@ -6426,14 +6442,14 @@ function _confirmarSolicitudReabrir(){
       solicitudReabrir: { tecnico: miNombre, fecha: Date.now() },
       vistaAdmin: false
     }).then(function(){
-      alert('Solicitud enviada. Un administrador debe aprobarla antes de continuar con esta orden.');
+      _toast('Solicitud enviada. Un administrador debe aprobarla antes de continuar con esta orden.');
       $('pedido').value='';
       goTo('w-clientes');
     }).catch(function(){
-      alert('No se pudo enviar la solicitud. Comprueba tu conexión e inténtalo de nuevo.');
+      _toast('No se pudo enviar la solicitud. Comprueba tu conexión e inténtalo de nuevo.', 'var(--red)');
     });
   }).catch(function(){
-    alert('No se pudo enviar la solicitud. Comprueba tu conexión e inténtalo de nuevo.');
+    _toast('No se pudo enviar la solicitud. Comprueba tu conexión e inténtalo de nuevo.', 'var(--red)');
   });
 }
 
@@ -6484,7 +6500,13 @@ function seleccionarOrdenInicioFormPedido(pedido, centro){
   goToRaw('w-form');
   nuevo();
   if(pedido) $('pedido').value=pedido;
-  if(centro){ $('centro').value=centro; buscarPorCentroORef(centro); }
+  var clienteId=curCliente?curCliente.id:'mercadona';
+  var ag=centro?agendaBuscar(clienteId,centro):null;
+  if(ag){
+    rellenarDesdeAgenda(clienteId, centro);
+  } else if(centro){
+    $('centro').value=centro; buscarPorCentroORef(centro);
+  }
   var esMerc=curCliente&&curCliente.tipo==='mercadona';
   if(!esMerc){
     _pedidoNoMerc=pedido;
@@ -7947,6 +7969,7 @@ function _sincronizarRegistroGlobal(){
         tecnicoPrincipal: d.tecnicoPrincipal||'',
         estado: d.estado||'pendiente',
         centro: d.centro||'',
+        tienda: d.tienda||'',
         clienteId: d.clienteId||'mercadona',
         id: doc.id
       };
