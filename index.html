@@ -4322,12 +4322,15 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
           creadoPor: datosParte.creadoPor||'', estado: estado,
           descripcion: datosParte.averiaReportada||datosParte.obs||'',
           vista: true, vistaAdmin: false, fechaCreacion: Date.now()
-        }).catch(function(){});
+        }).then(function(){ _limpiarIncidenciaPendientePorPedido(pedido,centro); })
+          .catch(function(){ _marcarIncidenciaPendientePorPedido(pedido,centro); });
       }
       return;
     }
-    snap.forEach(function(doc){ doc.ref.update({estado:estado, vista:true}); });
-  }).catch(function(){});
+    Promise.all(snap.docs.map(function(doc){ return doc.ref.update({estado:estado, vista:true}); }))
+      .then(function(){ _limpiarIncidenciaPendientePorPedido(pedido,centro); })
+      .catch(function(){ _marcarIncidenciaPendientePorPedido(pedido,centro); });
+  }).catch(function(){ _marcarIncidenciaPendientePorPedido(pedido,centro); });
   if(estado==='terminado'){
     _db.collection('partes').where('pedido','==',pedido).where('centro','==',centro).get().then(function(snap){
       snap.forEach(function(doc){ doc.ref.update({estado:'terminado'}); });
@@ -6723,6 +6726,19 @@ function _marcarPendienteSync(parte, pendiente){
   if(pendiente) h[idx]._pendienteSync=true; else delete h[idx]._pendienteSync;
   setH(h);
 }
+function _marcarIncidenciaPendientePorPedido(pedido, centro){
+  var h=getH();
+  var last=null;
+  for(var i=h.length-1;i>=0;i--){ if(h[i].pedido===pedido && h[i].centro===centro){ last=h[i]; break; } }
+  if(last) last._pendienteIncidencia=true;
+  setH(h);
+}
+function _limpiarIncidenciaPendientePorPedido(pedido, centro){
+  var h=getH();
+  var cambiado=false;
+  h.forEach(function(r){ if(r.pedido===pedido && r.centro===centro && r._pendienteIncidencia){ delete r._pendienteIncidencia; cambiado=true; } });
+  if(cambiado) setH(h);
+}
 
 function _subirParteAFirestore(parte){
   try{
@@ -6750,6 +6766,14 @@ function _reintentarPartesPendientes(){
   var h=getH();
   var pendientes=h.filter(function(r){ return r._pendienteSync; });
   pendientes.forEach(function(r){ _subirParteAFirestore(r); });
+  var pendientesIncidencia=h.filter(function(r){ return r._pendienteIncidencia; });
+  pendientesIncidencia.forEach(function(r){
+    var datos = Object.assign({}, r, {
+      tecnicoPrincipal: (r.tecnicos&&r.tecnicos[0])||window._sesion.nombre,
+      creadoPor: window._sesion.nombre
+    });
+    _actualizarIncidenciaPorOrden(r.pedido, r.centro, r.estado||'en-ejecucion', datos);
+  });
 }
 window.addEventListener('online', _reintentarPartesPendientes);
 
