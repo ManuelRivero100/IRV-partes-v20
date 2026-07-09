@@ -1055,7 +1055,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-07-08-agenda-19';
+var APP_BUILD_ID = 'build-2026-07-08-agenda-20';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -4730,18 +4730,15 @@ function msToggleCatItem(secId,ssi,mi){
   var m=mats[mi];if(!m)return;
   var wasSelected=!!_MS.sel[m.nom];
   if(wasSelected) delete _MS.sel[m.nom]; else _MS.sel[m.nom]=1;
-  if(!wasSelected){
-    // Al marcar un material, cerrar la sección/subsección: ya se ve arriba en "Materiales del parte",
-    // no hace falta dejarlo también abierto abajo (evita verlo duplicado y la confusión de "¿lo marqué dos veces?").
-    _MS.secAbierta=null;
-    _MS.subAbierta=null;
-  }
   msRender('parteMatCard');
-  // If just selected, focus the qty input de la lista de arriba ("Materiales del parte")
+  // If just selected, focus the qty input dentro de la propia sección/subsección (que sigue abierta)
   if(!wasSelected){
     setTimeout(function(){
-      var input=document.querySelector('input[data-nom="'+m.nom.replace(/"/g,'&quot;')+'"]');
-      if(input) input.select();
+      var rows=document.querySelectorAll('.mat-sel-row.checked .mat-sel-qty.visible');
+      rows.forEach(function(inp){
+        var nameEl=inp.parentElement.querySelector('.mat-sel-name');
+        if(nameEl&&nameEl.textContent===m.nom) inp.select();
+      });
     },50);
   }
 }
