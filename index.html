@@ -4491,6 +4491,8 @@ function ejecutarSolicitudReabrir(id) {
     if (!doc.exists) return;
     var d = doc.data();
     var tec = (d.solicitudReabrir&&d.solicitudReabrir.tecnico)||d.tecnicoPrincipal;
+    var _tec2=getTecnicos().find(function(t){ return t.nombre.toLowerCase()===(tec||'').toLowerCase(); });
+    if(_tec2) tec=_tec2.nombre;
     doc.ref.update({
       estado: 'en-ejecucion',
       tecnicoPrincipal: tec,
@@ -6428,6 +6430,8 @@ function _confirmarSolicitudReabrir(){
   $('dlgReabrir').classList.remove('show');
   var pedido=window._reabrirPedido;
   var miNombre=window._sesion.nombre;
+  var _tec=getTecnicos().find(function(t){ return t.nombre.toLowerCase()===miNombre.toLowerCase(); });
+  if(_tec) miNombre=_tec.nombre;
   if(typeof _db === 'undefined' || !_db){
     _toast('Sin conexión — no se puede enviar la solicitud ahora mismo. Inténtalo cuando tengas internet.', 'var(--red)');
     return;
