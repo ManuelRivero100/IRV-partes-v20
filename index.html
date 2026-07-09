@@ -1431,6 +1431,33 @@ function migrarAgendaDesdeHistorial(){
   });
   console.log('Migración lanzada para '+claves.length+' sitios. Espera unos segundos y revisa con: JSON.parse(localStorage.getItem(\'pm_agenda\')||\'{}\')');
 }
+// Migración puntual: sincroniza en Firestore el estado 'terminado' de incidencias que ya están
+// cerradas en el historial local, pero se cerraron antes de que existiera este mecanismo de sync.
+// Ejecutar UNA VEZ desde consola, logueado como admin/creador (solo esa sesión tiene el historial completo local).
+// Segura: reutiliza _actualizarIncidenciaPorOrden (mismo camino ya probado en la app), y solo actúa
+// sobre pedidos que YA están cerrados localmente — nunca toca uno que siga en ejecución.
+function migrarCierresDesdeHistorial(){
+  var h=getH();
+  var candidatos={};
+  h.forEach(function(r){
+    if((r.estado||'terminado')!=='terminado') return; // solo cerrados
+    if(!r.pedido) return;
+    var k=r.pedido+'||'+r.centro;
+    var actual=candidatos[k];
+    if(!actual || (r.fecha||'')>(actual.fecha||'')) candidatos[k]=r;
+  });
+  var claves=Object.keys(candidatos);
+  console.log('Incidencias cerradas encontradas en el historial local: '+claves.length);
+  claves.forEach(function(k){
+    var r=candidatos[k];
+    var datos=Object.assign({}, r, {
+      tecnicoPrincipal:(r.tecnicos&&r.tecnicos[0])||'',
+      creadoPor:(r.tecnicos&&r.tecnicos[0])||''
+    });
+    _actualizarIncidenciaPorOrden(r.pedido, r.centro, 'terminado', datos);
+  });
+  console.log('Migración lanzada para '+claves.length+' incidencias cerradas. Espera unos segundos y revisa con la consulta a Firestore.');
+}
 
 // Siguiente número IRV global (único en toda la app)
 function nextIRV(){
