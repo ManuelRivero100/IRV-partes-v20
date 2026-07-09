@@ -862,9 +862,9 @@ textarea{resize:vertical;min-height:72px}
     <div class="dialogo-titulo">&#128274; Orden cerrada</div>
     <div class="dialogo-sub">Esta orden ya est&aacute; cerrada:</div>
     <div class="dialogo-orden-num"><span id="dlgReabrirNum"></span> &mdash; <span id="dlgReabrirCentro"></span></div>
-    <div class="dialogo-sub" style="margin-bottom:12px;">&#191;Quieres reabrirla y a&ntilde;adir un nuevo parte?</div>
+    <div class="dialogo-sub" id="dlgReabrirPregunta" style="margin-bottom:12px;">&#191;Quieres reabrirla y a&ntilde;adir un nuevo parte?</div>
     <div class="brow" style="margin-bottom:10px;">
-      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="respReabrir(true)">&#128275; S&iacute;, reabrir</button>
+      <button class="btn btn-p" id="dlgReabrirBtnSi" style="flex:1;justify-content:center" onclick="respReabrir(true)">&#128275; S&iacute;, reabrir</button>
       <button class="btn btn-s" style="flex:1;justify-content:center" onclick="respReabrir(false)">No, ver activas</button>
     </div>
     <div id="dlgReabrirActivas" style="display:none;max-height:220px;overflow-y:auto;"></div>
@@ -1373,6 +1373,20 @@ function agendaBuscar(clienteId,centro){
   if(!centro) return null;
   var a=getAgenda();
   return a[agendaKey(clienteId,centro)]||null;
+}
+function _completarAgendaFaltantes(clienteId, centro, km, tr){
+  if(!centro || !km) return; // nada que completar
+  if(typeof _db === 'undefined' || !_db) return;
+  clienteId=clienteId||'mercadona';
+  var k=agendaKey(clienteId,centro);
+  var local=getAgenda();
+  var entry=local[k];
+  if(!entry) return; // si no existe la entrada, la crea _subirAgendaEntry por separado
+  if(entry.km) return; // ya tiene km — nunca sobreescribir un dato que ya está correcto
+  var docId=k.replace(/[\/\s]/g,'-');
+  _db.collection('agenda').doc(docId).update({ km: km, tr: tr||'' }).then(function(){
+    entry.km=km; entry.tr=tr||''; local[k]=entry; setAgenda(local);
+  }).catch(function(){});
 }
 function _subirAgendaEntry(clienteId,centro,tienda,dir,tel,km,tr){
   clienteId=clienteId||'mercadona';
@@ -3591,6 +3605,7 @@ function resetearEstadoCompleto(){
 function nuevo(){
   _editIdx=null;
   ['pedido','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
+  _desbloquearCamposAutorrellenados();
   var _fd=$('fieldDescIncidencia'); if(_fd) _fd.style.display='none'; var _dd=$('descIncidencia'); if(_dd) _dd.value='';
   $('w').value='2'; $('job').value=''; $('link').value='No';
   curJob=''; curLink='No'; wRoles=[];
@@ -4369,11 +4384,19 @@ function renderAsgAdmin() {
       snap.forEach(function(doc){
         var d = doc.data();
         var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
-        html += '<div class="act-list-item" onclick="verAsgAdminAviso(\''+doc.id+'\',\''+(d.clienteId||'')+'\')">'
-          + '<span class="act-num">&#128229;</span>'
-          + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
-          + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+' · Creada por '+(d.creadoPor||'')+'</div></div>'
-          + '</div>';
+        if(d.solicitudReabrir){
+          html += '<div class="act-list-item" onclick="verSolicitudReabrir(\''+doc.id+'\')">'
+            + '<span class="act-num">&#128275;</span>'
+            + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
+            + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.solicitudReabrir.tecnico||'')+' solicita reabrir</div></div>'
+            + '</div>';
+        } else {
+          html += '<div class="act-list-item" onclick="verAsgAdminAviso(\''+doc.id+'\',\''+(d.clienteId||'')+'\')">'
+            + '<span class="act-num">&#128229;</span>'
+            + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
+            + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+' · Creada por '+(d.creadoPor||'')+'</div></div>'
+            + '</div>';
+        }
       });
       el.innerHTML = html;
       sec.style.display = 'block';
@@ -4400,6 +4423,47 @@ function verAsgAdminAviso(id, clienteId) {
 function verAsgAdminReasignar(clienteId) {
   var cli = getClientes().find(function(c){ return c.id === clienteId; });
   if (cli) { seleccionarCliente(clienteId); abrirAsignar(); }
+}
+
+function verSolicitudReabrir(id) {
+  _db.collection('incidencias').doc(id).get().then(function(doc){
+    if (!doc.exists) return;
+    var d = doc.data();
+    var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
+    var tec = (d.solicitudReabrir&&d.solicitudReabrir.tecnico)||'';
+    var html = '<div class="card"><div class="card-title">&#128275; Solicitud de reapertura</div>'
+      + '<div class="rrow info-row"><span class="rc">'+(d.tienda||'')+'</span><span class="rl"></span><span class="rv"></span></div>'
+      + (refs.length?'<div class="rrow info-row"><span class="rc">Datos</span><span class="rl">'+refs.join(' · ')+'</span><span class="rv"></span></div>':'')
+      + '<div class="rrow info-row"><span class="rc">Solicitado por</span><span class="rl">'+tec+'</span><span class="rv"></span></div>'
+      + '</div>'
+      + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="ejecutarSolicitudReabrir(\''+id+'\')">&#128275; Reabrir y asignar a '+tec+'</button>'
+      + '<button class="btn btn-s btn-full" style="margin-top:8px;" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
+    $('consultaAsgBody').innerHTML = html;
+    goTo('w-consultaAsg');
+    _db.collection('incidencias').doc(id).update({ vistaAdmin: true }).then(renderAsgAdmin);
+  });
+}
+
+function ejecutarSolicitudReabrir(id) {
+  _db.collection('incidencias').doc(id).get().then(function(doc){
+    if (!doc.exists) return;
+    var d = doc.data();
+    var tec = (d.solicitudReabrir&&d.solicitudReabrir.tecnico)||d.tecnicoPrincipal;
+    doc.ref.update({
+      estado: 'en-ejecucion',
+      tecnicoPrincipal: tec,
+      vista: false,
+      vistaAdmin: true,
+      solicitudReabrir: firebase.firestore.FieldValue.delete()
+    }).then(function(){
+      _sincronizarRegistroGlobal();
+      renderAsgAdmin();
+      goTo('w-clientes');
+      alert('Incidencia reabierta y asignada a '+tec+'.');
+    }).catch(function(){
+      alert('No se pudo reabrir. Comprueba la conexión e inténtalo de nuevo.');
+    });
+  });
 }
 
 var _asgTecActual = null;
@@ -5365,11 +5429,32 @@ function mostrarDlgInicioOrden(){
     if((r.clienteId||'mercadona')!==clienteId) continue;
     var estadoReal=_getEstadoIncidencia(r.pedido, r.centro) || r.estado || 'terminado';
     if(estadoReal!=='en-ejecucion') continue;
-    if(esTecnico && !(r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre)) continue;
+    if(esTecnico){
+      var reg=_registroGlobal(r.pedido);
+      var esMio = reg ? (reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()===miNombre)
+                       : (r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre);
+      if(!esMio) continue;
+    }
     var k=r.pedido+'||'+r.centro;
     if(seen[k]) continue;
     seen[k]=true;
     activas.push({r:r,idx:i});
+  }
+  // Técnico: incluir también órdenes reasignadas a él en el registro global que aún no tiene en su historial local
+  if(esTecnico){
+    try {
+      var regGlobal=JSON.parse(localStorage.getItem('pm_registro_global')||'{}');
+      Object.keys(regGlobal).forEach(function(pedido){
+        var g=regGlobal[pedido];
+        if(!g.tecnicoPrincipal || g.tecnicoPrincipal.toLowerCase()!==miNombre) return;
+        if(g.estado!=='en-ejecucion') return;
+        if((g.clienteId||'mercadona')!==clienteId) return;
+        var k=pedido+'||'+g.centro;
+        if(seen[k]) return;
+        seen[k]=true;
+        activas.push({r:{pedido:pedido,centro:g.centro,clienteId:g.clienteId,tienda:'',fecha:''},idx:null});
+      });
+    } catch(e){}
   }
   var esMerc=curCliente&&curCliente.tipo==='mercadona';
   $('dlgInicioSub').textContent=activas.length
@@ -5384,7 +5469,10 @@ function mostrarDlgInicioOrden(){
       var r=x.r;
       var fF=r.fecha?r.fecha.split('-').reverse().join('/'):'--';
       var subTitle=r.actObras?r.actObras:esMerc?'Orden '+r.pedido:'IRV '+r.pedido;
-      return '<div class="act-list-item" onclick="seleccionarOrdenInicioForm('+x.idx+')">'
+      var click=(x.idx===null)
+        ?"seleccionarOrdenInicioFormPedido('"+r.pedido.replace(/'/g,"\\'")+"','"+(r.centro||'').replace(/'/g,"\\'")+"')"
+        :'seleccionarOrdenInicioForm('+x.idx+')';
+      return '<div class="act-list-item" onclick="'+click+'">'
         +'<div style="flex:1">'
         +'<div class="act-info">'+(r.tienda||r.centro||'')+'</div>'
         +'<div class="act-sub">'+subTitle+' &middot; '+fF+'</div>'
@@ -5653,6 +5741,7 @@ function seleccionarRefAgenda(clienteId,centro){
   window._centroSeleccionado=ag.centro;
   var box=document.getElementById('acRef');
   if(box){ box.classList.remove('show'); box.innerHTML=''; }
+  _bloquearCamposAutorrellenados();
 }
 
 function seleccionarRefNoMerc(idx){
@@ -5670,6 +5759,7 @@ function seleccionarRefNoMerc(idx){
   window._centroSeleccionado=r.centro;
   var box=document.getElementById('acRef');
   if(box){ box.classList.remove('show'); box.innerHTML=''; }
+  _bloquearCamposAutorrellenados();
 }
 function buscarPorCentroORef(val){
   var box=$('acCentro');
@@ -5746,10 +5836,28 @@ function buscarPorCentroORef(val){
 function buscarPorOrden(val){
   var box=$('acOrden');
   if(!val||val.length<2){ box.classList.remove('show'); box.innerHTML=''; return; }
-  var h=getH();
-  var clienteId=curCliente?curCliente.id:'mercadona';
   var esTecnico=window._sesion && window._sesion.rol==='tecnico';
   var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
+  // Bloqueo por registro global (funciona offline): solo en coincidencia EXACTA y solo para técnico
+  if(esTecnico){
+    var reg=_registroGlobal(val.trim());
+    if(reg){
+      var esDeOtro = reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()!==miNombre;
+      if(esDeOtro){
+        box.innerHTML='<div class="ac-item" style="color:var(--red);cursor:default;">&#128683; Esa incidencia ya tiene asignaci&oacute;n y no le corresponde trabajar en ella.</div>';
+        box.classList.add('show');
+        return;
+      }
+      if(reg.estado==='terminado'){
+        box.innerHTML='<div class="ac-item" style="color:var(--text2)" onclick="solicitarReabrirPorPedido(\''+val.trim().replace(/'/g,"\\'")+'\')">'+
+          '<span style="margin-right:6px;">&#128274;</span>Orden '+val.trim()+' &mdash; cerrada. <strong>Solicitar reabrir</strong></div>';
+        box.classList.add('show');
+        return;
+      }
+    }
+  }
+  var h=getH();
+  var clienteId=curCliente?curCliente.id:'mercadona';
   var delCliente=h.filter(function(r){
     if((r.clienteId||'mercadona')!==clienteId) return false;
     if(esTecnico && !(r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre)) return false;
@@ -5774,9 +5882,15 @@ function buscarPorOrden(val){
   });
   cerradas.forEach(function(x){
     if(x.r.pedido===val||x.r.pedido.toLowerCase()===val.toLowerCase()){
-      html+='<div class="ac-item" style="color:var(--text2)" onclick="pedirReabrirOrden('+x.idx+')">'+
-        '<span style="margin-right:6px;">&#128274;</span>'+x.r.pedido+' &mdash; '+(x.r.tienda||x.r.centro)+
-        ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada</span></div>';
+      if(esTecnico){
+        html+='<div class="ac-item" style="color:var(--text2)" onclick="solicitarReabrirPorPedido(\''+x.r.pedido.replace(/'/g,"\\'")+'\')">'+
+          '<span style="margin-right:6px;">&#128274;</span>'+x.r.pedido+' &mdash; '+(x.r.tienda||x.r.centro)+
+          ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada &middot; Solicitar reabrir</span></div>';
+      } else {
+        html+='<div class="ac-item" style="color:var(--text2)" onclick="pedirReabrirOrden('+x.idx+')">'+
+          '<span style="margin-right:6px;">&#128274;</span>'+x.r.pedido+' &mdash; '+(x.r.tienda||x.r.centro)+
+          ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada</span></div>';
+      }
     }
   });
   if(!html){ box.classList.remove('show'); box.innerHTML=''; return; }
@@ -6245,7 +6359,12 @@ function respReabrir(si){
     $('pedido').value='';
     return;
   }
-  // Si=true: reabrir
+  // Si=true: reabrir (admin) o solicitar reabrir (técnico)
+  var esTecnico=window._sesion && window._sesion.rol==='tecnico';
+  if(esTecnico){
+    _confirmarSolicitudReabrir();
+    return;
+  }
   $('dlgReabrir').classList.remove('show');
   var h=getH();
   h.forEach(function(r){
@@ -6257,6 +6376,35 @@ function respReabrir(si){
       $('pedido').value=window._reabrirPedido; rellenarDatos(i, true); break;
     }
   }
+}
+
+function _confirmarSolicitudReabrir(){
+  $('dlgReabrir').classList.remove('show');
+  var pedido=window._reabrirPedido;
+  var miNombre=window._sesion.nombre;
+  if(typeof _db === 'undefined' || !_db){
+    alert('Sin conexión — no se puede enviar la solicitud ahora mismo. Inténtalo cuando tengas internet.');
+    return;
+  }
+  _db.collection('incidencias').where('pedido','==',pedido).get().then(function(snap){
+    if(snap.empty){
+      alert('No se encontró esa incidencia en el servidor. Actualiza e inténtalo de nuevo.');
+      return;
+    }
+    var doc=snap.docs[0];
+    doc.ref.update({
+      solicitudReabrir: { tecnico: miNombre, fecha: Date.now() },
+      vistaAdmin: false
+    }).then(function(){
+      alert('Solicitud enviada. Un administrador debe aprobarla antes de continuar con esta orden.');
+      $('pedido').value='';
+      goTo('w-clientes');
+    }).catch(function(){
+      alert('No se pudo enviar la solicitud. Comprueba tu conexión e inténtalo de nuevo.');
+    });
+  }).catch(function(){
+    alert('No se pudo enviar la solicitud. Comprueba tu conexión e inténtalo de nuevo.');
+  });
 }
 
 function selActObras(num){
@@ -6299,6 +6447,20 @@ function seleccionarOrdenInicioForm(idx){
   }
   // Si hay número de orden, ocultar bloque de lectura
   if(r.pedido) ocultarLectura();
+}
+
+function seleccionarOrdenInicioFormPedido(pedido, centro){
+  $('dlgInicioOrden').classList.remove('show');
+  goToRaw('w-form');
+  nuevo();
+  if(pedido) $('pedido').value=pedido;
+  if(centro){ $('centro').value=centro; buscarPorCentroORef(centro); }
+  var esMerc=curCliente&&curCliente.tipo==='mercadona';
+  if(!esMerc){
+    _pedidoNoMerc=pedido;
+    $('pedidoGenDisplay').textContent=pedido;
+  }
+  if(pedido) ocultarLectura();
 }
 
 function setFestivo(v,btn){
@@ -6476,9 +6638,11 @@ function verSecTecnico(nomTecnico){
   var h = getHVisible();
   var cliId = curCliente && curCliente.id;
   var ords = getOrdenes().filter(function(g){ return (g.partes[0] && (g.partes[0].r.clienteId||'mercadona')) === cliId; });
-  // Filtrar incidencias donde este técnico fue principal
+  // Filtrar incidencias donde este técnico es/fue el principal real
   var nomL = nomTecnico.toLowerCase();
   ords = ords.filter(function(g){
+    var reg=_registroGlobal(g.pedido);
+    if(reg) return reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()===nomL;
     return g.partes.some(function(p){ return p.r.tecnicos && p.r.tecnicos[0] && p.r.tecnicos[0].toLowerCase()===nomL; });
   });
   var hdr = $('secHdr');
@@ -6577,6 +6741,7 @@ function _subirParteAFirestore(parte){
     });
     if(parte.pedido) _actualizarIncidenciaPorOrden(parte.pedido, parte.centro, parte.estado||'en-ejecucion', datos);
     _subirAgendaEntry(parte.clienteId, parte.centro, parte.tienda, parte.dir, parte.tel, parte.km, parte.tr);
+    _completarAgendaFaltantes(parte.clienteId, parte.centro, parte.km, parte.tr);
   }catch(e){ _marcarPendienteSync(parte, true); }
 }
 
@@ -6961,10 +7126,35 @@ function pedirBorrarParte(i){ $('confirmDel').style.display='block'; }
 function pedirReabrirOrden(idx){
   $('acOrden').classList.remove('show');
   var h=getH(); var r=h[idx]; if(!r) return;
-  $('dlgReabrirNum').textContent=r.pedido;
-  $('dlgReabrirCentro').textContent=r.centro||r.tienda||'';
-  window._reabrirPedido=r.pedido; window._reabrirCentro=r.centro;
+  _abrirDlgReabrir(r.pedido, r.centro, r.tienda, idx);
+}
+
+function solicitarReabrirPorPedido(pedido){
+  $('acOrden').classList.remove('show');
+  var reg=_registroGlobal(pedido);
+  var h=getH();
+  var local=null;
+  for(var i=h.length-1;i>=0;i--){ if(h[i].pedido===pedido){ local=h[i]; break; } }
+  var centro=(reg&&reg.centro)||(local&&local.centro)||'';
+  var tienda=(local&&local.tienda)||'';
+  var idx=local?h.indexOf(local):null;
+  _abrirDlgReabrir(pedido, centro, tienda, idx);
+}
+
+function _abrirDlgReabrir(pedido, centro, tienda, idx){
+  $('dlgReabrirNum').textContent=pedido;
+  $('dlgReabrirCentro').textContent=centro||tienda||'';
+  window._reabrirPedido=pedido; window._reabrirCentro=centro;
   window._reabrirIdx=idx;
+  var esTecnico=window._sesion && window._sesion.rol==='tecnico';
+  var btnSi=$('dlgReabrirBtnSi'); var preg=$('dlgReabrirPregunta');
+  if(esTecnico){
+    if(btnSi) btnSi.innerHTML='&#128274; Solicitar reabrir';
+    if(preg) preg.textContent='Esta orden está cerrada. Puedes solicitar a un administrador que la reabra.';
+  } else {
+    if(btnSi) btnSi.innerHTML='&#128275; Sí, reabrir';
+    if(preg) preg.textContent='¿Quieres reabrirla y añadir un nuevo parte?';
+  }
   $('dlgReabrir').classList.add('show');
 }
 
@@ -6979,6 +7169,19 @@ function rellenar(idx,porOrden){
   else { _cAC=null; _oAC=null; }
 }
 
+function _bloquearCamposAutorrellenados(){
+  if(!(window._sesion && window._sesion.rol==='tecnico')) return;
+  ['centro','tienda','dir','tel','km','tr'].forEach(function(id){
+    var el=$(id);
+    if(el && el.value){ el.readOnly=true; el.style.background='var(--surface2)'; el.style.color='var(--text2)'; }
+  });
+}
+function _desbloquearCamposAutorrellenados(){
+  ['centro','tienda','dir','tel','km','tr'].forEach(function(id){
+    var el=$(id);
+    if(el){ el.readOnly=false; el.style.background=''; el.style.color=''; }
+  });
+}
 function rellenarDatos(idx, soloOrdenActiva){
   var h=getH(); var r=h[idx]; if(!r) return;
   $('centro').value=r.centro||'';
@@ -6997,6 +7200,7 @@ function rellenarDatos(idx, soloOrdenActiva){
     });
   }
   $('acOrden').classList.remove('show'); $('acCentro').classList.remove('show');
+  _bloquearCamposAutorrellenados();
 }
 function rellenarDesdeAgenda(clienteId,centro){
   var ag=agendaBuscar(clienteId,centro); if(!ag) return;
@@ -7010,6 +7214,7 @@ function rellenarDesdeAgenda(clienteId,centro){
     $('kmS').value=''; $('trS').value='';
   }
   $('acOrden').classList.remove('show'); $('acCentro').classList.remove('show');
+  _bloquearCamposAutorrellenados();
 }
 
 function selCentro(i){var c=_centrosCache[i];if(!c)return;verIncidenciasCentro(c.centro);}
@@ -7579,6 +7784,7 @@ function _entrarConRol(nombre, rol, multiRol) {
     localStorage.setItem('irv_roles', JSON.stringify(_rolInfo));
   } catch(e) {}
   _aplicarSesion(nombre, rol, !!multiRol);
+  goTo('w-clientes');
 }
 
 function _aplicarSesion(nombre, rol, multiRol) {
@@ -7618,6 +7824,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
   _sincronizarTecnicosDesdeFirestore();
   _sincronizarCatalogoDesdeFirestore();
   _sincronizarAgendaDesdeFirestore();
+  _sincronizarRegistroGlobal();
   _reintentarPartesPendientes();
 
   if (rol === 'admin' || rol === 'creador') {
@@ -7651,6 +7858,7 @@ function _iniciarActualizacionPeriodica(){
     _sincronizarTecnicosDesdeFirestore();
     _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
     _sincronizarAgendaDesdeFirestore();
+    _sincronizarRegistroGlobal();
     renderAsgTecnico();
     renderAsgAdmin();
     catActualizarBadge();
@@ -7671,6 +7879,36 @@ function _comprobarVersionNueva(){
       ]).then(function(){ location.reload(true); }).catch(function(){ location.reload(true); });
     }
   }).catch(function(){}); // sin conexión — no pasa nada, se comprobará en el siguiente ciclo
+}
+
+// Registro global de incidencias por pedido — funciona offline una vez sincronizado.
+// A diferencia de pm_incidencias_estados (que para técnico solo trae las suyas),
+// este trae TODAS las incidencias (ligero: solo pedido/centro/tecnicoPrincipal/estado/clienteId),
+// para poder bloquear localmente pedidos que ya son de otro técnico, sin depender de internet en el momento.
+function _sincronizarRegistroGlobal(){
+  if (typeof _db === 'undefined' || !_db) return;
+  _db.collection('incidencias').get().then(function(snap){
+    var reg = {};
+    snap.forEach(function(doc){
+      var d = doc.data();
+      if(!d.pedido) return;
+      reg[d.pedido] = {
+        tecnicoPrincipal: d.tecnicoPrincipal||'',
+        estado: d.estado||'pendiente',
+        centro: d.centro||'',
+        clienteId: d.clienteId||'mercadona',
+        id: doc.id
+      };
+    });
+    localStorage.setItem('pm_registro_global', JSON.stringify(reg));
+  }).catch(function(){});
+}
+function _registroGlobal(pedido){
+  if(!pedido) return null;
+  try {
+    var reg = JSON.parse(localStorage.getItem('pm_registro_global')||'{}');
+    return reg[pedido] || null;
+  } catch(e){ return null; }
 }
 
 function _sincronizarEstadosIncidencias(soloTecnico) {
