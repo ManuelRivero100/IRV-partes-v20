@@ -1076,7 +1076,7 @@ function goTo(id){
   goToRaw(id);
   if(id==='w-form'&&!_keepForm){ mostrarDlgInicioOrden(); } if(id==='w-form') setTimeout(function(){ if($('pedido')&&$('pedido').value.length>2) ocultarLectura(); },100);
   _keepForm=false;
-  if(id==='w-hist') refreshCounts();
+  if(id==='w-hist'){ refreshCounts(); renderHistTecBtns(); }
   if(id==='w-mat') msAbrirCatalogo();
   if(id==='w-stats') statsInit();
   if(id==='w-catalogo'){$('catTabMat').style.display='block';$('catTabConc').style.display='none';$('catFamiliaView').style.display='none';renderCatGrupos();catActualizarBadge();}
@@ -1089,7 +1089,7 @@ function goTo(id){
     });
     var rtv=$('resumenTotalView'); if(rtv) rtv.style.display='none';
     var rcv=$('resumenCentroView'); if(rcv) rcv.style.display='none';
-    var ho=$('histOpts'); if(ho) ho.style.display='block'; renderHistTecBtns();
+    var ho=$('histOpts'); if(ho) ho.style.display='block';
     window._ordenActual=null;
     window._incidenciasCache=[];
     _centrosCache=[];
