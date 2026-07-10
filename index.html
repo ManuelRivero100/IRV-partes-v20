@@ -1349,7 +1349,11 @@ function getHVisible(){
   var h=getH();
   if(window._sesion && window._sesion.rol==='tecnico'){
     var miNombre=window._sesion.nombre.toLowerCase();
-    h=h.filter(function(r){ return r.tecnicos && r.tecnicos.some(function(t){ return t.toLowerCase()===miNombre; }); });
+    h=h.filter(function(r){
+      var reg=_registroGlobal(r.pedido);
+      if(reg) return reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()===miNombre;
+      return r.tecnicos && r.tecnicos.some(function(t){ return t.toLowerCase()===miNombre; });
+    });
   }
   return h;
 }
