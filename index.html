@@ -1349,11 +1349,7 @@ function getHVisible(){
   var h=getH();
   if(window._sesion && window._sesion.rol==='tecnico'){
     var miNombre=window._sesion.nombre.toLowerCase();
-    h=h.filter(function(r){
-      var reg=_registroGlobal(r.pedido);
-      if(reg) return reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()===miNombre;
-      return r.tecnicos && r.tecnicos.some(function(t){ return t.toLowerCase()===miNombre; });
-    });
+    h=h.filter(function(r){ return r.tecnicos && r.tecnicos.some(function(t){ return t.toLowerCase()===miNombre; }); });
   }
   return h;
 }
@@ -6640,50 +6636,59 @@ function renderHistTecBtns(){
   var el = $('histTecBtns'); if(!el) return;
   var rol = window._sesion && window._sesion.rol;
   var h = getHVisible();
+  var cliId = curCliente && curCliente.id;
+  var badgeStyle='position:absolute;top:-6px;right:-8px;background:var(--green);color:#06210f;font-size:.6rem;font-weight:800;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;border:2px solid var(--surface);';
 
   if(rol === 'tecnico'){
-    // Técnico: botón "Mis incidencias" — donde es principal de verdad (registro global), filtrado por cliente actual
+    // Técnico: botón "Mis incidencias" — total (activas+finalizadas) donde es principal de verdad (registro global), filtrado por cliente actual
     var miNombre = window._sesion.nombre.toLowerCase();
-    var cliId = curCliente && curCliente.id;
-    var count = {};
+    var total = {}, activas = {};
     h.forEach(function(r){
       if((r.clienteId||'mercadona') !== cliId) return;
       var reg=_registroGlobal(r.pedido);
       var tecReal = reg ? reg.tecnicoPrincipal : (r.tecnicos && r.tecnicos[0]);
-      if(tecReal && tecReal.toLowerCase() === miNombre){
-        var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
-        count[k] = true;
-      }
+      if(!(tecReal && tecReal.toLowerCase() === miNombre)) return;
+      var estadoReal = reg ? reg.estado : (r.estado||'terminado');
+      var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
+      total[k] = true;
+      if(estadoReal==='en-ejecucion') activas[k] = true;
     });
-    var total = Object.keys(count).length;
-    el.innerHTML = total > 0
-      ? '<div class="hist-opts"><div class="hist-opt" style="background:var(--surface2);border:1px solid var(--border);" onclick="verSecTecnico(\''+window._sesion.nombre+'\')"><div class="opt-ico">&#128203;</div><div class="opt-title">Mis incidencias</div><div class="opt-count">'+total+'</div></div></div>'
+    var totalN = Object.keys(total).length;
+    var activasN = Object.keys(activas).length;
+    var badge = activasN>0 ? '<span style="'+badgeStyle+'">'+activasN+'</span>' : '';
+    el.innerHTML = totalN > 0
+      ? '<div class="hist-opts"><div class="hist-opt" style="background:var(--surface2);border:1px solid var(--border);" onclick="verSecTecnico(\''+window._sesion.nombre+'\')"><div class="opt-ico" style="position:relative;display:inline-block;">&#128203;'+badge+'</div><div class="opt-title">Mis incidencias</div><div class="opt-count">'+totalN+'</div></div></div>'
       : '';
     return;
   }
 
   if(rol === 'admin' || rol === 'creador'){
     // Admin/Creador: un botón por cada técnico con incidencias como principal de verdad (registro global), filtrado por cliente actual
-    var cliId = curCliente && curCliente.id;
-    var tecs = {};
+    var tecsTotal = {}, tecsActivas = {};
     h.forEach(function(r){
       if((r.clienteId||'mercadona') !== cliId) return;
       var reg=_registroGlobal(r.pedido);
       var t = reg ? reg.tecnicoPrincipal : (r.tecnicos && r.tecnicos[0]);
-      if(t){
-        var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
-        if(!tecs[t]) tecs[t] = {};
-        tecs[t][k] = true;
+      if(!t) return;
+      var estadoReal = reg ? reg.estado : (r.estado||'terminado');
+      var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
+      if(!tecsTotal[t]) tecsTotal[t] = {};
+      tecsTotal[t][k] = true;
+      if(estadoReal==='en-ejecucion'){
+        if(!tecsActivas[t]) tecsActivas[t] = {};
+        tecsActivas[t][k] = true;
       }
     });
-    var names = Object.keys(tecs).sort();
+    var names = Object.keys(tecsTotal).sort();
     if(!names.length){ el.innerHTML=''; return; }
     el.innerHTML = '<div style="font-size:.72rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Por técnico</div>'
       + '<div class="hist-opts" style="flex-wrap:wrap;">'
       + names.map(function(t){
-          var cnt = Object.keys(tecs[t]).length;
+          var cnt = Object.keys(tecsTotal[t]).length;
+          var activasCnt = tecsActivas[t] ? Object.keys(tecsActivas[t]).length : 0;
+          var badge = activasCnt>0 ? '<span style="'+badgeStyle+'">'+activasCnt+'</span>' : '';
           var tEnc = t.replace(/'/g,"\'");
-          return '<div class="hist-opt" style="background:var(--surface2);border:1px solid var(--border);" onclick="verSecTecnico(\''+tEnc+'\')"><div class="opt-ico">&#128100;</div><div class="opt-title" style="font-size:.8rem;">'+t+'</div><div class="opt-count">'+cnt+'</div></div>';
+          return '<div class="hist-opt" style="background:var(--surface2);border:1px solid var(--border);" onclick="verSecTecnico(\''+tEnc+'\')"><div class="opt-ico" style="position:relative;display:inline-block;">&#128100;'+badge+'</div><div class="opt-title" style="font-size:.8rem;">'+t+'</div><div class="opt-count">'+cnt+'</div></div>';
         }).join('')
       + '</div>';
   }
