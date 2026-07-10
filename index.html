@@ -3321,7 +3321,14 @@ function generarCore(){
   var roles=nr?wRoles.slice(0,w):Array(w).fill('Oficial');
   var nOf=roles.filter(function(r){ return r==='Oficial'; }).length;
   var nPe=roles.filter(function(r){ return r==='Peón'; }).length;
-  var hist=getH(); var same=hist.filter(function(x){ return x.fecha===fecha; });
+  var hist=getH();
+  var _tecPrincipalActual=(wNames[0]||'').trim();
+  var _tecsCat=getTecnicos();
+  var _matchTecPrincipal=_tecsCat.find(function(t){ return t.nombre.toLowerCase()===_tecPrincipalActual.toLowerCase(); });
+  if(_matchTecPrincipal) _tecPrincipalActual=_matchTecPrincipal.nombre;
+  var same=hist.filter(function(x){
+    return x.fecha===fecha && x.tecnicos && x.tecnicos[0] && x.tecnicos[0].toLowerCase()===_tecPrincipalActual.toLowerCase();
+  });
 
   // Pedido: Mercadona usa campo manual, no-Mercadona genera IRV, Obras Mercadona usa actObras
   var pedidoVal;
@@ -4556,33 +4563,19 @@ function ejecutarAsgTec() {
     if (esMerc) { $('pedido').value = d.pedido; }
     else { _pedidoNoMerc = d.pedido; $('pedidoGenDisplay').textContent = d.pedido; }
   }
-  $('centro').value = d.centro || '';
-  $('tienda').value = d.tienda || '';
-  $('dir').value = d.dir || '';
-  $('tel').value = d.tel || '';
-  if(d.km){ $('km').value=d.km; $('kmE').value=d.km; }
-  if(d.tr){ $('tr').value=d.tr; $('trE').value=d.tr; }
   // Si la asignación no traía km/tr/dir/tel/tienda, completar desde la agenda compartida
-  if(!$('km').value || !$('dir').value || !$('tel').value || !$('tienda').value){
+  var datos = { centro:d.centro, tienda:d.tienda, dir:d.dir, tel:d.tel, km:d.km, tr:d.tr, job:d.job, descripcion:d.descripcion };
+  if(!datos.km || !datos.dir || !datos.tel || !datos.tienda){
     var ag = agendaBuscar(d.clienteId, d.centro);
     if(ag){
-      if(!$('km').value && ag.km){ $('km').value=ag.km; $('kmE').value=ag.km; }
-      if(!$('tr').value && ag.tr){ $('tr').value=ag.tr; $('trE').value=ag.tr; }
-      if(!$('dir').value && ag.dir) $('dir').value=ag.dir;
-      if(!$('tel').value && ag.tel) $('tel').value=ag.tel;
-      if(!$('tienda').value && ag.tienda) $('tienda').value=ag.tienda;
+      if(!datos.km && ag.km) datos.km=ag.km;
+      if(!datos.tr && ag.tr) datos.tr=ag.tr;
+      if(!datos.dir && ag.dir) datos.dir=ag.dir;
+      if(!datos.tel && ag.tel) datos.tel=ag.tel;
+      if(!datos.tienda && ag.tienda) datos.tienda=ag.tienda;
     }
   }
-  if (d.job) {
-    document.querySelectorAll('#jobTgl button').forEach(function(b){
-      if (b.textContent.trim() === d.job) setJob(d.job, b);
-    });
-  }
-  if (d.descripcion) {
-    var fd = $('fieldDescIncidencia');
-    var dd = $('descIncidencia');
-    if(fd && dd){ fd.style.display='block'; dd.value = d.descripcion; }
-  }
+  _rellenarFormulario(datos);
   if (d.pedido) ocultarLectura();
 }
 
@@ -5782,23 +5775,15 @@ function buscarRefNoMerc(val){
 
 function seleccionarRefAgenda(clienteId,centro){
   var ag=agendaBuscar(clienteId,centro); if(!ag) return;
-  $('tienda').value=ag.tienda||'';
-  $('dir').value=ag.dir||'';
-  $('tel').value=ag.tel||'';
-  if(ag.km){ $('km').value=ag.km; $('tr').value=ag.tr||''; $('kmE').value=ag.km; $('trE').value=ag.tr||''; }
+  _rellenarFormulario({ tienda:ag.tienda, dir:ag.dir, tel:ag.tel, km:ag.km, tr:ag.tr });
   window._centroSeleccionado=ag.centro;
   var box=document.getElementById('acRef');
   if(box){ box.classList.remove('show'); box.innerHTML=''; }
-  _bloquearCamposAutorrellenados();
 }
 
 function seleccionarRefNoMerc(idx){
   var r=getH()[idx]; if(!r) return;
-  $('tienda').value=r.tienda||'';
-  $('dir').value=r.dir||'';
-  $('tel').value=r.tel||'';
-  // Rellenar km y desplazamiento del parte anterior
-  if(r.km){ $('km').value=r.km; $('tr').value=r.tr||''; $('kmE').value=r.km; $('trE').value=r.tr||''; }
+  _rellenarFormulario({ tienda:r.tienda, dir:r.dir, tel:r.tel, km:r.km, tr:r.tr });
   // Si la orden sigue en ejecución, rellenar el número de pedido
   if((r.estado||'terminado')==='en-ejecucion' && r.pedido){
     if(_pedidoNoMerc!==r.pedido){ _pedidoNoMerc=r.pedido; $('pedidoGenDisplay').textContent=r.pedido; }
@@ -5807,7 +5792,6 @@ function seleccionarRefNoMerc(idx){
   window._centroSeleccionado=r.centro;
   var box=document.getElementById('acRef');
   if(box){ box.classList.remove('show'); box.innerHTML=''; }
-  _bloquearCamposAutorrellenados();
 }
 function buscarPorCentroORef(val){
   var box=$('acCentro');
@@ -5885,6 +5869,7 @@ function buscarPorOrden(val){
   var box=$('acOrden');
   if(!val||val.length<2){ box.classList.remove('show'); box.innerHTML=''; return; }
   var esTecnico=window._sesion && window._sesion.rol==='tecnico';
+  var esTecnicoPuro=esTecnico && !window._sesion.multiRol;
   var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
   // Bloqueo por registro global (funciona offline): solo en coincidencia EXACTA y solo para técnico
   if(esTecnico){
@@ -5898,7 +5883,7 @@ function buscarPorOrden(val){
       }
       if(reg.estado==='terminado'){
         box.innerHTML='<div class="ac-item" style="color:var(--text2)" onclick="solicitarReabrirPorPedido(\''+val.trim().replace(/'/g,"\\'")+'\')">'+
-          '<span style="margin-right:6px;">&#128274;</span>Orden '+val.trim()+' &mdash; cerrada. <strong>Solicitar reabrir</strong></div>';
+          '<span style="margin-right:6px;">&#128274;</span>Orden '+val.trim()+' &mdash; cerrada. <strong>'+(esTecnicoPuro?'Solicitar reabrir':'Reabrir')+'</strong></div>';
         box.classList.add('show');
         return;
       }
@@ -5930,7 +5915,7 @@ function buscarPorOrden(val){
   });
   cerradas.forEach(function(x){
     if(x.r.pedido===val||x.r.pedido.toLowerCase()===val.toLowerCase()){
-      if(esTecnico){
+      if(esTecnicoPuro){
         html+='<div class="ac-item" style="color:var(--text2)" onclick="solicitarReabrirPorPedido(\''+x.r.pedido.replace(/'/g,"\\'")+'\')">'+
           '<span style="margin-right:6px;">&#128274;</span>'+x.r.pedido+' &mdash; '+(x.r.tienda||x.r.centro)+
           ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada &middot; Solicitar reabrir</span></div>';
@@ -6407,9 +6392,9 @@ function respReabrir(si){
     $('pedido').value='';
     return;
   }
-  // Si=true: reabrir (admin) o solicitar reabrir (técnico)
-  var esTecnico=window._sesion && window._sesion.rol==='tecnico';
-  if(esTecnico){
+  // Si=true: reabrir directo (admin, o técnico que también tiene rol admin) o solicitar reabrir (técnico puro)
+  var esTecnicoPuro=window._sesion && window._sesion.rol==='tecnico' && !window._sesion.multiRol;
+  if(esTecnicoPuro){
     _confirmarSolicitudReabrir();
     return;
   }
@@ -6467,11 +6452,14 @@ function selActObras(num){
   for(var i=h.length-1;i>=0;i--){
     var r=h[i];
     if(r.actObras===num){
-      if(!$('centro').value) $('centro').value=r.centro||'';
-      if(!$('tienda').value) $('tienda').value=r.tienda||'';
-      if(!$('dir').value) $('dir').value=r.dir||'';
-      if(!$('tel').value) $('tel').value=r.tel||'';
-      if(!$('km').value&&r.km){ $('km').value=r.km; $('tr').value=r.tr||''; }
+      _rellenarFormulario({
+        centro: $('centro').value?undefined:r.centro,
+        tienda: $('tienda').value?undefined:r.tienda,
+        dir: $('dir').value?undefined:r.dir,
+        tel: $('tel').value?undefined:r.tel,
+        km: $('km').value?undefined:r.km,
+        tr: $('km').value?undefined:r.tr
+      });
       break;
     }
   }
@@ -7223,9 +7211,9 @@ function _abrirDlgReabrir(pedido, centro, tienda, idx){
   $('dlgReabrirCentro').textContent=centro||tienda||'';
   window._reabrirPedido=pedido; window._reabrirCentro=centro;
   window._reabrirIdx=idx;
-  var esTecnico=window._sesion && window._sesion.rol==='tecnico';
+  var esTecnicoPuro=window._sesion && window._sesion.rol==='tecnico' && !window._sesion.multiRol;
   var btnSi=$('dlgReabrirBtnSi'); var preg=$('dlgReabrirPregunta');
-  if(esTecnico){
+  if(esTecnicoPuro){
     if(btnSi) btnSi.innerHTML='&#128274; Solicitar reabrir';
     if(preg) preg.textContent='Esta orden está cerrada. Puedes solicitar a un administrador que la reabra.';
   } else {
@@ -7259,39 +7247,44 @@ function _desbloquearCamposAutorrellenados(){
     if(el){ el.readOnly=false; el.style.background=''; el.style.color=''; }
   });
 }
-function rellenarDatos(idx, soloOrdenActiva){
-  var h=getH(); var r=h[idx]; if(!r) return;
-  $('centro').value=r.centro||'';
-  $('tienda').value=r.tienda||'';
-  $('dir').value=r.dir||'';
-  $('tel').value=r.tel||'';
-  if(r.km){
-    $('km').value=r.km; $('tr').value=r.tr||'';
-    $('kmE').value=r.km; $('trE').value=r.tr||'';
-    $('kmS').value=''; $('trS').value='';
+// ===== Módulo central de autorrelleno del formulario =====
+// Todas las 'puertas de entrada' al formulario (historial, agenda, notificación de
+// asignación, "¿Cómo seguimos?", etc.) deben pasar por aquí para rellenar los campos.
+// Así el bloqueo de campos para técnico (y cualquier regla futura) vive en un solo
+// sitio, en vez de repetirse — y arriesgarse a olvidarlo — en cada punto de entrada.
+function _rellenarFormulario(datos){
+  datos = datos || {};
+  if(datos.centro!==undefined) $('centro').value=datos.centro||'';
+  if(datos.tienda!==undefined) $('tienda').value=datos.tienda||'';
+  if(datos.dir!==undefined) $('dir').value=datos.dir||'';
+  if(datos.tel!==undefined) $('tel').value=datos.tel||'';
+  if(datos.km){
+    $('km').value=datos.km; $('kmE').value=datos.km; $('kmS').value='';
+    if(datos.tr){ $('tr').value=datos.tr; $('trE').value=datos.tr; $('trS').value=''; }
   }
-  // Solo autorellena tipo de trabajo si es una incidencia en ejecución seleccionada
-  if(soloOrdenActiva&&r.job){
+  if(datos.job){
     document.querySelectorAll('#jobTgl button').forEach(function(b){
-      if(b.textContent===r.job) setJob(r.job,b);
+      if(b.textContent.trim()===datos.job) setJob(datos.job,b);
     });
   }
-  $('acOrden').classList.remove('show'); $('acCentro').classList.remove('show');
+  if(datos.descripcion){
+    var fd=$('fieldDescIncidencia'); var dd=$('descIncidencia');
+    if(fd&&dd){ fd.style.display='block'; dd.value=datos.descripcion; }
+  }
+  var acO=$('acOrden'); if(acO) acO.classList.remove('show');
+  var acC=$('acCentro'); if(acC) acC.classList.remove('show');
   _bloquearCamposAutorrellenados();
+}
+function rellenarDatos(idx, soloOrdenActiva){
+  var h=getH(); var r=h[idx]; if(!r) return;
+  _rellenarFormulario({
+    centro:r.centro, tienda:r.tienda, dir:r.dir, tel:r.tel, km:r.km, tr:r.tr,
+    job: soloOrdenActiva?r.job:null
+  });
 }
 function rellenarDesdeAgenda(clienteId,centro){
   var ag=agendaBuscar(clienteId,centro); if(!ag) return;
-  $('centro').value=ag.centro||'';
-  $('tienda').value=ag.tienda||'';
-  $('dir').value=ag.dir||'';
-  $('tel').value=ag.tel||'';
-  if(ag.km){
-    $('km').value=ag.km; $('tr').value=ag.tr||'';
-    $('kmE').value=ag.km; $('trE').value=ag.tr||'';
-    $('kmS').value=''; $('trS').value='';
-  }
-  $('acOrden').classList.remove('show'); $('acCentro').classList.remove('show');
-  _bloquearCamposAutorrellenados();
+  _rellenarFormulario({ centro:ag.centro, tienda:ag.tienda, dir:ag.dir, tel:ag.tel, km:ag.km, tr:ag.tr });
 }
 
 function selCentro(i){var c=_centrosCache[i];if(!c)return;verIncidenciasCentro(c.centro);}
