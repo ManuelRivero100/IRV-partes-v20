@@ -5434,7 +5434,16 @@ function getOrdenes(filtro){
     // Usar estado de incidencia de Firestore si está disponible, si no usar el último parte
     var _estadoInc = _getEstadoIncidencia(g.pedido, g.centro);
     g.estado = _estadoInc || g.partes[g.partes.length-1].r.estado || 'terminado';
-    if(!filtro||g.estado===filtro) res.push(g);
+    if(filtro && g.estado!==filtro) return;
+    // En ejecución: técnico solo ve las suyas como principal actual (igual que ¿Cómo seguimos? y Mis incidencias).
+    // Finalizadas quedan igual que antes (cualquier orden en la que haya trabajado).
+    if(g.estado==='en-ejecucion' && window._sesion && window._sesion.rol==='tecnico'){
+      var miNombre=window._sesion.nombre.toLowerCase();
+      var reg=_registroGlobal(g.pedido);
+      var tecReal = reg ? reg.tecnicoPrincipal : (g.partes[g.partes.length-1].r.tecnicos && g.partes[g.partes.length-1].r.tecnicos[0]);
+      if(!(tecReal && tecReal.toLowerCase()===miNombre)) return;
+    }
+    res.push(g);
   });
   return res.sort(function(a,b){ return b.fechaMax.localeCompare(a.fechaMax); });
 }
