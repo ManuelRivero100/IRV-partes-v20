@@ -5160,9 +5160,13 @@ function renderClientes(){
     // Usar estado de incidencia de Firestore si está disponible
     var _estInc = _getEstadoIncidencia(r.pedido, r.centro);
     ordenes[k].estado = _estInc || r.estado || 'terminado';
-    // Marcar si el técnico es principal en algún parte de esta incidencia
-    if(_esTec && r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===_miNombreL){
-      ordenes[k].esPrincipal=true;
+    // Marcar si el técnico es principal actual (registro global) en esta incidencia
+    if(_esTec){
+      var reg=_registroGlobal(r.pedido);
+      var tecReal = reg ? reg.tecnicoPrincipal : (r.tecnicos && r.tecnicos[0]);
+      if(tecReal && tecReal.toLowerCase()===_miNombreL){
+        ordenes[k].esPrincipal=true;
+      }
     }
   });
   Object.values(ordenes).forEach(function(o){
