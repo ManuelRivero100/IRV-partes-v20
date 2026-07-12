@@ -4893,18 +4893,21 @@ function _puedeAnadirFlotante(){
   var rol=window._sesion && window._sesion.rol;
   return rol==='admin'||rol==='creador';
 }
+function _normTexto(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+}
 function msAcGlobal(val){
   val=val.trim();
   var box=$('msAcGlobalBox');if(!box)return;
   if(!val||val.length<1){box.style.display='none';box.innerHTML='';return;}
   var g=catGetGrupoParaJob(curJob);
   var todos=g?catAllMatsGrupo(g.id):[];
-  var res=todos.filter(function(n){return n.toLowerCase().includes(val.toLowerCase());}).slice(0,8);
+  var res=todos.filter(function(n){return _normTexto(n).includes(_normTexto(val));}).slice(0,8);
   var html='';
   res.forEach(function(nom){
     html+='<div class="ms-ac-item" data-nom="'+nom.replace(/"/g,'&quot;')+'" onmousedown="msAcGlobalSel(this.dataset.nom)" style="padding:9px 12px;font-size:.86rem;cursor:pointer;border-bottom:1px solid var(--border2);">🔧 '+nom+'</div>';
   });
-  var exacto=todos.find(function(n){return n.toLowerCase()===val.toLowerCase();});
+  var exacto=todos.find(function(n){return _normTexto(n)===_normTexto(val);});
   if(!exacto && _puedeAnadirFlotante()){
     html+='<div class="ms-ac-item" onmousedown="msAcGlobalNuevo()" style="padding:9px 12px;font-size:.86rem;cursor:pointer;color:var(--text3);font-style:italic;">➕ Añadir como flotante: "'+val+'"</div>';
   }
@@ -6980,14 +6983,14 @@ function editMatAc(val){
   if(!val||val.length<1){box.style.display='none';box.innerHTML='';return;}
   var g=catGetGrupoParaJob(curJob||'Climatizacion');
   var todos=g?catAllMatsGrupo(g.id):[];
-  var res=todos.filter(function(n){return n.toLowerCase().includes(val.toLowerCase());}).slice(0,8);
+  var res=todos.filter(function(n){return _normTexto(n).includes(_normTexto(val));}).slice(0,8);
   var h2='';
   res.forEach(function(nom){
     var nomEsc=nom.replace(/"/g,'&quot;');
     h2+='<div style="padding:9px 12px;font-size:.86rem;cursor:pointer;border-bottom:1px solid var(--border2);" '+
       'onmousedown="editMatSelAc(\''+nomEsc+'\')">&#128295; '+nom+'</div>';
   });
-  var exacto=todos.find(function(n){return n.toLowerCase()===val.toLowerCase();});
+  var exacto=todos.find(function(n){return _normTexto(n)===_normTexto(val);});
   if(!exacto){
     h2+='<div style="padding:9px 12px;font-size:.86rem;cursor:pointer;color:var(--text3);font-style:italic;" '+
       'onmousedown="editMatSelAc(document.getElementById(\'editMatNom\').value,true)">+ A&#241;adir como flotante</div>';
@@ -7943,6 +7946,7 @@ function _iniciarActualizacionPeriodica(){
   setInterval(function(){
     if(document.visibilityState !== 'visible') return;
     if(!window._sesion) return;
+    _comprobarReinicioDiario();
     _sincronizarClientesDesdeFirestore();
     _sincronizarTecnicosDesdeFirestore();
     _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
@@ -8289,17 +8293,47 @@ function cerrarSesion() {
 
 // Sesión no restaurada al arrancar — siempre muestra login
 
-// Cierre automático tras 10 minutos de inactividad
-var _inactTimer=null;
-function _resetInactTimer(){
+// Cierre automático una vez al día — asegura que la primera vez que se abre
+// la app en un día nuevo, cargue el código más reciente (los cambios se suben de noche).
+function _comprobarReinicioDiario(){
   if(!window._sesion) return;
-  if(_inactTimer) clearTimeout(_inactTimer);
-  _inactTimer=setTimeout(cerrarSesion, 600000);
+  var hoy=new Date().toISOString().slice(0,10);
+  var ultimo=localStorage.getItem('pm_ultimo_dia_activo');
+  if(ultimo && ultimo!==hoy){ cerrarSesion(); return; }
+  localStorage.setItem('pm_ultimo_dia_activo', hoy);
 }
-['click','keydown','touchstart','scroll'].forEach(function(ev){
-  document.addEventListener(ev, _resetInactTimer, {passive:true});
+_comprobarReinicioDiario();
+
+// Wake Lock: evita que la pantalla se apague mientras hay actividad en la app.
+// Se libera tras 8 minutos sin interacción (entonces la pantalla se apaga normal,
+// según la configuración del dispositivo). Cada interacción reinicia el contador.
+// No afecta a la sesión ni a los datos — al reactivar el dispositivo, todo sigue igual.
+var _wakeLock=null;
+var _wakeLockTimer=null;
+function _pedirWakeLock(){
+  if(!window._sesion || !('wakeLock' in navigator) || _wakeLock) return;
+  navigator.wakeLock.request('screen').then(function(wl){
+    _wakeLock=wl;
+    wl.addEventListener('release', function(){ _wakeLock=null; });
+  }).catch(function(){});
+}
+function _liberarWakeLock(){
+  if(_wakeLock){ _wakeLock.release().catch(function(){}); _wakeLock=null; }
+}
+function _resetWakeLockTimer(){
+  if(!window._sesion) return;
+  _pedirWakeLock();
+  if(_wakeLockTimer) clearTimeout(_wakeLockTimer);
+  _wakeLockTimer=setTimeout(_liberarWakeLock, 480000); // 8 minutos
+}
+document.addEventListener('visibilitychange', function(){
+  // El navegador libera el Wake Lock solo al ocultar la pestaña — hay que repedirlo al volver
+  if(document.visibilityState==='visible') _resetWakeLockTimer();
 });
-_resetInactTimer();
+['click','keydown','touchstart','scroll'].forEach(function(ev){
+  document.addEventListener(ev, _resetWakeLockTimer, {passive:true});
+});
+_resetWakeLockTimer();
 
 // ---- MÓDULO USUARIOS ----
 var _nuRol = 'tecnico';
