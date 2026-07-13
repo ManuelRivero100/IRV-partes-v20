@@ -3551,7 +3551,7 @@ function generarCore(){
       if(conPrecios){
         // buscar precio del material en el catálogo
         var cat=getCat(); var grupoId=null;
-        var g=catGetGrupoParaJob(curJob); if(g) grupoId=g.id;
+        var g=catGetGrupoParaJob(_MS.catJob||curJob); if(g) grupoId=g.id;
         var matPrecio=0;
         if(grupoId){
           var allSecs=(cat.grupos.find(function(x){return x.id===grupoId;})||{}).secciones||[];
@@ -4873,7 +4873,7 @@ function msToggleCatSub(secId,ssi){
 }
 function msToggleCatItem(secId,ssi,mi){
   msSaveQtys();
-  var g=catGetGrupoParaJob(curJob);if(!g)return;
+  var g=catGetGrupoParaJob(_MS.catJob||curJob);if(!g)return;
   var sec=(g.secciones||[]).find(function(s){return s.id===secId;});if(!sec)return;
   var mats=ssi===-1?(sec.mats||[]):((sec.subsecs||[])[ssi]?(sec.subsecs[ssi].mats||[]):[]);
   var m=mats[mi];if(!m)return;
@@ -4951,7 +4951,7 @@ function msAcGlobal(val){
   val=val.trim();
   var box=$('msAcGlobalBox');if(!box)return;
   if(!val||val.length<1){box.style.display='none';box.innerHTML='';return;}
-  var g=catGetGrupoParaJob(curJob);
+  var g=catGetGrupoParaJob(_MS.catJob||curJob);
   var todos=g?catAllMatsGrupo(g.id):[];
   var res=todos.filter(function(n){return _normTexto(n).includes(_normTexto(val));}).slice(0,8);
   var html='';
@@ -4976,7 +4976,7 @@ function msAcGlobalNuevo(){
   if(!_puedeAnadirFlotante()) return;
   var inp=$('msAddGlobal');
   var val=inp?inp.value.trim():'';if(!val)return;
-  var g=catGetGrupoParaJob(curJob);
+  var g=catGetGrupoParaJob(_MS.catJob||curJob);
   var todos=g?catAllMatsGrupo(g.id):[];
   if(todos.find(function(n){return n.toLowerCase()===val.toLowerCase();})){
     msAcGlobalSel(val);return;
@@ -4996,7 +4996,7 @@ function msAcGlobalNuevo(){
 function msAcGlobalConfirm(){
   var inp=$('msAddGlobal');
   var val=inp?inp.value.trim():'';if(!val)return;
-  var g=catGetGrupoParaJob(curJob);
+  var g=catGetGrupoParaJob(_MS.catJob||curJob);
   var todos=g?catAllMatsGrupo(g.id):[];
   var exacto=todos.find(function(n){return n.toLowerCase()===val.toLowerCase();});
   if(exacto){ msAcGlobalSel(exacto); return; }
@@ -5043,7 +5043,7 @@ function msAddInline(si){
     sec.mats.push({cod:msNextCod(),nom:nom});
     msSetSecciones(s);
     // Si el material no existe en el catálogo del grupo, añadir como flotante
-    var g=catGetGrupoParaJob(curJob);
+    var g=catGetGrupoParaJob(_MS.catJob||curJob);
     if(g){
       var todos=catAllMatsGrupo(g.id);
       if(!todos.find(function(n){return n.toLowerCase()===nom.toLowerCase();})){
@@ -5064,7 +5064,7 @@ function msInitSel(mats){
   _MS.sel={};_MS.extras={};_MS.secAbierta=null;
   if(!mats||!mats.length) return;
   // Separar materiales del catálogo de los extras (añadidos manualmente)
-  var g=catGetGrupoParaJob(curJob);
+  var g=catGetGrupoParaJob(_MS.catJob||curJob);
   var todos=g?catAllMatsGrupo(g.id):[];
   (mats||[]).forEach(function(m){
     if(!m.cantidad||+m.cantidad<=0) return;
