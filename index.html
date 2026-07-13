@@ -873,6 +873,18 @@ textarea{resize:vertical;min-height:72px}
     </div>
   </div>
 </div>
+<div class="dialogo" id="dlgParteSinGuardar">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo">&#9888;&#65039; Parte sin guardar</div>
+    <div class="dialogo-sub" style="margin-bottom:16px;">Tienes un parte con informaci&oacute;n sin guardar. Si sales ahora, la perder&aacute;s.</div>
+    <div class="brow" style="margin-bottom:10px;">
+      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="_cerrarAvisoParteSinGuardar(false)">Quedarme</button>
+    </div>
+    <div class="brow">
+      <button class="btn btn-s" style="flex:1;justify-content:center" onclick="_cerrarAvisoParteSinGuardar(true)">Salir de todas formas</button>
+    </div>
+  </div>
+</div>
 <div class="dialogo" id="dlgInicioOrden">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#128203; &iquest;C&oacute;mo seguimos?</div>
@@ -1072,7 +1084,46 @@ function goToRaw(id){
   var el=$(id); if(el) el.classList.add('active');
   window.scrollTo(0,0);
 }
+// Aviso de parte sin guardar: se dispara al intentar salir del formulario con
+// contenido real (observación y/o materiales marcados) sin haber guardado, y
+// también automáticamente al minuto 4 de inactividad (1 min antes de que la
+// pantalla se apague por el Wake Lock). No guarda ni restaura nada — solo avisa.
+function _parteTieneContenidoSinGuardar(){
+  var w=$('w-form');
+  if(!w || !w.classList.contains('active')) return false;
+  var obs=$('obs');
+  var tieneObs = !!(obs && obs.value.trim().length>0);
+  var tieneMat = !!((window._MS && _MS.sel && Object.keys(_MS.sel).some(function(k){return _MS.sel[k];}))
+    || (window._MS && _MS.extras && Object.keys(_MS.extras).length>0));
+  return tieneObs || tieneMat;
+}
+function _vibrarAviso(){
+  if(navigator.vibrate) navigator.vibrate([200,100,200,100,200]);
+}
+var _gotoPendiente=null;
+var _saltarAvisoParteSinGuardar=false;
+function _mostrarAvisoParteSinGuardar(destino){
+  _gotoPendiente=destino||null;
+  _vibrarAviso();
+  var d=$('dlgParteSinGuardar'); if(d) d.classList.add('show');
+}
+function _cerrarAvisoParteSinGuardar(salir){
+  var d=$('dlgParteSinGuardar'); if(d) d.classList.remove('show');
+  if(salir && _gotoPendiente){
+    var destino=_gotoPendiente;
+    _gotoPendiente=null;
+    _saltarAvisoParteSinGuardar=true;
+    goTo(destino);
+  } else {
+    _gotoPendiente=null;
+  }
+}
 function goTo(id){
+  if(id!=='w-form' && !_saltarAvisoParteSinGuardar && _parteTieneContenidoSinGuardar()){
+    _mostrarAvisoParteSinGuardar(id);
+    return;
+  }
+  _saltarAvisoParteSinGuardar=false;
   goToRaw(id);
   if(id==='w-form'&&!_keepForm){ mostrarDlgInicioOrden(); } if(id==='w-form') setTimeout(function(){ if($('pedido')&&$('pedido').value.length>2) ocultarLectura(); },100);
   _keepForm=false;
@@ -8297,14 +8348,17 @@ function cerrarSesion() {
 
 // Sesión no restaurada al arrancar — siempre muestra login
 
-// Cierre automático una vez al día — asegura que la primera vez que se abre
-// la app en un día nuevo, cargue el código más reciente (los cambios se suben de noche).
+// Cierre automático a las 6:00 (hora del dispositivo) — asegura que la primera
+// vez que se usa la app tras esa hora, cargue el código más reciente (los cambios se suben de noche).
 function _comprobarReinicioDiario(){
   if(!window._sesion) return;
-  var hoy=new Date().toISOString().slice(0,10);
+  var ahora=new Date();
+  var hoy=ahora.toISOString().slice(0,10);
   var ultimo=localStorage.getItem('pm_ultimo_dia_activo');
-  if(ultimo && ultimo!==hoy){ cerrarSesion(); return; }
-  localStorage.setItem('pm_ultimo_dia_activo', hoy);
+  if(ultimo===hoy) return; // ya se hizo el cierre de hoy, nada más que hacer
+  if(ahora.getHours()<6) return; // aún no son las 6am de hoy — esperar, sin marcar nada todavía
+  localStorage.setItem('pm_ultimo_dia_activo', hoy); // marcar el día de hoy como hecho ANTES de cerrar — así el bucle es imposible
+  cerrarSesion();
 }
 _comprobarReinicioDiario();
 
@@ -8324,11 +8378,16 @@ function _pedirWakeLock(){
 function _liberarWakeLock(){
   if(_wakeLock){ _wakeLock.release().catch(function(){}); _wakeLock=null; }
 }
+var _avisoMin4Timer=null;
 function _resetWakeLockTimer(){
   if(!window._sesion) return;
   _pedirWakeLock();
   if(_wakeLockTimer) clearTimeout(_wakeLockTimer);
-  _wakeLockTimer=setTimeout(_liberarWakeLock, 480000); // 8 minutos
+  if(_avisoMin4Timer) clearTimeout(_avisoMin4Timer);
+  _wakeLockTimer=setTimeout(_liberarWakeLock, 300000); // 5 minutos
+  _avisoMin4Timer=setTimeout(function(){
+    if(_parteTieneContenidoSinGuardar()) _mostrarAvisoParteSinGuardar(null);
+  }, 240000); // 4 minutos — 1 min antes de que se apague la pantalla
 }
 document.addEventListener('visibilitychange', function(){
   // El navegador libera el Wake Lock solo al ocultar la pestaña — hay que repedirlo al volver
