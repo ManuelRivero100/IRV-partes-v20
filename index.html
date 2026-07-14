@@ -6147,20 +6147,27 @@ function leer(){
   var n=0;
   if(pedido&&!$('pedido').value){ $('pedido').value=pedido.trim(); n++; }
   if(centro){ $('centro').value=centro.trim(); n++; }
-  if(denom){
-    var nombreBase=denom.trim().replace(/\s*\d{3,5}\s*$/,'').replace(/^Mercadona\s+/i,'').trim();
-    $('tienda').value = centro ? ('Mercadona '+nombreBase+' '+centro.trim()) : ('Mercadona '+nombreBase);
+  var _agendaExistente = centro ? agendaBuscar(curCliente?curCliente.id:'mercadona', centro.trim()) : null;
+  if(_agendaExistente){
+    // Centro ya registrado: usar los datos verificados de la Agenda, no los del texto pegado
+    rellenarDesdeAgenda(curCliente?curCliente.id:'mercadona', centro.trim());
     n++;
+  } else {
+    if(denom){
+      var nombreBase=denom.trim().replace(/\s*\d{3,5}\s*$/,'').replace(/^Mercadona\s+/i,'').trim();
+      $('tienda').value = centro ? ('Mercadona '+nombreBase+' '+centro.trim()) : ('Mercadona '+nombreBase);
+      n++;
+    }
+    if(dir){ $('dir').value=dir.trim(); n++; }
+    if(tel){ $('tel').value=tel.trim(); n++; }
+    if(kmVal){ $('km').value=kmVal; n++; }
+    if(trVal){ $('tr').value=trVal; n++; }
   }
-  if(dir){ $('dir').value=dir.trim(); n++; }
-  if(tel){ $('tel').value=tel.trim(); n++; }
   if(fecha){
     var fp=fecha.split('/'); if(fp.length===3){ $('fecha').value=fp[2]+'-'+fp[1]+'-'+fp[0]; n++; }
   }
   if(arr){ $('arr').value=arr; n++; }
   if(lea){ $('lea').value=lea; n++; }
-  if(kmVal){ $('km').value=kmVal; n++; }
-  if(trVal){ $('tr').value=trVal; n++; }
   if(obsVal){ $('obs').value=obsVal; n++; }
   if(averiaVal){ _averiaReportada=averiaVal; n++; }
 
