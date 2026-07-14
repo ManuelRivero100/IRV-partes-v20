@@ -7787,6 +7787,7 @@ if('serviceWorker' in navigator){
 <!-- Firebase compat — al final para garantizar carga -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script>
 try {
   firebase.initializeApp({
@@ -7802,6 +7803,23 @@ var _db = firebase.firestore();
 var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
 var MANUEL_ADMIN_PIN = '1212';
 
+// ===== AUTENTICACIÓN ANÓNIMA (requerida por las reglas de Firestore) =====
+// Se lanza una sola vez al cargar la app. Firebase reutiliza la misma
+// sesión anónima entre recargas (no crea un usuario nuevo cada vez).
+var _authReady = new Promise(function(resolve) {
+  firebase.auth().onAuthStateChanged(function(user) {
+    if (user) {
+      resolve(user);
+    } else {
+      firebase.auth().signInAnonymously().catch(function(err) {
+        console.log('Error de autenticación anónima:', err);
+        resolve(null); // no bloquear la app si falla; Firestore devolverá error de permisos
+      });
+    }
+  });
+});
+// ===== FIN AUTENTICACIÓN ANÓNIMA =====
+
 // ===== MÓDULO VERIFICACIÓN CONEXIÓN =====
 // Función autocontenida — no depende de nada externo
 // Intenta leer config/general de Firestore con timeout de 3 segundos
@@ -7810,16 +7828,18 @@ function _verificarConexionFirestore(callback) {
   var respondido = false;
   var timer = setTimeout(function() {
     if (!respondido) { respondido = true; callback(false); }
-  }, 3000);
-  try {
-    _db.collection('config').doc('general').get().then(function() {
-      if (!respondido) { respondido = true; clearTimeout(timer); callback(true); }
-    }).catch(function() {
+  }, 5000);
+  _authReady.then(function() {
+    try {
+      _db.collection('config').doc('general').get().then(function() {
+        if (!respondido) { respondido = true; clearTimeout(timer); callback(true); }
+      }).catch(function() {
+        if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
+      });
+    } catch(e) {
       if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
-    });
-  } catch(e) {
-    if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
-  }
+    }
+  });
 }
 // ===== FIN MÓDULO VERIFICACIÓN CONEXIÓN =====
 
