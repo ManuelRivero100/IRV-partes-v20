@@ -4518,7 +4518,11 @@ function verAsgAdminAviso(id, clienteId) {
       + (refs.length?'<div class="rrow info-row"><span class="rc">Datos</span><span class="rl">'+refs.join(' · ')+'</span><span class="rv"></span></div>':'')
       + '<div class="rrow info-row"><span class="rc">Trabajo</span><span class="rl">'+(d.job||'')+'</span><span class="rv"></span></div>'
       + '<div class="rrow info-row"><span class="rc">T&eacute;cnico</span><span class="rl">'+(d.tecnicoPrincipal||'')+'</span><span class="rv"></span></div>'
-      + (d.descripcion?'<div class="rrow info-row"><span class="rc">Aver&iacute;a</span><span class="rl">'+d.descripcion+'</span><span class="rv"></span></div>':'')
+      + (d.dir?'<div class="rrow info-row"><span class="rc">Direcci&oacute;n</span><span class="rl">'+d.dir+'</span><span class="rv"></span></div>':'')
+      + (d.tel?'<div class="rrow info-row"><span class="rc">Tel&eacute;fono</span><span class="rl">'+d.tel+'</span><span class="rv"></span></div>':'')
+      + (d.km?'<div class="rrow info-row"><span class="rc">Km</span><span class="rl">'+d.km+'</span><span class="rv"></span></div>':'')
+      + (d.tr?'<div class="rrow info-row"><span class="rc">Despl.</span><span class="rl">'+d.tr+' min</span><span class="rv"></span></div>':'')
+      + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion.replace(/\n/g,'<br>')+'</span><span class="rv"></span></div>':'')
       + '</div>'
       + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="verAsgAdminReasignar(\''+clienteId+'\')">&#128260; Ver / reasignar</button>'
       + '<button class="btn btn-s btn-full" style="margin-top:8px;" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
@@ -4540,7 +4544,13 @@ function verSolicitudReabrir(id) {
     var html = '<div class="card"><div class="card-title">&#128275; Solicitud de reapertura</div>'
       + '<div class="rrow info-row"><span class="rc">'+(d.tienda||'')+'</span><span class="rl"></span><span class="rv"></span></div>'
       + (refs.length?'<div class="rrow info-row"><span class="rc">Datos</span><span class="rl">'+refs.join(' · ')+'</span><span class="rv"></span></div>':'')
+      + (d.job?'<div class="rrow info-row"><span class="rc">Trabajo</span><span class="rl">'+d.job+'</span><span class="rv"></span></div>':'')
       + '<div class="rrow info-row"><span class="rc">Solicitado por</span><span class="rl">'+tec+'</span><span class="rv"></span></div>'
+      + (d.dir?'<div class="rrow info-row"><span class="rc">Direcci&oacute;n</span><span class="rl">'+d.dir+'</span><span class="rv"></span></div>':'')
+      + (d.tel?'<div class="rrow info-row"><span class="rc">Tel&eacute;fono</span><span class="rl">'+d.tel+'</span><span class="rv"></span></div>':'')
+      + (d.km?'<div class="rrow info-row"><span class="rc">Km</span><span class="rl">'+d.km+'</span><span class="rv"></span></div>':'')
+      + (d.tr?'<div class="rrow info-row"><span class="rc">Despl.</span><span class="rl">'+d.tr+' min</span><span class="rv"></span></div>':'')
+      + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion.replace(/\n/g,'<br>')+'</span><span class="rv"></span></div>':'')
       + '</div>'
       + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="ejecutarSolicitudReabrir(\''+id+'\')">&#128275; Reabrir y asignar a '+tec+'</button>'
       + '<button class="btn btn-s btn-full" style="margin-top:8px;" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
@@ -4598,7 +4608,7 @@ function consultarAsgTec() {
     + (d.tel?'<div class="rrow info-row"><span class="rc">Tel&eacute;fono</span><span class="rl">'+d.tel+'</span><span class="rv"></span></div>':'')
     + (d.km?'<div class="rrow info-row"><span class="rc">Km</span><span class="rl">'+d.km+'</span><span class="rv"></span></div>':'')
     + (d.tr?'<div class="rrow info-row"><span class="rc">Despl.</span><span class="rl">'+d.tr+' min</span><span class="rv"></span></div>':'')
-    + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion+'</span><span class="rv"></span></div>':'')
+    + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion.replace(/\n/g,'<br>')+'</span><span class="rv"></span></div>':'')
     + '</div><button class="btn btn-s btn-full" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
   document.querySelectorAll('.win').forEach(function(w){w.classList.remove('active');});
   $('w-consultaAsg').classList.add('active');
@@ -6130,7 +6140,7 @@ function leer(){
   var obsVal=obsM?obsM[1].replace(/^\s+|\s+$/g,''):'';
 
   // Extraer avería reportada (bloque DESCRIPCIÓN del pedido original, ej. pedidos de Mercadona)
-  var averiaM=t.match(/DESCRIPCI[OÓ]N\s*\n?([^\n]+(?:\n(?!\s*[A-ZÁÉÍÓÚÑ ]{4,}[:\n])[^\n]+)*)/);
+  var averiaM=t.match(/DESCRIPCI[OÓ]N\s*\n?([\s\S]+?)(?=\nMATERIALES|\nPartes IRV|$)/i);
   var averiaVal=averiaM?averiaM[1].trim():'';
 
   // Rellenar campos
@@ -7770,7 +7780,6 @@ if('serviceWorker' in navigator){
 <!-- Firebase compat — al final para garantizar carga -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script>
 try {
   firebase.initializeApp({
@@ -7786,23 +7795,6 @@ var _db = firebase.firestore();
 var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
 var MANUEL_ADMIN_PIN = '1212';
 
-// ===== AUTENTICACIÓN ANÓNIMA (requerida por las reglas de Firestore) =====
-// Se lanza una sola vez al cargar la app. Firebase reutiliza la misma
-// sesión anónima entre recargas (no crea un usuario nuevo cada vez).
-var _authReady = new Promise(function(resolve) {
-  firebase.auth().onAuthStateChanged(function(user) {
-    if (user) {
-      resolve(user);
-    } else {
-      firebase.auth().signInAnonymously().catch(function(err) {
-        console.log('Error de autenticación anónima:', err);
-        resolve(null); // no bloquear la app si falla; Firestore devolverá error de permisos
-      });
-    }
-  });
-});
-// ===== FIN AUTENTICACIÓN ANÓNIMA =====
-
 // ===== MÓDULO VERIFICACIÓN CONEXIÓN =====
 // Función autocontenida — no depende de nada externo
 // Intenta leer config/general de Firestore con timeout de 3 segundos
@@ -7811,18 +7803,16 @@ function _verificarConexionFirestore(callback) {
   var respondido = false;
   var timer = setTimeout(function() {
     if (!respondido) { respondido = true; callback(false); }
-  }, 5000);
-  _authReady.then(function() {
-    try {
-      _db.collection('config').doc('general').get().then(function() {
-        if (!respondido) { respondido = true; clearTimeout(timer); callback(true); }
-      }).catch(function() {
-        if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
-      });
-    } catch(e) {
+  }, 3000);
+  try {
+    _db.collection('config').doc('general').get().then(function() {
+      if (!respondido) { respondido = true; clearTimeout(timer); callback(true); }
+    }).catch(function() {
       if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
-    }
-  });
+    });
+  } catch(e) {
+    if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
+  }
 }
 // ===== FIN MÓDULO VERIFICACIÓN CONEXIÓN =====
 
