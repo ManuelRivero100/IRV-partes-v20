@@ -7480,6 +7480,7 @@ if('serviceWorker' in navigator){
 <!-- Firebase compat — al final para garantizar carga -->
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script>
 try {
   firebase.initializeApp({
@@ -7492,6 +7493,10 @@ try {
   });
 } catch(e) { /* App ya inicializada */ }
 var _db = firebase.firestore();
+// Login anónimo — las reglas de Firestore exigen autenticación (request.auth != null).
+// _authReady se resuelve cuando la sesión anónima está lista; _verificarConexionFirestore
+// espera a esto antes de consultar, así queda cubierto sin tocar cada uso de _db por separado.
+var _authReady = firebase.auth().signInAnonymously().catch(function(e){ console.error('Auth anónimo falló:', e); });
 var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
 var MANUEL_ADMIN_PIN = '1212';
 
@@ -7504,15 +7509,19 @@ function _verificarConexionFirestore(callback) {
   var timer = setTimeout(function() {
     if (!respondido) { respondido = true; callback(false); }
   }, 3000);
-  try {
-    _db.collection('config').doc('general').get().then(function() {
-      if (!respondido) { respondido = true; clearTimeout(timer); callback(true); }
-    }).catch(function() {
+  _authReady.then(function() {
+    try {
+      _db.collection('config').doc('general').get().then(function() {
+        if (!respondido) { respondido = true; clearTimeout(timer); callback(true); }
+      }).catch(function() {
+        if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
+      });
+    } catch(e) {
       if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
-    });
-  } catch(e) {
+    }
+  }).catch(function() {
     if (!respondido) { respondido = true; clearTimeout(timer); callback(false); }
-  }
+  });
 }
 // ===== FIN MÓDULO VERIFICACIÓN CONEXIÓN =====
 
