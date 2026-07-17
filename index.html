@@ -6712,7 +6712,12 @@ function avisoCruzadoIdx(idx){
 }
 
 function borrarParteOk(i){
-  var h=getH(); h.splice(i,1); setH(h); volverSec(); verSec(_secActual);
+  var h=getH(); var r=h[i]; if(!r){ return; }
+  if(typeof _db !== 'undefined' && _db){
+    var docId=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
+    _db.collection('partes').doc(docId).delete().catch(function(){});
+  }
+  h.splice(i,1); setH(h); volverSec(); verSec(_secActual);
 }
 
 function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
