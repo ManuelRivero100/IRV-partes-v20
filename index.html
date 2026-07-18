@@ -7522,12 +7522,6 @@ function _iniciarActualizacionPeriodica(){
     if(document.visibilityState !== 'visible') return;
     _comprobarVersionNueva();
   }, 15000); // cada 15 segundos
-  // Cierre diario a las 6am: gratis también (solo mira la hora local y localStorage,
-  // sin consultar Firestore) — va cada 3 segundos para que el cierre sea puntual al llegar la hora.
-  setInterval(function(){
-    if(document.visibilityState !== 'visible') return;
-    _comprobarReinicioDiario();
-  }, 3000); // cada 3 segundos
   // Datos (agenda, clientes, técnicos, notificaciones): sí consultan Firestore, que cobra
   // por lectura — este se queda en 2 minutos para no generar coste innecesario.
   setInterval(function(){
@@ -7892,7 +7886,24 @@ function _comprobarReinicioDiario(){
   localStorage.setItem('pm_ultimo_dia_activo', hoy); // marcar el día de hoy como hecho ANTES de cerrar — así el bucle es imposible
   cerrarSesion();
 }
+// Al cargar la app: comprobación única, por si las 6am ya pasaron mientras la app no estaba abierta
 _comprobarReinicioDiario();
+
+// Alarma para la próxima vez que sean las 6am: se calcula una sola vez cuánto falta y se
+// programa un único aviso para ese momento exacto — nada de comprobaciones repetidas en medio.
+// Si la app está abierta en ese instante, se dispara ahí mismo. Tras dispararse, se reprograma
+// sola para el día siguiente a las 6am, y así sucesivamente.
+function _programarAlarmaReinicioDiario(){
+  var ahora = new Date();
+  var proxima6am = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), 6, 0, 0, 0);
+  if(proxima6am.getTime() <= ahora.getTime()) proxima6am.setDate(proxima6am.getDate()+1);
+  var espera = proxima6am.getTime() - ahora.getTime();
+  setTimeout(function(){
+    _comprobarReinicioDiario();
+    _programarAlarmaReinicioDiario();
+  }, espera);
+}
+_programarAlarmaReinicioDiario();
 
 // Wake Lock: evita que la pantalla se apague mientras hay actividad en la app.
 // Se libera tras 8 minutos sin interacción (entonces la pantalla se apaga normal,
