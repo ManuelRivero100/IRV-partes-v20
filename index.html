@@ -1062,7 +1062,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-07-08-agenda-20';
+var APP_BUILD_ID = 'build-2026-07-17-flotante-off';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -7272,22 +7272,15 @@ if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
     navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).then(function(reg){
       console.log('SW registered');
-      // Recargar cuando se activa un nuevo SW
-      reg.addEventListener('updatefound', function(){
-        var newWorker = reg.installing;
-        newWorker.addEventListener('statechange', function(){
-          if(newWorker.state === 'activated' && navigator.serviceWorker.controller){
-            location.reload();
-          }
-        });
-      });
     }).catch(function(err){
       console.log('SW error:', err);
     });
-    // También recargar si el controlador cambia
-    navigator.serviceWorker.addEventListener('controllerchange', function(){
-      location.reload();
-    });
+    // Ya no se recarga automáticamente al detectar un Service Worker nuevo en segundo
+    // plano — eso causaba reinicios impredecibles durante el día, sin relación con las 6am.
+    // El código nuevo llega igual, de forma controlada, a través del cierre de las 6am
+    // (_comprobarReinicioDiario) o del chequeo de versión cuando no hay sesión activa
+    // (_comprobarVersionNueva). La app se mantiene abierta y estable durante el día,
+    // sin más interrupciones que esas dos, o que el técnico cierre sesión manualmente.
   });
 }
 </script>
@@ -7529,12 +7522,17 @@ function _iniciarActualizacionPeriodica(){
     if(document.visibilityState !== 'visible') return;
     _comprobarVersionNueva();
   }, 15000); // cada 15 segundos
+  // Cierre diario a las 6am: gratis también (solo mira la hora local y localStorage,
+  // sin consultar Firestore) — va cada 3 segundos para que el cierre sea puntual al llegar la hora.
+  setInterval(function(){
+    if(document.visibilityState !== 'visible') return;
+    _comprobarReinicioDiario();
+  }, 3000); // cada 3 segundos
   // Datos (agenda, clientes, técnicos, notificaciones): sí consultan Firestore, que cobra
   // por lectura — este se queda en 2 minutos para no generar coste innecesario.
   setInterval(function(){
     if(document.visibilityState !== 'visible') return;
     if(!window._sesion) return;
-    _comprobarReinicioDiario();
     _sincronizarClientesDesdeFirestore();
     _sincronizarTecnicosDesdeFirestore();
     _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
