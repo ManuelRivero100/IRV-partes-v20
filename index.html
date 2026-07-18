@@ -2043,101 +2043,6 @@ function renderCatGrupoBody(){
 
 // old renderCatGrupoBody replaced above (función completa eliminada — código muerto, nunca se llamaba)
 
-function catAddRow(ctx,withSub){
-  var isOpen=_catState.addCtx===ctx;
-  var key=ctx.replace(/[^a-z0-9]/gi,'_');
-  var pl=ctx.startsWith('sub')?'36':'20';
-  if(!isOpen){
-    return '<div style="border-top:1px dashed var(--border);">'
-      +'<button onclick="catOpenAdd(\''+ctx+'\')" style="width:100%;padding:7px;padding-left:'+pl+'px;background:none;border:none;color:var(--green);font-size:.82rem;font-weight:600;cursor:pointer;font-family:inherit;text-align:left;">+ Agregar</button></div>';
-  }
-  var r='<div style="border-top:1px dashed var(--border);background:var(--green-light);">'
-    +'<div style="padding:7px 12px;display:flex;gap:6px;flex-wrap:wrap;">'
-    +'<button onclick="catShowAddMat(\''+ctx+'\')" class="btn btn-p btn-sm">+ Material</button>'
-    +(withSub?'<button onclick="catShowAddSub(\''+ctx+'\')" class="btn btn-s btn-sm">+ Secci\u00f3n</button>':'')
-    +'<button onclick="catCloseAdd()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:.9rem;">\u2715</button>'
-    +'</div>'
-    +'<div id="caAddMat_'+key+'" style="display:none;padding:7px 12px;border-top:1px solid var(--border);">'
-    +'<div style="display:flex;gap:6px;position:relative;">'
-    +'<input id="caInpMat_'+key+'" class="ac-inp" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.85rem;font-family:inherit;background:var(--surface2);color:var(--text);outline:none;" placeholder="Nombre del material..." oninput="catAcMat(this.value,\''+ctx+'\')" autocomplete="off">'
-    +'<button class="btn btn-p btn-sm" onclick="catConfirmMat(\''+ctx+'\')">&#10003;</button>'
-    +'</div>'
-    +'<div class="ac-box" id="caAcMat_'+key+'"></div>'
-    +'</div>'
-    +'<div id="caAddSub_'+key+'" style="display:none;padding:7px 12px;border-top:1px solid var(--border);">'
-    +'<div style="display:flex;gap:6px;">'
-    +'<input id="caInpSub_'+key+'" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.85rem;font-family:inherit;background:var(--surface2);color:var(--text);outline:none;" placeholder="Nombre de la secci\u00f3n..." autocomplete="off">'
-    +'<button class="btn btn-p btn-sm" onclick="catConfirmSub(\''+ctx+'\')">&#10003;</button>'
-    +'</div></div>'
-    +'</div>';
-  return r;
-}
-function catOpenAdd(ctx){_catState.addCtx=ctx;_catState.addMode=null;renderCatGrupoBody();}
-function catCloseAdd(){_catState.addCtx=null;renderCatGrupoBody();}
-function catShowAddMat(ctx){
-  var key=ctx.replace(/[^a-z0-9]/gi,'_');
-  var m=$('caAddMat_'+key);if(m)m.style.display='block';
-  var s=$('caAddSub_'+key);if(s)s.style.display='none';
-  var i=$('caInpMat_'+key);if(i){i.focus();}
-}
-function catShowAddSub(ctx){
-  var key=ctx.replace(/[^a-z0-9]/gi,'_');
-  var s=$('caAddSub_'+key);if(s)s.style.display='block';
-  var m=$('caAddMat_'+key);if(m)m.style.display='none';
-  var i=$('caInpSub_'+key);if(i)i.focus();
-}
-function catAcMat(val,ctx){
-  var key=ctx.replace(/[^a-z0-9]/gi,'_');
-  var box=$('caAcMat_'+key);if(!box)return;
-  if(!val||val.length<2){box.classList.remove('show');box.innerHTML='';return;}
-  var todos=catAllMatsGrupo(_catState.grupoAb);
-  var res=todos.filter(function(n){return n.toLowerCase().includes(val.toLowerCase());}).slice(0,5);
-  if(!res.length){box.classList.remove('show');box.innerHTML='';return;}
-  // Use data attributes to avoid quote escaping in onclick
-  box.innerHTML=res.map(function(n,ni){
-    return '<div class="ac-item" data-nom="'+n.replace(/"/g,'&quot;')+'" data-key="'+key+'" onclick="catAcSelMat(this.dataset.nom,this.dataset.key)">'+n+'</div>';
-  }).join('');
-  box.classList.add('show');
-}
-function catAcSelMat(nom,key){
-  var i=$('caInpMat_'+key);if(i)i.value=nom;
-  var b=$('caAcMat_'+key);if(b){b.classList.remove('show');b.innerHTML='';}
-}
-function catParseCtx(ctx){
-  var p=ctx.split('_');
-  if(p[0]==='sec') return {tipo:'sec',si:parseInt(p[1]),ssi:-1};
-  if(p[0]==='sub') return {tipo:'sub',si:parseInt(p[1]),ssi:parseInt(p[2])};
-  return null;
-}
-function catConfirmMat(ctx){
-  var key=ctx.replace(/[^a-z0-9]/gi,'_');
-  var inp=$('caInpMat_'+key);
-  var nom=inp?inp.value.trim():'';if(!nom)return;
-  var todos=catAllMatsGrupo(_catState.grupoAb);
-  if(todos.find(function(n){return n.toLowerCase()===nom.toLowerCase();})){alert('"'+nom+'" ya existe en este grupo.');return;}
-  var cat=getCat();
-  var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
-  var p=catParseCtx(ctx);if(!p)return;
-  var sec=g.secciones[p.si];if(!sec)return;
-  if(p.ssi===-1){sec.mats=sec.mats||[];sec.mats.push({nom:nom});}
-  else{var ss=sec.subsecs[p.ssi];if(ss){ss.mats=ss.mats||[];ss.mats.push({nom:nom});}}
-  setCat(cat);_subirCatalogoAFirestore();_catState.addCtx=null;
-  renderCatGrupoBody();
-}
-function catConfirmSub(ctx){
-  var key=ctx.replace(/[^a-z0-9]/gi,'_');
-  var inp=$('caInpSub_'+key);
-  var nom=inp?inp.value.trim():'';if(!nom)return;
-  var cat=getCat();
-  var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
-  var p=catParseCtx(ctx);if(!p||p.tipo!=='sec')return;
-  var sec=g.secciones[p.si];if(!sec)return;
-  sec.subsecs=sec.subsecs||[];
-  sec.subsecs.push({id:'ss_'+Date.now(),nombre:nom,mats:[]});
-  setCat(cat);_subirCatalogoAFirestore();_catState.addCtx=null;
-  renderCatGrupoBody();
-}
-
 // catEditMat: ver definición real más abajo (redirige a catEditMat2, diálogo moderno)
 
 // ===== DIÁLOGO NOMBRE (reemplaza prompt) =====
@@ -2265,20 +2170,6 @@ function catDelMat(si,ssi,mi){
   if(ssi===-1)sec.mats.splice(mi,1);
   else{var ss=sec.subsecs[ssi];if(ss)ss.mats.splice(mi,1);}
   setCat(cat);_subirCatalogoAFirestore();renderCatGrupoBody();
-}
-function catToggleSec(si){
-  var cat=getCat();var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
-  var key=g.id+'_'+si;
-  _catState.secAb=_catState.secAb===key?null:key;
-  _catState.subAb=null;_catState.addCtx=null;
-  renderCatGrupoBody();
-}
-function catToggleSub(si,ssi){
-  var cat=getCat();var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
-  var key=g.id+'_'+si+'_'+ssi;
-  _catState.subAb=_catState.subAb===key?null:key;
-  _catState.addCtx=null;
-  renderCatGrupoBody();
 }
 function catNuevaSec(){
   dlgNombre('Nueva sección','',function(nom){
@@ -2517,14 +2408,6 @@ function renderCatConceptos(){
   }).join('');
 }
 function catGuardarConceptos(){var cat=getCat();if(window._catConc){Object.keys(window._catConc).forEach(function(i){cat.conceptos[parseInt(i)].precio=window._catConc[i];});window._catConc={};}setCat(cat);_subirCatalogoAFirestore();showMsg('msgCat','Precios guardados.','success');}
-function catGetPrecioConcepto(tipo,lab){var cat=getCat();var c=cat.conceptos.find(function(x){return x.tipo===tipo&&x.lab===lab;});return c&&c.precio?parseFloat(c.precio)||0:0;}
-// Alias para compatibilidad
-function renderCatFamilias(){renderCatGrupos();}
-function catEliminarFamilia(){}
-function catNuevaFamilia(){catNuevoGrupo();}
-function catGuardarFamilia(){showMsg('msgCat','Usa el menú del grupo para gestionar materiales.','warn');}
-function catBuscarMat(){}
-function catAgregarMat(){}
 
 // ===== INIT APP =====
 function parsearCodigos(detalle, roles){
@@ -3443,12 +3326,6 @@ function generarCore(){
   window.scrollTo(0,0);
 }
 
-function respOrden(misma){
-  $('dlgOrden').classList.remove('show');
-  if(misma){ $('pedido').value=_oAC||''; generarCore(); }
-  else { $('pedido').focus(); showMsg('msgForm','Introduce el número de orden.','warn'); }
-}
-
 function copiar(){
   if(!window.recTmp) return;
   var lines=[];
@@ -4030,24 +3907,6 @@ function exportarBackup(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   setTimeout(function(){URL.revokeObjectURL(url);},10000);
 }
-function exportarComoTexto(json,count){
-  var modal=document.createElement('div');
-  modal.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
-  modal.innerHTML='<div style="background:#fff;border-radius:12px;padding:16px;width:100%;max-height:85vh;display:flex;flex-direction:column;gap:10px;">'+
-    '<div style="font-size:.9rem;font-weight:700;color:#1a6b3a;">&#128190; Backup — '+count+' partes</div>'+
-    '<div style="font-size:.78rem;color:#4b5563;">Pulsa <strong>Copiar</strong> y pega el texto en WhatsApp, email o notas para guardarlo.</div>'+
-    '<textarea readonly id="_bkpTxt" style="flex:1;min-height:160px;font-size:.6rem;font-family:monospace;border:1px solid #dde2ea;border-radius:8px;padding:8px;resize:none;background:#f7f9fb;">'+json+'</textarea>'+
-    '<div style="display:flex;gap:8px;">'+
-    '<button id="_bkpBtn" style="flex:1;padding:10px;background:#1a6b3a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:.9rem;cursor:pointer;">&#128203; Copiar</button>'+
-    '<button onclick="this.closest(\'div\').parentElement.remove();" style="flex:1;padding:10px;background:#f7f9fb;color:#18202e;border:1.5px solid #dde2ea;border-radius:8px;font-weight:600;font-size:.88rem;cursor:pointer;">Cerrar</button>'+
-    '</div></div>';
-  document.body.appendChild(modal);
-  modal.querySelector('#_bkpBtn').onclick=function(){
-    var t=modal.querySelector('#_bkpTxt'); t.select(); t.setSelectionRange(0,99999);
-    try{ document.execCommand('copy'); this.textContent='✓ Copiado'; this.style.background='#155a30'; }
-    catch(e){ navigator.clipboard.writeText(json).then(function(){ modal.querySelector('#_bkpBtn').textContent='✓ Copiado'; }).catch(function(){ alert('No se pudo copiar automáticamente.'); }); }
-  };
-}
 function importarBackup(input){
   var f=input.files[0]; if(!f) return;
   var reader=new FileReader();
@@ -4114,79 +3973,8 @@ function importarDesdeTexto(){
   };
 }
 
-// ===== NUEVO GRUPO MATERIALES =====
-function todosLosGrupos(){
-  // Todos los grupos que existen en materiales storage + los de todos los clientes
-  var todos=new Set();
-  var clientes=getClientes();
-  clientes.forEach(function(c){ (c.jobs||[]).forEach(function(j){ todos.add(j); }); });
-  var mats=getMats();
-  Object.keys(mats).forEach(function(k){
-    // revertir jkm: Climatizacion → Climatización
-    var nombre=k==='Climatizacion'?'Climatización':k;
-    todos.add(nombre);
-  });
-  return Array.from(todos);
-}
-
-function gruposDelClienteActual(){
-  if(!curCliente) return [];
-  return curCliente.jobs||[];
-}
-
-function mejorListaParaGrupo(nombre){
-  // Busca en todos los clientes el grupo con más materiales con ese nombre
-  var k=jkm(nombre);
-  var mats=getMats();
-  return (mats[k]||[]).slice();
-}
-
-function mostrarDlgNuevoGrupo(){ /* sistema viejo desactivado */ }
-
-function mostrarFormNuevoGrupo(){ /* sistema viejo desactivado */ }
-
-function agregarGrupoExistente(nombre){
-  $('dlgNuevoGrupo').classList.remove('show');
-  _agregarGrupoACliente(nombre);
-}
-
-function confirmarNuevoGrupo(){ /* sistema viejo desactivado */ }
-
-function _agregarGrupoACliente(nombre){
-  if(!curCliente) return;
-  // Añadir al cliente
-  if(curCliente.jobs.map(function(j){ return j.toLowerCase(); }).indexOf(nombre.toLowerCase())===-1){
-    curCliente.jobs.push(nombre);
-    // Guardar en storage
-    if(curCliente.id==='mercadona'){
-      // Mercadona es especial, sus jobs no se guardan en pm_clientes
-      // pero sí podemos guardarlos en un override
-      localStorage.setItem('pm_mercadona_jobs', JSON.stringify(curCliente.jobs));
-    } else {
-      var extra=JSON.parse(localStorage.getItem('pm_clientes')||'[]');
-      extra=extra.map(function(c){ return c.id===curCliente.id?curCliente:c; });
-      localStorage.setItem('pm_clientes',JSON.stringify(extra));
-    }
-  }
-  // Copiar lista si existe en otro lado
-  var lista=mejorListaParaGrupo(nombre);
-  if(lista.length){
-    var mats=getMats(); var k=jkm(nombre);
-    if(!mats[k]||!mats[k].length){ mats[k]=lista; setMats(mats); }
-  }
-  // Refrescar UI
-  renderJobTgl();
-}
 
 // ===== INIT =====
-
-function finalizarOrdenActual(){
-  var o=window._ordenActual;if(!o)return;
-  var h=getH();
-  h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro)r.estado='terminado';});
-  setH(h);
-  verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
-}
 
 function cerrarIncidenciaActual(){
   var o=window._ordenActual;if(!o)return;
@@ -4585,7 +4373,6 @@ function msToggleCatItem(secId,ssi,mi){
     },50);
   }
 }
-function msUpdQty(nom,val){ if(_MS.sel[nom]!==undefined) _MS.sel[nom]=parseFloat(val)||1; }
 function msSaveQtys(){
   document.querySelectorAll('[id^="msq_"]').forEach(function(inp){
     var parts=inp.id.replace('msq_','').split('_');
@@ -4708,9 +4495,6 @@ function msGetSel(){
 function statsToggleMes(mesId){
   var d=document.getElementById(mesId);
   if(d) d.style.display=d.style.display==='none'?'block':'none';
-}
-function statsMkKpi(val, label, cls){
-  return '<div class="kpi '+(cls||'')+'"><div class="kpi-val">'+val+'</div><div class="kpi-label">'+label+'</div></div>';
 }
 
 
@@ -5577,7 +5361,6 @@ function guardarConEstado(estado){
 
 function cap(re,t){ var m=t.match(re); return m?m[1]:null; }
 function ocultarLectura(){var c=$('cardLectura');if(c)c.style.display='none';}
-function mostrarLectura(){var c=$('cardLectura');if(c)c.style.display='block';}
 function leer(){
   var t=$('raw').value; if(!t.trim()){ showMsg('msgForm','Pega el texto primero.','warn'); return; }
 
@@ -6347,19 +6130,6 @@ function volverSec(){ $('secView').style.display='block'; $('ordenView').style.d
 
 function volverSecFin(){histShow(['histOpts']);refreshCounts();}
 
-function hacerPDFTexto(txt, titulo){
-  try{
-    var blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');
-    a.href=url; a.download=(titulo||'estadisticas').replace(/[^a-z0-9]/gi,'_')+'.txt';
-    a.click(); URL.revokeObjectURL(url);
-  }catch(e){
-    navigator.clipboard.writeText(txt).then(function(){alert('Copiado al portapapeles');});
-  }
-}
-
-
 function _marcarPendienteSync(parte, pendiente){
   var h=getH();
   var idx=h.findIndex(function(x){ return x.fecha===parte.fecha && x.pedido===parte.pedido && x.centro===parte.centro; });
@@ -6546,50 +6316,6 @@ function _renderAcumAgrupado(codAcum){
   return html||'<div style="font-size:.82rem;color:var(--text3);">Sin datos.</div>';
 }
 
-function editMatRender(){
-  var el=document.getElementById('editMatsList'); if(!el) return;
-  var mats=window._editMats||[];
-  if(!mats.length){el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:4px 0;">Sin materiales</div>';return;}
-  el.innerHTML=mats.map(function(m,i){
-    return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border2);">'+
-      '<span style="flex:1;font-size:.88rem;">'+m.nombre+'</span>'+
-      '<input type="number" min="1" value="'+m.cantidad+'" '+
-      'style="width:58px;padding:5px 8px;border:1.5px solid var(--green);border-radius:var(--r-sm);font-size:.88rem;text-align:center;background:var(--surface2);color:var(--text);font-family:inherit;" '+
-      'oninput="window._editMats['+i+'].cantidad=parseFloat(this.value)||1" onfocus="this.select()">'+
-      '<button onclick="window._editMats.splice('+i+',1);editMatRender();" '+
-      'style="width:26px;height:26px;border-radius:50%;background:var(--red-light);color:var(--red);border:none;cursor:pointer;font-size:.9rem;flex-shrink:0;">&#x2715;</button>'+
-      '</div>';
-  }).join('');
-}
-function editMatAc(val){
-  var box=document.getElementById('editMatAcBox'); if(!box) return;
-  if(!val||val.length<1){box.style.display='none';box.innerHTML='';return;}
-  var g=catGetGrupoParaJob(curJob||'Climatizacion');
-  var todos=g?catAllMatsGrupo(g.id):[];
-  var res=todos.filter(function(n){return _normTexto(n).includes(_normTexto(val));}).slice(0,8);
-  var h2='';
-  res.forEach(function(nom){
-    var nomEsc=nom.replace(/"/g,'&quot;');
-    h2+='<div style="padding:9px 12px;font-size:.86rem;cursor:pointer;border-bottom:1px solid var(--border2);" '+
-      'onmousedown="editMatSelAc(\''+nomEsc+'\')">&#128295; '+nom+'</div>';
-  });
-  box.innerHTML=h2;
-  box.style.display=h2?'block':'none';
-}
-function editMatSelAc(nom){
-  var inp=document.getElementById('editMatNom'); if(inp) inp.value=nom;
-  var box=document.getElementById('editMatAcBox'); if(box){box.style.display='none';box.innerHTML='';}
-}
-function editMatAnadir(){
-  var inp=document.getElementById('editMatNom');
-  var nom=inp?inp.value.trim():''; if(!nom) return;
-  var qty=parseFloat(document.getElementById('editMatQty').value)||1;
-  if(!window._editMats) window._editMats=[];
-  window._editMats.push({cod:'',nombre:nom,cantidad:qty});
-  inp.value=''; document.getElementById('editMatQty').value='1';
-  var box=document.getElementById('editMatAcBox'); if(box){box.style.display='none';box.innerHTML='';}
-  editMatRender();
-}
 function cerrarEditPanel(){var p=document.getElementById('editPanel');if(p)p.style.display='none';}
 function abrirEdicionParte(idx){
   var h=getH(); var r=h[idx]; if(!r) return;
@@ -6719,8 +6445,6 @@ function borrarParteOk(i){
   }
   h.splice(i,1); setH(h); volverSec(); verSec(_secActual);
 }
-
-function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 function fT(m){ return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2); }
 
@@ -7941,68 +7665,9 @@ document.addEventListener('visibilitychange', function(){
 });
 _resetWakeLockTimer();
 
-// ---- MÓDULO USUARIOS ----
-var _nuRol = 'tecnico';
-function setNuRol(r, el) { _nuRol = r; document.querySelectorAll('#nuRolTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
-
-function abrirUsuarios() {
-  document.querySelectorAll('.win').forEach(function(w){w.style.display='none';});
-  document.getElementById('w-usuarios').style.display='block';
-  cargarUsuarios();
-}
-
-function cargarUsuarios() {
-  var lista = document.getElementById('usuariosLista');
-  lista.innerHTML = '<div style="color:var(--text2);font-size:.85rem;">Cargando...</div>';
-  var esSesionCreador = window._sesion && window._sesion.rol === 'creador';
-  _db.collection('usuario').get().then(function(snap) {
-    if (snap.empty) { lista.innerHTML = '<div style="color:var(--text2);font-size:.85rem;">No hay usuarios.</div>'; return; }
-    lista.innerHTML = '';
-    snap.forEach(function(d) {
-      var u = d.data();
-      var esCreador = d.id === 'manuel_rivero';
-      // Admin no ve al creador como creador, lo ve como técnico
-      var rolMostrado = (esCreador && !esSesionCreador) ? 'técnico' : (u.roles ? u.roles.join('/') : 'técnico');
-      var puedeTocar = esSesionCreador ? true : !esCreador;
-      var color = u.activo === false ? 'var(--text2)' : 'var(--text)';
-      var el = document.createElement('div');
-      el.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);';
-      el.innerHTML = '<div><div style="font-weight:600;color:'+color+'">'+u.nombre+'</div><div style="font-size:.78rem;color:var(--text2);">'+rolMostrado+(u.activo===false?' · Desactivado':'')+'</div></div>'
-        + (puedeTocar ? '<button class="btn btn-s btn-sm" onclick="toggleUsuario(\''+d.id+'\','+!!u.activo+')">'+(u.activo===false?'Activar':'Desactivar')+'</button>' : '');
-      lista.appendChild(el);
-    });
-  }).catch(function() { lista.innerHTML = '<div style="color:var(--red);">Error al cargar.</div>'; });
-}
-
-function toggleUsuario(docId, activo) {
-  _db.collection('usuario').doc(docId).update({ activo: !activo }).then(function() { cargarUsuarios(); });
-}
-
-function guardarNuevoUsuario() {
-  var nombre = document.getElementById('nuNombre').value.trim();
-  var pin = document.getElementById('nuPin').value.trim();
-  var msg = document.getElementById('nuMsg');
-  msg.textContent = '';
-  if (!nombre || pin.length !== 4) { msg.textContent = 'Nombre y PIN de 4 dígitos obligatorios.'; return; }
-  var docId = nombre.toLowerCase().replace(/ /g,'_');
-  var roles = window._sesion && window._sesion.rol === 'creador' ? [_nuRol] : ['tecnico'];
-  _db.collection('usuario').doc(docId).set({ nombre: nombre, pin: pin, roles: roles, activo: true })
-    .then(function() {
-      document.getElementById('nuNombre').value = '';
-      document.getElementById('nuPin').value = '';
-      msg.textContent = '✓ Usuario guardado.';
-      cargarUsuarios();
-    }).catch(function() { msg.textContent = 'Error al guardar.'; });
-}
-
-// Mostrar icono usuarios y botón cambiar rol si corresponde
+// Mostrar botón cambiar rol si corresponde
 function _mostrarIconoUsuarios() {
   var rol = window._sesion && window._sesion.rol;
-  if (rol === 'admin' || rol === 'creador') {
-    var ic = document.getElementById('iconUsuarios');
-    if (ic) ic.style.display = '';
-    if (rol === 'admin') { var rf = document.getElementById('nuRolField'); if(rf) rf.style.display='none'; }
-  }
   // Botón cambiar rol: solo si el usuario demostró tener más de un rol disponible
   if (window._sesion && window._sesion.multiRol) {
     var btn = document.getElementById('btnCambiarRol');
