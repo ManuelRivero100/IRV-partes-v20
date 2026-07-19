@@ -7328,27 +7328,42 @@ function _iniciarActualizacionPeriodica(){
     renderAsgTecnico();
     renderAsgAdmin();
     catActualizarBadge();
-    // Detectar pérdida/recuperación de conexión en pleno uso, solo si es relevante
-    // (admin/creador actual, o técnico con más de un rol disponible)
-    var _s = window._sesion;
-    if (_s.multiRol || _s.rol === 'admin' || _s.rol === 'creador') {
-      _verificarConexionFirestore(function(hayConexion){
-        if (!hayConexion) {
-          if (_s.rol === 'admin' || _s.rol === 'creador') {
-            var dlg = document.getElementById('dlgSinConexionAdmin');
-            if (dlg) dlg.classList.add('show');
-          }
-          var btnRol = document.getElementById('btnCambiarRol');
-          if (btnRol && _s.rol !== 'admin' && _s.rol !== 'creador') btnRol.style.display = 'none';
-        } else {
-          if (_s.multiRol && _s.rol !== 'admin' && _s.rol !== 'creador') {
-            var btnRol2 = document.getElementById('btnCambiarRol');
-            if (btnRol2) { btnRol2.style.display = ''; btnRol2.textContent = '⚙️ Admin'; }
-          }
-        }
-      });
-    }
   }, 120000); // cada 2 minutos: margen cómodo bajo el límite gratuito de lecturas de Firestore
+
+  // Detectar pérdida/recuperación de conexión en pleno uso, solo si es relevante
+  // (admin/creador actual, o técnico con más de un rol disponible). Ritmo propio,
+  // aparte del ciclo de datos: 1 minuto para admin/creador (lo necesitan más, detección
+  // rápida), 4 minutos para técnico (apenas les afecta) — así se compensa el total de
+  // lecturas entre los dos. Se recalcula en cada ciclo por si el rol cambia en plena sesión.
+  function _programarComprobacionConexion(){
+    var _s = window._sesion;
+    var _esAdminAhora = _s && (_s.rol === 'admin' || _s.rol === 'creador');
+    var espera = _esAdminAhora ? 60000 : 240000;
+    setTimeout(function(){
+      if(document.visibilityState === 'visible' && window._sesion){
+        var _s2 = window._sesion;
+        if (_s2.multiRol || _s2.rol === 'admin' || _s2.rol === 'creador') {
+          _verificarConexionFirestore(function(hayConexion){
+            if (!hayConexion) {
+              if (_s2.rol === 'admin' || _s2.rol === 'creador') {
+                var dlg = document.getElementById('dlgSinConexionAdmin');
+                if (dlg) dlg.classList.add('show');
+              }
+              var btnRol = document.getElementById('btnCambiarRol');
+              if (btnRol && _s2.rol !== 'admin' && _s2.rol !== 'creador') btnRol.style.display = 'none';
+            } else {
+              if (_s2.multiRol && _s2.rol !== 'admin' && _s2.rol !== 'creador') {
+                var btnRol2 = document.getElementById('btnCambiarRol');
+                if (btnRol2) { btnRol2.style.display = ''; btnRol2.textContent = '⚙️ Admin'; }
+              }
+            }
+          });
+        }
+      }
+      _programarComprobacionConexion(); // reprogramar con la espera correspondiente al rol de ese momento
+    }, espera);
+  }
+  _programarComprobacionConexion();
 }
 
 function _comprobarVersionNueva(){
