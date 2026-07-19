@@ -4883,8 +4883,9 @@ function mostrarDlgInicioOrden(){
   if(esTecnico){
     try {
       var regGlobal=JSON.parse(localStorage.getItem('pm_registro_global')||'{}');
-      Object.keys(regGlobal).forEach(function(pedido){
-        var g=regGlobal[pedido];
+      Object.keys(regGlobal).forEach(function(key){
+        var g=regGlobal[key];
+        var pedido=g.pedido; if(!pedido) return;
         if(!g.tecnicoPrincipal || g.tecnicoPrincipal.toLowerCase()!==miNombre) return;
         if(g.estado!=='en-ejecucion') return;
         if((g.clienteId||'mercadona')!==clienteId) return;
@@ -7395,6 +7396,7 @@ function _sincronizarRegistroGlobal(){
       if(!d.pedido) return;
       var key = (d.clienteId||'mercadona')+'||'+d.pedido;
       reg[key] = {
+        pedido: d.pedido,
         tecnicoPrincipal: d.tecnicoPrincipal||'',
         estado: d.estado||'pendiente',
         centro: d.centro||'',
