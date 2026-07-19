@@ -57,7 +57,8 @@ if('serviceWorker' in navigator){
   --sh:0 4px 20px rgba(0,0,0,.4);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:14px 12px 48px}
+html{overscroll-behavior-y:contain;}
+body{font-family:sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:14px 12px 48px;overscroll-behavior-y:contain;}
 .app{max-width:780px;margin:auto}
 .hdr{background:var(--green);border-radius:var(--r);padding:16px 20px;margin-bottom:14px;display:flex;align-items:center;gap:14px;box-shadow:0 4px 18px rgba(26,107,58,.22)}
 .hdr-ico{width:42px;height:42px;background:rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
@@ -4634,6 +4635,8 @@ function tecSeleccionar(i,nombre){
 }
 function renderWorkers(){
   var w=Math.max(1,Math.min(4,+$('w').value||0));
+  var _esAdminEditando = window._sesion && window._sesion.rol === 'admin' && window._editIdx !== null;
+  var _campoW = $('w'); if(_campoW) _campoW.disabled = !!_esAdminEditando;
   if(!w){ $('workersRol').style.display='none'; wRoles=[]; wNames=[]; return; }
   $('workersRol').style.display='block';
   var nr=curJob==='Climatización';
@@ -4654,7 +4657,6 @@ function renderWorkers(){
       return '<div onmousedown="tecSeleccionar('+i+',\''+t.nombre.replace(/\'/g,'\\\'')+'\')" style="padding:10px 14px;font-size:.88rem;cursor:pointer;border-bottom:1px solid var(--border2);">'+t.nombre+'</div>';
     }).join('');
     var _dropHtml='<div id="'+_dropId+'" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:99;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.4);">'+_dropItems+'</div>';
-    var _esAdminEditando = window._sesion && window._sesion.rol === 'admin' && window._editIdx !== null;
     var _inp = _esAdminEditando
       ? '<span style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;color:var(--text);display:inline-block;">'+(wNames[i]||'—')+'</span>'
       : '<input type="text" id="wInp'+i+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;width:100%;" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value" onfocus="tecMostrarDrop('+i+')" onblur="tecOcultarDrop('+i+')">';
@@ -6797,7 +6799,7 @@ function renderFace(face) {
   }
 }
 
-function iniciarSplash() {
+function iniciarSplash(alTerminar) {
   document.body.style.overflow = "hidden";
   var splash = document.getElementById("splash");
   var coin   = document.getElementById("coin");
@@ -6874,6 +6876,9 @@ function iniciarSplash() {
 
             if (progress < 1) {
               requestAnimationFrame(animateStep);
+            } else if (alTerminar) {
+              // Hay un callback esperando — no ocultar por cuenta propia, dejar que decida cuándo
+              alTerminar();
             } else {
               // Pantalla cubierta — mostrar app
               splash.classList.add("fade-out");
@@ -7059,7 +7064,24 @@ function _verificarConexionFirestore(callback) {
 var _loginPendienteNombre = '';
 var _loginPendienteRol = '';
 
+// Se llama en el instante en que el PIN se confirma correcto, antes de decidir si hace
+// falta preguntar el rol. Arranca la presentación completa y las sincronizaciones que no
+// dependen del rol final (clientes, técnicos, catálogo, agenda, registro global) — así
+// ese tiempo se aprovecha mientras el usuario ve la presentación o elige su rol.
+var _loginSplashListo = false;
+function _iniciarPresentacionLogin(){
+  _loginSplashListo = false;
+  iniciarSplash(function(){ _loginSplashListo = true; });
+  _sincronizarClientesDesdeFirestore();
+  _sincronizarTecnicosDesdeFirestore();
+  _sincronizarCatalogoDesdeFirestore();
+  _sincronizarAgendaDesdeFirestore();
+  _sincronizarRegistroGlobal();
+  _reintentarPartesPendientes();
+}
+
 function _loginSinConexionContinuar() {
+  _iniciarPresentacionLogin();
   _entrarConRol(_loginPendienteNombre, 'tecnico');
 }
 
@@ -7096,6 +7118,7 @@ function _iniciarSesion() {
           msgEl.textContent = '';
           _mostrarSinConexion(nombre, 'tecnico');
         } else {
+          _iniciarPresentacionLogin();
           _entrarConRol(_tecLocal.nombre, 'tecnico');
         }
         return;
@@ -7105,12 +7128,14 @@ function _iniciarSesion() {
         if (snap.exists) {
           var roles = (snap.data().roles || ['tecnico']).filter(function(r){ return r !== 'creador'; });
           if (roles.length === 0) roles = ['tecnico'];
+          _iniciarPresentacionLogin();
           if (roles.length > 1) { _mostrarSelectorRol(nombre, roles); }
           else { _entrarConRol(nombre, roles[0]); }
         } else {
+          _iniciarPresentacionLogin();
           _entrarConRol(_tecLocal.nombre, 'tecnico');
         }
-      }).catch(function() { _entrarConRol(_tecLocal.nombre, 'tecnico'); });
+      }).catch(function() { _iniciarPresentacionLogin(); _entrarConRol(_tecLocal.nombre, 'tecnico'); });
     });
     return;
   }
@@ -7130,6 +7155,7 @@ function _iniciarSesion() {
     }
     // Con internet — verificar si es creador con PIN 1030
     if (nombre.toLowerCase() === CREADOR.nombre && pin === CREADOR.pin) {
+      _iniciarPresentacionLogin();
       _entrarConRol(nombre, 'creador');
       return;
     }
@@ -7141,6 +7167,7 @@ function _iniciarSesion() {
         if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
         var roles = (u.roles || ['tecnico']).filter(function(r){ return r !== 'creador'; });
         if (roles.length === 0) roles = ['tecnico'];
+        _iniciarPresentacionLogin();
         if (roles.length > 1) { _mostrarSelectorRol(nombre, roles); }
         else { _entrarConRol(nombre, roles[0]); }
       } else {
@@ -7195,34 +7222,29 @@ function _aplicarSesion(nombre, rol, multiRol) {
   var histTools = document.getElementById('histAdminTools');
   if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
-  // Mostrar splash mientras Firestore sincroniza
-  var _splashSync = document.getElementById('splash');
-  if (_splashSync) {
-    _splashSync.classList.remove('fade-out');
-    _splashSync.style.display = 'flex';
-    _splashSync.style.opacity = '1';
-    _splashSync.style.pointerEvents = 'auto';
-  }
 
-  function _ocultarOverlay() {
+  // La presentación y las sincronizaciones que no dependen del rol ya se dispararon antes
+  // (_iniciarPresentacionLogin, en el momento en que el PIN se confirmó correcto). Aquí solo
+  // queda esperar a que termine la presentación (bandera global — puede que ya haya terminado,
+  // si el usuario tardó en elegir su rol) y la sincronización de partes/incidencias, que sí
+  // depende del rol ya decidido. Ninguna de las dos corta a la otra.
+  var _syncPartesTerminada = false;
+  function _ocultarSplashSiListo() {
+    if (!_loginSplashListo || !_syncPartesTerminada) return;
     var sp = document.getElementById('splash');
     if (sp) {
       sp.classList.add('fade-out');
       setTimeout(function(){ if(sp.parentNode) sp.parentNode.removeChild(sp); }, 600);
     }
+    document.body.style.overflow = '';
+    document.body.style.height = '';
     renderClientes();
     refreshCounts();
     renderAsgTecnico();
     renderAsgAdmin();
     renderHistTecBtns();
   }
-
-  _sincronizarClientesDesdeFirestore();
-  _sincronizarTecnicosDesdeFirestore();
-  _sincronizarCatalogoDesdeFirestore();
-  _sincronizarAgendaDesdeFirestore();
-  _sincronizarRegistroGlobal();
-  _reintentarPartesPendientes();
+  function _ocultarOverlay() { _syncPartesTerminada = true; _ocultarSplashSiListo(); }
 
   if (rol === 'admin' || rol === 'creador') {
     _sincronizarEstadosIncidencias();
