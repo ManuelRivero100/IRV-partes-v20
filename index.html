@@ -1249,7 +1249,12 @@ function _sincronizarCatalogoDesdeFirestore(){
       // Bajar de Firestore solo si es más reciente que el local
       var localV=localStorage.getItem(CAT_V_KEY)||'0';
       if(d.version&&d.version>=localV){
-        localStorage.setItem(CAT_KEY,JSON.stringify(d.catalogo));
+        // El catálogo compartido ya no incluye tecnicos (tienen su propio camino seguro) —
+        // conservar los locales al bajar, para no dejar un hueco momentáneo sin técnicos
+        var tecnicosActuales = getTecnicos();
+        var catNuevo = d.catalogo || {};
+        catNuevo.tecnicos = tecnicosActuales;
+        localStorage.setItem(CAT_KEY,JSON.stringify(catNuevo));
         localStorage.setItem(CAT_V_KEY,d.version);
       }
     } else {
@@ -1262,8 +1267,13 @@ function _subirCatalogoAFirestore(){
   var rol=window._sesion.rol;
   if(rol!=='admin'&&rol!=='creador') return;
   var cat=getCat();
+  // Excluir tecnicos: ya tienen su propio camino seguro (colección usuario, vía
+  // _subirTecnicoAFirestore) — incluirlos aquí arriesgaba sobrescribir/borrar técnicos
+  // añadidos desde otro dispositivo si esta copia local del catálogo estaba desactualizada
+  var catSinTecnicos = Object.assign({}, cat);
+  delete catSinTecnicos.tecnicos;
   _db.collection('config').doc('catalogo').set({
-    catalogo: cat,
+    catalogo: catSinTecnicos,
     version: CAT_V,
     fechaModificacion: Date.now()
   }).catch(function(){});
@@ -1759,7 +1769,7 @@ function tecGuardar(){
   var nuevoTec={id:'tec_'+Date.now(), nombre:nom, tel:$('tec-tel').value.trim(), jobs:_tecJobs.slice(), pin:pin, activo:true};
   tecs.push(nuevoTec);
   setTecnicos(tecs);
-  if(pin.length===4) _subirTecnicoAFirestore(nuevoTec);
+  _subirTecnicoAFirestore(nuevoTec);
   $('tec-nombre').value=''; $('tec-tel').value=''; $('tec-pin').value=''; _tecJobs=[];
   document.querySelectorAll('#tec-jobs-tgl button').forEach(function(b){
     b.style.background='var(--surface2)'; b.style.color='var(--text2)'; b.style.borderColor='var(--border)';
@@ -1800,10 +1810,10 @@ function renderCatTecnicos(){
 function _subirTecnicoAFirestore(t){
   try{
     if(typeof _db === 'undefined' || !_db) return;
-    if(!t.pin || t.pin.length!==4) return; // solo subir si tiene PIN válido
+    if(!t.nombre) return; // solo se necesita el nombre — el PIN es opcional (ayudantes sin login propio)
     var docId = t.nombre.toLowerCase().replace(/ /g,'_');
     _db.collection('usuario').doc(docId).set({
-      nombre: t.nombre, pin: t.pin, activo: t.activo!==false
+      nombre: t.nombre, pin: t.pin||'', activo: t.activo!==false, roles: ['tecnico']
     }, {merge:true}).catch(function(){});
   }catch(e){}
 }
