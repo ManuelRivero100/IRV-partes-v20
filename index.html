@@ -881,6 +881,18 @@ textarea{resize:vertical;min-height:72px}
     </div>
   </div>
 </div>
+<div class="dialogo" id="dlgSinConexionAdmin">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo">&#128225; Sin conexi&oacute;n</div>
+    <div class="dialogo-sub" style="margin-bottom:16px;">Sin conexi&oacute;n a internet. Para trabajar como administrador necesitas conexi&oacute;n. Puedes continuar como t&eacute;cnico.</div>
+    <div class="brow" style="margin-bottom:10px;">
+      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="_continuarComoTecnicoPorDesconexion()">&#128295; Continuar como t&eacute;cnico</button>
+    </div>
+    <div class="brow">
+      <button class="btn btn-s" style="flex:1;justify-content:center" onclick="document.getElementById('dlgSinConexionAdmin').classList.remove('show')">&#10005; Cancelar</button>
+    </div>
+  </div>
+</div>
 <div class="dialogo" id="dlgInicioOrden">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#128203; &iquest;C&oacute;mo seguimos?</div>
@@ -7084,8 +7096,31 @@ function _iniciarPresentacionLogin(){
 }
 
 function _loginSinConexionContinuar() {
-  _iniciarPresentacionLogin();
+  // Ya se sabe con certeza que no hay conexión — solo la presentación local, sin
+  // intentar ninguna sincronización de red (que no tiene sentido y solo haría esperar)
+  _loginSplashListo = false;
+  iniciarSplash(function(){ _loginSplashListo = true; });
   _entrarConRol(_loginPendienteNombre, 'tecnico');
+}
+
+// Se usa cuando se pierde la conexión en pleno uso, estando como admin/creador — cambia
+// la sesión actual a técnico directamente, sin pasar por el splash ni intentar sincronizar
+// (ya se sabe con certeza que no hay conexión, así que no tiene sentido intentarlo)
+function _continuarComoTecnicoPorDesconexion(){
+  if (window._sesion) {
+    window._sesion.rol = 'tecnico';
+    var sub = document.getElementById('hdr-sub');
+    if (sub) sub.textContent = window._sesion.nombre + ' · tecnico';
+    var icCat = document.getElementById('iconCatalogo');
+    if (icCat) icCat.style.display = 'none';
+    var histTools = document.getElementById('histAdminTools');
+    if (histTools) histTools.style.display = 'none';
+    var btnRol = document.getElementById('btnCambiarRol');
+    if (btnRol) btnRol.style.display = 'none'; // reaparece solo al confirmar que vuelve la conexión
+  }
+  var dlg = document.getElementById('dlgSinConexionAdmin');
+  if (dlg) dlg.classList.remove('show');
+  goTo('w-clientes');
 }
 
 function _mostrarSinConexion(nombre, rol) {
@@ -7247,7 +7282,16 @@ function _aplicarSesion(nombre, rol, multiRol) {
     renderAsgAdmin();
     renderHistTecBtns();
   }
-  function _ocultarOverlay() { _syncPartesTerminada = true; _ocultarSplashSiListo(); }
+  var _syncPartesYaResuelto = false;
+  function _ocultarOverlay() {
+    if (_syncPartesYaResuelto) return; // ya se resolvió (a tiempo, o por la salvaguarda) — no repetir
+    _syncPartesYaResuelto = true;
+    _syncPartesTerminada = true;
+    _ocultarSplashSiListo();
+  }
+  // Salvaguarda: si Firestore no responde en 10s (sin conexión, o una consulta colgada),
+  // entrar igualmente en vez de quedarse esperando para siempre
+  setTimeout(_ocultarOverlay, 10000);
 
   if (rol === 'admin' || rol === 'creador') {
     _sincronizarEstadosIncidencias();
@@ -7284,6 +7328,26 @@ function _iniciarActualizacionPeriodica(){
     renderAsgTecnico();
     renderAsgAdmin();
     catActualizarBadge();
+    // Detectar pérdida/recuperación de conexión en pleno uso, solo si es relevante
+    // (admin/creador actual, o técnico con más de un rol disponible)
+    var _s = window._sesion;
+    if (_s.multiRol || _s.rol === 'admin' || _s.rol === 'creador') {
+      _verificarConexionFirestore(function(hayConexion){
+        if (!hayConexion) {
+          if (_s.rol === 'admin' || _s.rol === 'creador') {
+            var dlg = document.getElementById('dlgSinConexionAdmin');
+            if (dlg) dlg.classList.add('show');
+          }
+          var btnRol = document.getElementById('btnCambiarRol');
+          if (btnRol && _s.rol !== 'admin' && _s.rol !== 'creador') btnRol.style.display = 'none';
+        } else {
+          if (_s.multiRol && _s.rol !== 'admin' && _s.rol !== 'creador') {
+            var btnRol2 = document.getElementById('btnCambiarRol');
+            if (btnRol2) { btnRol2.style.display = ''; btnRol2.textContent = '⚙️ Admin'; }
+          }
+        }
+      });
+    }
   }, 120000); // cada 2 minutos: margen cómodo bajo el límite gratuito de lecturas de Firestore
 }
 
