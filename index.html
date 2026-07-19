@@ -467,7 +467,7 @@ textarea{resize:vertical;min-height:72px}
     </div>
   </div>
 </div>
-<div id="splash" onclick="this.style.pointerEvents='none';document.body.style.overflow='';this.classList.add('fade-out');var s=this;setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s);},600);">
+<div id="splash" onclick="this.style.pointerEvents='none';document.body.style.overflow='';this.classList.add('fade-out');var s=this;setTimeout(function(){if(s)s.style.display='none';},600);">
   <div id="coin-wrap">
     <div id="coin"></div>
   </div>
@@ -6803,8 +6803,10 @@ function iniciarSplash(alTerminar) {
   document.body.style.overflow = "hidden";
   var splash = document.getElementById("splash");
   var coin   = document.getElementById("coin");
+  if (!splash || !coin) { if (alTerminar) alTerminar(); return; }
 
   splash.classList.remove("fade-out");
+  splash.style.pointerEvents = "auto";
   splash.style.display = "flex";
   splash.style.opacity = "1";
 
