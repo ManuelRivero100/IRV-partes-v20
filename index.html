@@ -7038,13 +7038,14 @@ var MANUEL_ADMIN_PIN = '1212';
 
 // ===== MÓDULO VERIFICACIÓN CONEXIÓN =====
 // Función autocontenida — no depende de nada externo
-// Intenta leer config/general de Firestore con timeout de 3 segundos
+// Intenta leer config/general de Firestore con timeout de 8 segundos
+// (incluye la autenticación anónima, que puede tardar más en conexiones móviles lentas)
 // callback(true) = hay conexión real, callback(false) = sin conexión
 function _verificarConexionFirestore(callback) {
   var respondido = false;
   var timer = setTimeout(function() {
     if (!respondido) { respondido = true; callback(false); }
-  }, 3000);
+  }, 8000);
   _authReady.then(function() {
     try {
       _db.collection('config').doc('general').get().then(function() {
