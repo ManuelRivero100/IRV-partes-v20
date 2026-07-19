@@ -1,5 +1,5 @@
 // sw.js — Partes IRV-10
-const CACHE = 'irv10-v20260717f';
+const CACHE = 'irv10-v20260717g';
 const FILES = ['./','./index.html','./manifest.json','./icon.png'];
 self.addEventListener('install', function(e){
   self.skipWaiting();
@@ -22,7 +22,7 @@ self.addEventListener('activate', function(e){
 self.addEventListener('fetch', function(e){
   if(e.request.mode === 'navigate'){
     // Cache-busting: URL única cada vez, para que la CDN de GitHub Pages
-    // nunca pueda servir una copia guardada — siempre va al origen real.
+    // nunca pueda servir una copia guardada — siempre va al orgen real.
     var bustedUrl = e.request.url + (e.request.url.indexOf('?') >= 0 ? '&' : '?') + '_sw=' + Date.now();
     e.respondWith(
       fetch(bustedUrl, {cache: 'no-store'}).then(function(r){
