@@ -1539,12 +1539,10 @@ function migrarCierresDesdeHistorial(){
 }
 
 // Siguiente número IRV global (único en toda la app)
-function nextIRV(clienteId){
+function nextIRV(){
   var h=getH();
-  var cid=clienteId||(curCliente&&curCliente.id)||'mercadona';
   var max=0;
   h.forEach(function(r){
-    if((r.clienteId||'mercadona')!==cid) return;
     if(r.pedido&&r.pedido.startsWith('IRV-')){
       var n=parseInt(r.pedido.replace('IRV-',''),10)||0;
       if(n>max) max=n;
@@ -7840,12 +7838,8 @@ function abrirCatalogo() {
   if (rol !== 'admin' && rol !== 'creador') {
     alert('Sin acceso. Solo administrador o creador.'); return;
   }
-  // Creador entra directamente sin PIN
-  if (rol === 'creador') { goTo('w-catalogo'); return; }
-  document.getElementById('dlgPinCatalogoPin').value = '';
-  document.getElementById('dlgPinCatalogoMsg').textContent = '';
-  document.getElementById('dlgPinCatalogo').classList.add('show');
-  setTimeout(function(){ document.getElementById('dlgPinCatalogoPin').focus(); }, 100);
+  // Admin y creador entran directamente, sin PIN adicional
+  goTo('w-catalogo');
 }
 
 function confirmarPinCatalogo() {
