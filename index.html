@@ -893,6 +893,18 @@ textarea{resize:vertical;min-height:72px}
     </div>
   </div>
 </div>
+<div class="dialogo" id="dlgConfirmar">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo">&#9888;&#65039; Confirmar</div>
+    <div class="dialogo-sub" id="dlgConfirmarMsg" style="margin-bottom:16px;white-space:pre-line;"></div>
+    <div class="brow" style="margin-bottom:10px;">
+      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="_confirmarAppSi()">&#10003; Aceptar</button>
+    </div>
+    <div class="brow">
+      <button class="btn btn-s" style="flex:1;justify-content:center" onclick="_confirmarAppNo()">&#10005; Cancelar</button>
+    </div>
+  </div>
+</div>
 <div class="dialogo" id="dlgInicioOrden">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#128203; &iquest;C&oacute;mo seguimos?</div>
@@ -1306,14 +1318,15 @@ function seleccionarCliente(id){
 }
 
 function borrarCliente(id){
-  if(!confirm('¿Eliminar este cliente y todos sus datos?')) return;
-  var lista=getClientes().filter(function(c){ return c.id!==id; });
-  saveClientes(lista);
-  try{ if(typeof _db !== 'undefined' && _db) _db.collection('clientes').doc(id).delete().catch(function(){}); }catch(e){}
-  // borrar partes de este cliente
-  var h=getH().filter(function(r){ return r.clienteId!==id; });
-  setH(h);
-  renderClientes();
+  _confirmarApp('¿Eliminar este cliente y todos sus datos?', function(){
+    var lista=getClientes().filter(function(c){ return c.id!==id; });
+    saveClientes(lista);
+    try{ if(typeof _db !== 'undefined' && _db) _db.collection('clientes').doc(id).delete().catch(function(){}); }catch(e){}
+    // borrar partes de este cliente
+    var h=getH().filter(function(r){ return r.clienteId!==id; });
+    setH(h);
+    renderClientes();
+  });
 }
 
 var _ncTipo='fijo';
@@ -1777,9 +1790,10 @@ function tecGuardar(){
 }
 
 function tecEliminar(id){
-  if(!confirm('¿Eliminar este técnico?')) return;
-  setTecnicos(getTecnicos().filter(function(t){return t.id!==id;}));
-  renderCatTecnicos();
+  _confirmarApp('¿Eliminar este técnico?', function(){
+    setTecnicos(getTecnicos().filter(function(t){return t.id!==id;}));
+    renderCatTecnicos();
+  });
 }
 
 function renderCatTecnicos(){
@@ -4002,7 +4016,24 @@ function cerrarIncidenciaActual(){
   var h=getH();
   h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro){r.estado='terminado';_subirParteAFirestore(r);}});
   setH(h);
-  verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
+  // Actualizar también el estado de la incidencia en Firestore (fuente real de verdad),
+  // igual que ya hace reabrirIncidenciaActual() al reabrir — así "Asignaciones" deja de
+  // mostrarla como activa en cuanto se cierra, sea cual sea el camino por el que se cierre
+  _db.collection('incidencias')
+    .where('pedido','==',o.pedido)
+    .where('centro','==',o.centro)
+    .get().then(function(snap){
+      snap.forEach(function(doc){
+        _db.collection('incidencias').doc(doc.id).update({estado:'terminado'});
+      });
+      try {
+        var estados = JSON.parse(localStorage.getItem('pm_incidencias_estados')||'{}');
+        estados[(o.pedido||'')+'||'+(o.centro||'')] = 'terminado';
+        localStorage.setItem('pm_incidencias_estados', JSON.stringify(estados));
+      } catch(e) {}
+      refreshCounts();
+      verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
+    }).catch(function(){ verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro)); });
 }
 function reabrirIncidenciaActual(){
   var o=window._ordenActual;if(!o)return;
@@ -5185,11 +5216,21 @@ function seleccionarRefNoMerc(idx){
 }
 function buscarPorCentroORef(val){
   var box=$('acCentro');
-  if(!val||val.length<1){ box.classList.remove('show'); box.innerHTML=''; return; }
-  var h=getH();
   var esMerc=curCliente&&curCliente.tipo==='mercadona';
   var clienteId=curCliente?curCliente.id:'mercadona';
-  var campo=esMerc?'centro':'tienda';
+  if(esMerc){
+    // Mercadona: nada visible mientras escribe — solo se comprueba en silencio al
+    // completar los 4 dígitos del centro; si existe, se rellena todo bloqueado
+    box.classList.remove('show'); box.innerHTML='';
+    if(val && val.trim().length===4){
+      var agExacto=agendaBuscar(clienteId,val.trim());
+      if(agExacto) rellenarDesdeAgenda(clienteId, val.trim());
+    }
+    return;
+  }
+  if(!val||val.length<1){ box.classList.remove('show'); box.innerHTML=''; return; }
+  var h=getH();
+  var campo='tienda';
   var esTecnico=window._sesion && window._sesion.rol==='tecnico';
   var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
   var seen={},activas=[],cerradas=[];
@@ -5204,48 +5245,34 @@ function buscarPorCentroORef(val){
     if(seen[k]) continue;
     seen[k]=true;
     if((r.estado||'terminado')==='en-ejecucion') activas.push({r:r,idx:i});
-    else if(!esMerc) cerradas.push({r:r,idx:i}); // Mercadona ya no usa el historial local para esto, usa la agenda
+    else cerradas.push({r:r,idx:i});
   }
   var otrosClientes=[];
-  if(!esMerc){
-    var seenOtros={};
-    for(var j=h.length-1;j>=0;j--){
-      var r2=h[j];
-      if((r2.clienteId||'mercadona')===clienteId) continue;
-      if(!(r2.tienda||'').toLowerCase().includes(val.toLowerCase())) continue;
-      if((r2.estado||'terminado')!=='en-ejecucion') continue;
-      var k2=r2.tienda+'|'+r2.clienteId;
-      if(seenOtros[k2]) continue;
-      seenOtros[k2]=true;
-      var nombreCliente=r2.clienteId;
-      var cl=getClientes().find(function(c){ return c.id===r2.clienteId; });
-      if(cl) nombreCliente=cl.nombre;
-      otrosClientes.push({r:r2,idx:j,nombreCliente:nombreCliente});
-    }
-  }
-  var agendaItem=null;
-  if(esMerc && !activas.length){
-    var ag=agendaBuscar(clienteId,val.trim());
-    if(ag) agendaItem=ag;
+  var seenOtros={};
+  for(var j=h.length-1;j>=0;j--){
+    var r2=h[j];
+    if((r2.clienteId||'mercadona')===clienteId) continue;
+    if(!(r2.tienda||'').toLowerCase().includes(val.toLowerCase())) continue;
+    if((r2.estado||'terminado')!=='en-ejecucion') continue;
+    var k2=r2.tienda+'|'+r2.clienteId;
+    if(seenOtros[k2]) continue;
+    seenOtros[k2]=true;
+    var nombreCliente=r2.clienteId;
+    var cl=getClientes().find(function(c){ return c.id===r2.clienteId; });
+    if(cl) nombreCliente=cl.nombre;
+    otrosClientes.push({r:r2,idx:j,nombreCliente:nombreCliente});
   }
   var html='';
   activas.forEach(function(x){
-    var label=esMerc?'Centro '+x.r.centro+' &mdash; '+x.r.tienda:x.r.tienda;
     html+='<div class="ac-item" onclick="rellenarDatos('+x.idx+',false)">'+
-      '<span style="margin-right:6px;">&#9203;</span>'+label+
+      '<span style="margin-right:6px;">&#9203;</span>'+x.r.tienda+
       ' <span class="badge badge-a" style="font-size:.66rem;">En ejecuci&oacute;n</span></div>';
   });
   if(!activas.length&&cerradas.length){
     var x=cerradas[0];
-    var label2=esMerc?'Centro '+x.r.centro+' &mdash; '+x.r.tienda:x.r.tienda;
     html+='<div class="ac-item" style="color:var(--text2)" onclick="rellenarDatos('+x.idx+',false)">'+
-      '<span style="margin-right:6px;">&#128203;</span>'+label2+
+      '<span style="margin-right:6px;">&#128203;</span>'+x.r.tienda+
       ' <span class="badge badge-g" style="font-size:.66rem;">Datos anteriores</span></div>';
-  }
-  if(agendaItem){
-    html+='<div class="ac-item" onclick="rellenarDesdeAgenda(\''+clienteId+'\',\''+agendaItem.centro+'\')">'+
-      '<span style="margin-right:6px;">&#128179;</span>Centro '+agendaItem.centro+' &mdash; '+agendaItem.tienda+
-      ' <span class="badge badge-g" style="font-size:.66rem;">Agenda</span></div>';
   }
   otrosClientes.forEach(function(x){
     html+='<div class="ac-item" style="color:var(--amber)" onclick="avisoCruzadoIdx('+x.idx+')">'+
@@ -5257,7 +5284,8 @@ function buscarPorCentroORef(val){
 
 function buscarPorOrden(val){
   var box=$('acOrden');
-  if(!val||val.length<2){ box.classList.remove('show'); box.innerHTML=''; return; }
+  box.classList.remove('show'); box.innerHTML='';
+  if(!val || val.trim().length<6) return;
   var esTecnico=window._sesion && window._sesion.rol==='tecnico';
   var esTecnicoPuro=esTecnico && !window._sesion.multiRol;
   var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
@@ -5286,38 +5314,29 @@ function buscarPorOrden(val){
     if(esTecnico && !(r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre)) return false;
     return true;
   });
-  var seen={},activas=[],cerradas=[];
+  // Solo coincidencia EXACTA con el pedido completo, sin sugerencias parciales
+  var exacta=null, exactaIdx=null;
   for(var i=delCliente.length-1;i>=0;i--){
     var r=delCliente[i];
-    if(!r.pedido||!r.pedido.toLowerCase().includes(val.toLowerCase())) continue;
-    var k=r.pedido+'|'+r.centro;
-    if(seen[k]) continue;
-    seen[k]=true;
-    var idx=h.indexOf(r);
-    if((r.estado||'terminado')==='en-ejecucion') activas.push({r:r,idx:idx});
-    else cerradas.push({r:r,idx:idx});
-  }
-  var html='';
-  activas.forEach(function(x){
-    html+='<div class="ac-item" onclick="seleccionarOrdenActiva('+x.idx+')">'+
-      '<span style="margin-right:6px;">&#9203;</span>'+x.r.pedido+' &mdash; '+(x.r.tienda||x.r.centro)+
-      ' <span class="badge badge-a" style="font-size:.66rem;">En ejecuci&oacute;n</span></div>';
-  });
-  cerradas.forEach(function(x){
-    if(x.r.pedido===val||x.r.pedido.toLowerCase()===val.toLowerCase()){
-      if(esTecnicoPuro){
-        html+='<div class="ac-item" style="color:var(--text2)" onclick="solicitarReabrirPorPedido(\''+x.r.pedido.replace(/'/g,"\\'")+'\')">'+
-          '<span style="margin-right:6px;">&#128274;</span>'+x.r.pedido+' &mdash; '+(x.r.tienda||x.r.centro)+
-          ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada &middot; Solicitar reabrir</span></div>';
-      } else {
-        html+='<div class="ac-item" style="color:var(--text2)" onclick="pedirReabrirOrden('+x.idx+')">'+
-          '<span style="margin-right:6px;">&#128274;</span>'+x.r.pedido+' &mdash; '+(x.r.tienda||x.r.centro)+
-          ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada</span></div>';
-      }
+    if(r.pedido && r.pedido.toLowerCase()===val.trim().toLowerCase()){
+      exacta=r; exactaIdx=h.indexOf(r); break;
     }
-  });
-  if(!html){ box.classList.remove('show'); box.innerHTML=''; return; }
-  box.innerHTML=html; box.classList.add('show');
+  }
+  if(!exacta) return;
+  if((exacta.estado||'terminado')==='en-ejecucion'){
+    seleccionarOrdenActiva(exactaIdx);
+    return;
+  }
+  if(esTecnicoPuro){
+    box.innerHTML='<div class="ac-item" style="color:var(--text2)" onclick="solicitarReabrirPorPedido(\''+exacta.pedido.replace(/'/g,"\\'")+'\')">'+
+      '<span style="margin-right:6px;">&#128274;</span>'+exacta.pedido+' &mdash; '+(exacta.tienda||exacta.centro)+
+      ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada &middot; Solicitar reabrir</span></div>';
+  } else {
+    box.innerHTML='<div class="ac-item" style="color:var(--text2)" onclick="pedirReabrirOrden('+exactaIdx+')">'+
+      '<span style="margin-right:6px;">&#128274;</span>'+exacta.pedido+' &mdash; '+(exacta.tienda||exacta.centro)+
+      ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada</span></div>';
+  }
+  box.classList.add('show');
 }
 
 function compartirOrden(){
@@ -6263,15 +6282,15 @@ function _finalizarGuardado(estado){
   // Verificar si coincide con un parte existente (solo para partes nuevos, no edición)
   var _idxDup=h.findIndex(function(x){ return x.fecha===r.fecha&&x.pedido===r.pedido&&x.centro===r.centro; });
   if(_idxDup>=0){
-    if(confirm('Ya existe un parte con la misma fecha, centro y orden.\n¿Reemplazar el parte existente?\n(Cancela para descartar el nuevo)')){
+    _confirmarApp('Ya existe un parte con la misma fecha, centro y orden.\n¿Reemplazar el parte existente?\n(Cancela para descartar el nuevo)', function(){
       h[_idxDup]=r; setH(h);
       _subirParteAFirestore(r);
       showMsg('msgRes','Parte reemplazado.','success');
       $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
       setTimeout(function(){ goTo('w-menu'); },1200);
-    } else {
+    }, function(){
       showMsg('msgRes','Parte descartado.','warn');
-    }
+    });
     return;
   }
   h.push(r); setH(h);
@@ -7139,6 +7158,27 @@ function _loginSinConexionContinuar() {
   _entrarConRol(_loginPendienteNombre, 'tecnico');
 }
 
+// Diálogo de confirmación con el estilo propio de la app, en vez del confirm() nativo
+// del navegador. Uso: _confirmarApp('mensaje', function(){ ...si acepta... }, function(){ ...si cancela (opcional)... });
+var _confirmarAppCallback = null;
+var _confirmarAppCallbackNo = null;
+function _confirmarApp(mensaje, callback, callbackNo){
+  _confirmarAppCallback = callback;
+  _confirmarAppCallbackNo = callbackNo||null;
+  var msg = document.getElementById('dlgConfirmarMsg'); if (msg) msg.textContent = mensaje;
+  var dlg = document.getElementById('dlgConfirmar'); if (dlg) dlg.classList.add('show');
+}
+function _confirmarAppSi(){
+  var dlg = document.getElementById('dlgConfirmar'); if (dlg) dlg.classList.remove('show');
+  var cb = _confirmarAppCallback; _confirmarAppCallback = null; _confirmarAppCallbackNo = null;
+  if (cb) cb();
+}
+function _confirmarAppNo(){
+  var dlg = document.getElementById('dlgConfirmar'); if (dlg) dlg.classList.remove('show');
+  var cb = _confirmarAppCallbackNo; _confirmarAppCallback = null; _confirmarAppCallbackNo = null;
+  if (cb) cb();
+}
+
 // Se usa cuando se pierde la conexión en pleno uso, estando como admin/creador — cambia
 // la sesión actual a técnico directamente, sin pasar por el splash ni intentar sincronizar
 // (ya se sabe con certeza que no hay conexión, así que no tiene sentido intentarlo)
@@ -7725,8 +7765,9 @@ function reasignarIncidencia(id, nuevoTec) {
 }
 
 function eliminarIncidencia(id) {
-  if (!confirm('¿Eliminar esta incidencia asignada?')) return;
-  _db.collection('incidencias').doc(id).delete().then(function(){ renderAsgLista(); });
+  _confirmarApp('¿Eliminar esta incidencia asignada?', function(){
+    _db.collection('incidencias').doc(id).delete().then(function(){ renderAsgLista(); });
+  });
 }
 
 // (renderAsgTecnico, renderAsgAdmin, verAsgAdminAviso, abrirAsgTecOpciones, consultarAsgTec,
