@@ -884,12 +884,9 @@ textarea{resize:vertical;min-height:72px}
 <div class="dialogo" id="dlgSinConexionAdmin">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#128225; Sin conexi&oacute;n</div>
-    <div class="dialogo-sub" style="margin-bottom:16px;">Sin conexi&oacute;n a internet. Para trabajar como administrador necesitas conexi&oacute;n. Puedes continuar como t&eacute;cnico.</div>
-    <div class="brow" style="margin-bottom:10px;">
-      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="_continuarComoTecnicoPorDesconexion()">&#128295; Continuar como t&eacute;cnico</button>
-    </div>
+    <div class="dialogo-sub" style="margin-bottom:16px;">Sin conexi&oacute;n a internet. Para trabajar como administrador necesitas conexi&oacute;n. Los cambios que intentes hacer sin conexi&oacute;n no se guardar&aacute;n. Contin&uacute;a como t&eacute;cnico mientras se recupera.</div>
     <div class="brow">
-      <button class="btn btn-s" style="flex:1;justify-content:center" onclick="document.getElementById('dlgSinConexionAdmin').classList.remove('show')">&#10005; Cancelar</button>
+      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="_continuarComoTecnicoPorDesconexion()">&#128295; Continuar como t&eacute;cnico</button>
     </div>
   </div>
 </div>
@@ -4278,7 +4275,10 @@ function ejecutarAsgTec() {
   _asgTecActual = d;
   if (d.pedido) {
     var esMerc = curCliente.tipo === 'mercadona';
-    if (esMerc) { $('pedido').value = d.pedido; }
+    if (esMerc) {
+      $('pedido').value = d.pedido;
+      if (d.job === 'Obras') _actObrasSeleccionada = d.pedido;
+    }
     else { _pedidoNoMerc = d.pedido; $('pedidoGenDisplay').textContent = d.pedido; }
   }
   // Si la asignación no traía km/tr/dir/tel/tienda, completar desde la agenda compartida
