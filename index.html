@@ -7219,7 +7219,13 @@ function _iniciarPresentacionLogin(nombre){
     // (Firestore siempre prevalece) antes de permitir que este dispositivo actualice nada
     _limpiarDatosLocalesCompartidos();
     var _msgSync = document.getElementById('splash-sync-msg');
-    if (_msgSync) _msgSync.style.display = 'block';
+    if (_msgSync) {
+      _msgSync.style.display = 'block';
+      // Duración exacta de toda la presentación (800 inicial + 7 ciclos × 930 + 560 previo
+      // al parpadeo + 6000 del parpadeo/crecimiento final) — el mensaje se ve mientras dure
+      // toda la presentación, no solo un instante
+      setTimeout(function(){ if (_msgSync) _msgSync.style.display = 'none'; }, 13870);
+    }
   } else {
     var _msgSyncOff = document.getElementById('splash-sync-msg');
     if (_msgSyncOff) _msgSyncOff.style.display = 'none';
