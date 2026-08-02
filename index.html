@@ -1236,6 +1236,10 @@ function _sincronizarAgendaDesdeFirestore(){
       if(JSON.stringify(a[k])!==JSON.stringify(d)){ a[k]=d; cambiado=true; }
     });
     if(cambiado) setAgenda(a);
+    // Actualizar el badge también aquí, por si esta sincronización termina después de que
+    // la app ya se haya revelado — así el número siempre queda correcto, sin importar cuánto
+    // tarde la descarga de la agenda
+    if(typeof catActualizarBadge==='function') catActualizarBadge();
   }).catch(function(){});
 }
 function _sincronizarTecnicosDesdeFirestore(){
