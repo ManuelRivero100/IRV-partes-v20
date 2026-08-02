@@ -476,6 +476,7 @@ textarea{resize:vertical;min-height:72px}
     <div class="splash-line" id="txt-sol">Soluciones</div>
     <div class="splash-line" id="txt-med">A tu Medida</div>
   </div>
+  <div id="splash-sync-msg" style="display:none;position:absolute;bottom:12%;left:0;right:0;text-align:center;color:#fff;font-size:.85rem;font-family:sans-serif;opacity:.9;letter-spacing:.02em;">&#128260; Sincronizando datos del d&iacute;a&hellip;</div>
 </div>
 
 <div class="app" style="display:none;"><div class="hdr">
@@ -7217,6 +7218,11 @@ function _iniciarPresentacionLogin(nombre){
     // de fresco, para garantizar que la copia local sea un reflejo exacto de Firestore
     // (Firestore siempre prevalece) antes de permitir que este dispositivo actualice nada
     _limpiarDatosLocalesCompartidos();
+    var _msgSync = document.getElementById('splash-sync-msg');
+    if (_msgSync) _msgSync.style.display = 'block';
+  } else {
+    var _msgSyncOff = document.getElementById('splash-sync-msg');
+    if (_msgSyncOff) _msgSyncOff.style.display = 'none';
   }
   if (nombreKey) localStorage.setItem(DISPOSITIVO_USUARIO_KEY, nombreKey);
   localStorage.setItem(ULTIMA_VERIFICACION_KEY, hoy);
