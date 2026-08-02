@@ -7183,8 +7183,16 @@ var _loginPendienteRol = '';
 // tiene la sesión — así que si entra un usuario distinto al que tenía esos datos, hay que
 // limpiarlos y resincronizar de fresco antes de continuar (o bloquear el cambio sin conexión).
 var DISPOSITIVO_USUARIO_KEY = 'pm_dispositivo_usuario';
+var ULTIMA_VERIFICACION_KEY = 'pm_ultima_verificacion_local';
 function _limpiarDatosLocalesCompartidos(){
-  localStorage.removeItem('pm_v4');
+  // El historial se limpia con cuidado: cualquier parte todavía pendiente de subir a
+  // Firestore (trabajo real de un técnico que aún no se ha confirmado guardado) se
+  // conserva — nunca se pierde trabajo real por una limpieza de sincronización
+  try {
+    var h = JSON.parse(localStorage.getItem('pm_v4')||'[]');
+    var pendientes = h.filter(function(r){ return r._pendienteSync; });
+    localStorage.setItem('pm_v4', JSON.stringify(pendientes));
+  } catch(e) { /* si algo falla leyendo, no tocar pm_v4 por seguridad */ }
   localStorage.removeItem('pm_registro_global');
   localStorage.removeItem('pm_incidencias_estados');
   localStorage.removeItem(CAT_KEY);
@@ -7200,12 +7208,18 @@ var _loginSplashListo = false;
 function _iniciarPresentacionLogin(nombre){
   var nombreKey = (nombre||'').toLowerCase();
   var usuarioActual = localStorage.getItem(DISPOSITIVO_USUARIO_KEY);
-  if (usuarioActual && nombreKey && usuarioActual !== nombreKey) {
-    // Usuario distinto al que tenía los datos locales de este dispositivo — limpiar antes
-    // de sincronizar de fresco, para que no queden mezclados con los del usuario anterior
+  var esUsuarioDistinto = !!(usuarioActual && nombreKey && usuarioActual !== nombreKey);
+  var hoy = new Date().toISOString().slice(0,10);
+  var ultimaVerificacion = localStorage.getItem(ULTIMA_VERIFICACION_KEY);
+  var esPrimerLoginDelDia = ultimaVerificacion !== hoy;
+  if (esUsuarioDistinto || esPrimerLoginDelDia) {
+    // Usuario distinto, o primer inicio de sesión del día: limpiar antes de sincronizar
+    // de fresco, para garantizar que la copia local sea un reflejo exacto de Firestore
+    // (Firestore siempre prevalece) antes de permitir que este dispositivo actualice nada
     _limpiarDatosLocalesCompartidos();
   }
   if (nombreKey) localStorage.setItem(DISPOSITIVO_USUARIO_KEY, nombreKey);
+  localStorage.setItem(ULTIMA_VERIFICACION_KEY, hoy);
   _loginSplashListo = false;
   iniciarSplash(function(){ _loginSplashListo = true; });
   _sincronizarClientesDesdeFirestore();
