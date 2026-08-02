@@ -7134,12 +7134,34 @@ function _verificarConexionFirestore(callback) {
 var _loginPendienteNombre = '';
 var _loginPendienteRol = '';
 
+// Aislamiento de datos por usuario en dispositivos compartidos: el historial, registro
+// global, catálogo y agenda son un único almacén por dispositivo, no separado por quién
+// tiene la sesión — así que si entra un usuario distinto al que tenía esos datos, hay que
+// limpiarlos y resincronizar de fresco antes de continuar (o bloquear el cambio sin conexión).
+var DISPOSITIVO_USUARIO_KEY = 'pm_dispositivo_usuario';
+function _limpiarDatosLocalesCompartidos(){
+  localStorage.removeItem('pm_v4');
+  localStorage.removeItem('pm_registro_global');
+  localStorage.removeItem('pm_incidencias_estados');
+  localStorage.removeItem(CAT_KEY);
+  localStorage.removeItem(CAT_V_KEY);
+  localStorage.removeItem('pm_agenda');
+}
+
 // Se llama en el instante en que el PIN se confirma correcto, antes de decidir si hace
 // falta preguntar el rol. Arranca la presentación completa y las sincronizaciones que no
 // dependen del rol final (clientes, técnicos, catálogo, agenda, registro global) — así
 // ese tiempo se aprovecha mientras el usuario ve la presentación o elige su rol.
 var _loginSplashListo = false;
-function _iniciarPresentacionLogin(){
+function _iniciarPresentacionLogin(nombre){
+  var nombreKey = (nombre||'').toLowerCase();
+  var usuarioActual = localStorage.getItem(DISPOSITIVO_USUARIO_KEY);
+  if (usuarioActual && nombreKey && usuarioActual !== nombreKey) {
+    // Usuario distinto al que tenía los datos locales de este dispositivo — limpiar antes
+    // de sincronizar de fresco, para que no queden mezclados con los del usuario anterior
+    _limpiarDatosLocalesCompartidos();
+  }
+  if (nombreKey) localStorage.setItem(DISPOSITIVO_USUARIO_KEY, nombreKey);
   _loginSplashListo = false;
   iniciarSplash(function(){ _loginSplashListo = true; });
   _sincronizarClientesDesdeFirestore();
@@ -7151,6 +7173,16 @@ function _iniciarPresentacionLogin(){
 }
 
 function _loginSinConexionContinuar() {
+  // Sin conexión: si el dispositivo tiene datos de OTRO usuario guardados, no se puede
+  // cambiar de forma segura (no hay forma de sincronizar de fresco) — bloquear con aviso
+  var nombreKey = (_loginPendienteNombre||'').toLowerCase();
+  var usuarioActual = localStorage.getItem(DISPOSITIVO_USUARIO_KEY);
+  if (usuarioActual && nombreKey && usuarioActual !== nombreKey) {
+    var msgEl = document.getElementById('loginMsg');
+    if (msgEl) msgEl.textContent = 'Este dispositivo tiene datos de otro usuario guardados. Se necesita conexión para cambiar de usuario de forma segura.';
+    return;
+  }
+  if (nombreKey) localStorage.setItem(DISPOSITIVO_USUARIO_KEY, nombreKey);
   // Ya se sabe con certeza que no hay conexión — solo la presentación local, sin
   // intentar ninguna sincronización de red (que no tiene sentido y solo haría esperar)
   _loginSplashListo = false;
@@ -7232,7 +7264,7 @@ function _iniciarSesion() {
           msgEl.textContent = '';
           _mostrarSinConexion(nombre, 'tecnico');
         } else {
-          _iniciarPresentacionLogin();
+          _iniciarPresentacionLogin(nombre);
           _entrarConRol(_tecLocal.nombre, 'tecnico');
         }
         return;
@@ -7242,14 +7274,14 @@ function _iniciarSesion() {
         if (snap.exists) {
           var roles = (snap.data().roles || ['tecnico']).filter(function(r){ return r !== 'creador'; });
           if (roles.length === 0) roles = ['tecnico'];
-          _iniciarPresentacionLogin();
+          _iniciarPresentacionLogin(nombre);
           if (roles.length > 1) { _mostrarSelectorRol(nombre, roles); }
           else { _entrarConRol(nombre, roles[0]); }
         } else {
-          _iniciarPresentacionLogin();
+          _iniciarPresentacionLogin(nombre);
           _entrarConRol(_tecLocal.nombre, 'tecnico');
         }
-      }).catch(function() { _iniciarPresentacionLogin(); _entrarConRol(_tecLocal.nombre, 'tecnico'); });
+      }).catch(function() { _iniciarPresentacionLogin(nombre); _entrarConRol(_tecLocal.nombre, 'tecnico'); });
     });
     return;
   }
@@ -7269,7 +7301,7 @@ function _iniciarSesion() {
     }
     // Con internet — verificar si es creador con PIN 1030
     if (nombre.toLowerCase() === CREADOR.nombre && pin === CREADOR.pin) {
-      _iniciarPresentacionLogin();
+      _iniciarPresentacionLogin(nombre);
       _entrarConRol(nombre, 'creador');
       return;
     }
@@ -7281,7 +7313,7 @@ function _iniciarSesion() {
         if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
         var roles = (u.roles || ['tecnico']).filter(function(r){ return r !== 'creador'; });
         if (roles.length === 0) roles = ['tecnico'];
-        _iniciarPresentacionLogin();
+        _iniciarPresentacionLogin(nombre);
         if (roles.length > 1) { _mostrarSelectorRol(nombre, roles); }
         else { _entrarConRol(nombre, roles[0]); }
       } else {
