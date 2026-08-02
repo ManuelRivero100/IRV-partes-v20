@@ -657,9 +657,14 @@ textarea{resize:vertical;min-height:72px}
     <div id="abn" class="abn"><span>&#128279;</span><span id="abnTxt"></span></div>
     <div id="modeNo">
       <div class="g2">
-        <div class="field"><label>N&ordm; de coches</label><input id="ncoches" type="number" min="1" value="1" placeholder="1"></div>
+        <div class="field"><label>N&ordm; de coches</label><input id="ncoches" type="number" min="1" value="1" placeholder="1" oninput="_actualizarTodosEnlazanVisibilidad()"></div>
         <div class="field"></div>
       </div>
+      <div class="g2">
+        <div class="field"><label>Km adicionales</label><input id="kmAdicionales" type="number" min="0" placeholder="0"></div>
+        <div class="field"></div>
+      </div>
+      <div class="field"><label>Justificaci&oacute;n km adicionales</label><textarea id="kmAdicionalesJust" placeholder="Ej: 50 km adicionales por b&uacute;squeda de material en almac&eacute;n de Torre Pacheco"></textarea></div>
       <div class="g2">
         <div class="field"><label>Km ida</label><input id="km" type="number" min="0" placeholder="km"></div>
         <div class="field"><label>Despl. ida (min)</label><input id="tr" type="number" min="0" placeholder="min"></div>
@@ -673,6 +678,13 @@ textarea{resize:vertical;min-height:72px}
       <div class="g2">
         <div class="field"><label>Despl. entrada (min)</label><input id="trE" type="number" min="0" placeholder="min"></div>
         <div class="field"><label>Despl. salida (min)</label><input id="trS" type="number" min="0" placeholder="min"></div>
+      </div>
+      <div class="field" id="todosEnlazanField" style="display:none"><label>&iquest;Todos los coches enlazan?</label>
+        <div class="tgl" id="todosEnlazanTgl">
+          <button class="active" onclick="setTodosEnlazan(true,this)">S&iacute;</button>
+          <button onclick="setTodosEnlazan(false,this)">No</button>
+        </div>
+        <input type="hidden" id="todosEnlazan" value="Si">
       </div>
     </div>
     <div id="modeAuto" style="display:none">
@@ -3144,7 +3156,23 @@ function generarCore(){
     kmG=kA; trG=tA;
   }
   var _nCoches=Math.max(1,+$('ncoches').value||1);
-  kmT=kmT*_nCoches;
+  var _todosEnlazan = $('todosEnlazan') ? $('todosEnlazan').value!=='No' : true;
+  if(curLink==='Si' && _nCoches>1 && !_todosEnlazan){
+    // No todos los coches enlazan: 1 coche usa la fórmula de enlace ya calculada arriba
+    // (sin multiplicar), el resto (nCoches-1) usa ida y vuelta al taller (km entrada × 2)
+    var kmNoEnlaza = (+$('kmE').value||0) * 2;
+    kmT = kmT + (kmNoEnlaza * (_nCoches-1));
+  } else {
+    kmT=kmT*_nCoches;
+  }
+  var kmAdic = +$('kmAdicionales').value || 0;
+  if(kmAdic>0){
+    var _kmAdicJust=$('kmAdicionalesJust').value.trim();
+    var _kmAdicTexto=kmAdic+' km adicionales'+(_kmAdicJust?(': '+_kmAdicJust):'');
+    var _obsEl=$('obs');
+    _obsEl.value=_obsEl.value.trim()?(_obsEl.value.trim()+'\n'+_kmAdicTexto):_kmAdicTexto;
+  }
+  kmT = kmT + kmAdic;
 
   var autoObs='';
   if(same.length){ var last=same[same.length-1]; if(last.horaEnlace&&last.horaEnlace===arr) autoObs='Desplazamiento desde '+last.tienda+' (Centro '+last.centro+')'; }
@@ -3419,11 +3447,14 @@ function resetearEstadoCompleto(){
 
 function nuevo(){
   _editIdx=null;
-  ['pedido','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
+  ['pedido','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea','kmAdicionales','kmAdicionalesJust'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
   _desbloquearCamposAutorrellenados();
   window._origenAutoLectura=false;
   var _fd=$('fieldDescIncidencia'); if(_fd) _fd.style.display='none'; var _dd=$('descIncidencia'); if(_dd) _dd.value='';
   $('w').value='2'; $('job').value=''; $('link').value='No'; $('ncoches').value='1';
+  $('todosEnlazan').value='Si';
+  document.querySelectorAll('#todosEnlazanTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); });
+  $('todosEnlazanField').style.display='none';
   curJob=''; curLink='No'; wRoles=[];
   wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
   esFestivo=false; _cAC=null; _oAC=null; aeData=null;
@@ -5955,6 +5986,19 @@ function setLink(v,btn){
   if(btn) btn.classList.add('active');
   $('modeNo').style.display=v==='Si'?'none':'block';
   $('modeSi').style.display=v==='No'?'none':'block';
+  _actualizarTodosEnlazanVisibilidad();
+}
+
+function _actualizarTodosEnlazanVisibilidad(){
+  var f=$('todosEnlazanField'); if(!f) return;
+  var nCoches=Math.max(1,+$('ncoches').value||1);
+  f.style.display=(curLink==='Si'&&nCoches>1)?'block':'none';
+}
+
+function setTodosEnlazan(v,btn){
+  $('todosEnlazan').value=v?'Si':'No';
+  document.querySelectorAll('#todosEnlazanTgl button').forEach(function(b){ b.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
 }
 
 // ===== TRABAJADORES =====
