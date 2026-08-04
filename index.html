@@ -1255,9 +1255,10 @@ function _sincronizarTecnicosDesdeFirestore(){
         tecs[idx].pin=d.pin;
         tecs[idx].activo=d.activo!==false;
         tecs[idx].roles=roles;
+        tecs[idx].ultimaConexion=d.ultimaConexion||null;
         cambiado=true;
       } else {
-        tecs.push({id:'tec_'+doc.id, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false, roles:roles});
+        tecs.push({id:'tec_'+doc.id, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false, roles:roles, ultimaConexion:d.ultimaConexion||null});
         cambiado=true;
       }
     });
@@ -1823,6 +1824,7 @@ function renderCatTecnicos(){
       +'<button onclick="tecEliminar(\''+t.id+'\')" style="background:var(--red-light);color:var(--red);border:none;border-radius:var(--r-sm);padding:4px 10px;font-size:.8rem;cursor:pointer;">&#128465;</button>'
       +'</div>'
       +(t.tel?'<div style="font-size:.8rem;color:var(--text2);margin-top:4px;">📞 '+t.tel+'</div>':'')
+      +(t.ultimaConexion?'<div style="font-size:.76rem;color:var(--text3);margin-top:2px;">🕓 Última conexión: '+_fmtFechaHora(t.ultimaConexion)+'</div>':'')
       +(t.jobs&&t.jobs.length?'<div style="font-size:.78rem;color:var(--green);margin-top:4px;">'+t.jobs.join(' · ')+'</div>':'')
       +'<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">'
       +'<label style="font-size:.75rem;color:var(--text2);font-weight:700;">PIN</label>'
@@ -4167,33 +4169,49 @@ function renderAsgAdmin() {
   if (!sec || !el) return;
   var esAdmin = window._sesion && window._sesion.rol === 'admin';
   if (!esAdmin) { sec.style.display = 'none'; return; }
-  _db.collection('incidencias')
-    .where('vistaAdmin','==',false)
-    .get().then(function(snap){
-      if (snap.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
-      var html = '';
-      snap.forEach(function(doc){
-        var d = doc.data();
-        var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
-        if(d.solicitudReabrir){
-          html += '<div class="act-list-item" onclick="verSolicitudReabrir(\''+doc.id+'\')">'
-            + '<span class="act-num">&#128275;</span>'
-            + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
-            + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.solicitudReabrir.tecnico||'')+' solicita reabrir</div></div>'
-            + '</div>';
-        } else {
-          html += '<div class="act-list-item" onclick="verAsgAdminAviso(\''+doc.id+'\',\''+(d.clienteId||'')+'\')">'
-            + '<span class="act-num">&#128229;</span>'
-            + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
-            + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+' · Creada por '+(d.creadoPor||'')+'</div>'
-            + (d.verificarDatos?'<div class="act-sub" style="color:var(--amber);font-weight:600;">&#9888;&#65039; Verificar datos y validarlos</div>':'')
-            + '</div>'
-            + '</div>';
-        }
-      });
-      el.innerHTML = html;
-      sec.style.display = 'block';
-    }).catch(function(){ sec.style.display = 'none'; });
+  Promise.all([
+    _db.collection('incidencias').where('vistaAdmin','==',false).get(),
+    _db.collection('notificacionesTecnico').get()
+  ]).then(function(resultados){
+    var snap = resultados[0];
+    var snapNotif = resultados[1];
+    if (snap.empty && snapNotif.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
+    var html = '';
+    snap.forEach(function(doc){
+      var d = doc.data();
+      var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
+      if(d.solicitudReabrir){
+        html += '<div class="act-list-item" onclick="verSolicitudReabrir(\''+doc.id+'\')">'
+          + '<span class="act-num">&#128275;</span>'
+          + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
+          + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.solicitudReabrir.tecnico||'')+' solicita reabrir</div></div>'
+          + '</div>';
+      } else {
+        html += '<div class="act-list-item" onclick="verAsgAdminAviso(\''+doc.id+'\',\''+(d.clienteId||'')+'\')">'
+          + '<span class="act-num">&#128229;</span>'
+          + '<div><div class="act-info">'+(d.tienda||'')+'</div>'
+          + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+(d.job||'')+' · Creada por '+(d.creadoPor||'')+'</div>'
+          + (d.verificarDatos?'<div class="act-sub" style="color:var(--amber);font-weight:600;">&#9888;&#65039; Verificar datos y validarlos</div>':'')
+          + '</div>'
+          + '</div>';
+      }
+    });
+    snapNotif.forEach(function(doc){
+      var n = doc.data();
+      var esIntento = n.tipo === 'intento_desactivado';
+      var texto = esIntento ? 'intentó entrar estando desactivado' : 'entró a la app estando desactivado';
+      html += '<div class="act-list-item" onclick="verNotificacionTecnico(\''+doc.id+'\')">'
+        + '<span class="act-num" style="color:var(--red);">&#9888;&#65039;</span>'
+        + '<div><div class="act-info">'+(n.tecnico||'')+'</div>'
+        + '<div class="act-sub">'+texto+' · '+_fmtFechaHora(n.fecha)+'</div></div>'
+        + '</div>';
+    });
+    el.innerHTML = html;
+    sec.style.display = 'block';
+  }).catch(function(){ sec.style.display = 'none'; });
+}
+function verNotificacionTecnico(id){
+  _db.collection('notificacionesTecnico').doc(id).delete().then(renderAsgAdmin).catch(function(){});
 }
 function verAsgAdminAviso(id, clienteId) {
   _db.collection('incidencias').doc(id).get().then(function(doc){
@@ -6564,6 +6582,13 @@ function borrarParteOk(i){
 
 function fT(m){ return ('0'+Math.floor(m/60)).slice(-2)+':'+('0'+(m%60)).slice(-2); }
 
+function _fmtFechaHora(ms){
+  var d=new Date(ms);
+  var dia=('0'+d.getDate()).slice(-2), mes=('0'+(d.getMonth()+1)).slice(-2), anio=d.getFullYear();
+  var hh=('0'+d.getHours()).slice(-2), mm=('0'+d.getMinutes()).slice(-2);
+  return dia+'/'+mes+'/'+anio+' '+hh+':'+mm;
+}
+
 function fmt(v){ var r=Math.round(v*100)/100; return Number.isInteger(r)?''+r:(''+r).replace(/0+$/,'').replace(/\.$/,''); }
 
 function gc(job,lab,rol){ if(!curCliente||curCliente.tipo!=='mercadona') return lab; var e=COD[jk(job)]&&COD[jk(job)][lab]; if(!e) return lab; if(e.r&&rol) return e.c[rol]||lab; return e.c||lab; }
@@ -7209,6 +7234,18 @@ function _limpiarDatosLocalesCompartidos(){
   localStorage.removeItem('pm_agenda');
 }
 
+// Aviso de técnico desactivado (intento fallido, o entrada lograda estando desactivado).
+// Solo se ve una vez en la pantalla inicial junto a "Asignaciones" — no queda ningún
+// historial guardado, el propio aviso se borra de Firestore en cuanto se ve.
+function _crearNotificacionTecnico(nombre, tipo){
+  try {
+    if (typeof _db === 'undefined' || !_db) return;
+    _db.collection('notificacionesTecnico').add({
+      tecnico: nombre, tipo: tipo, fecha: Date.now()
+    }).catch(function(){});
+  } catch(e) {}
+}
+
 // Se llama en el instante en que el PIN se confirma correcto, antes de decidir si hace
 // falta preguntar el rol. Arranca la presentación completa y las sincronizaciones que no
 // dependen del rol final (clientes, técnicos, catálogo, agenda, registro global) — así
@@ -7354,6 +7391,7 @@ function _iniciarSesion() {
           if (uData.activo === false) {
             msgEl.textContent = 'Acceso desactivado.';
             _limpiarDatosLocalesCompartidos();
+            _crearNotificacionTecnico(nombre, 'intento_desactivado');
             return;
           }
           var roles = (uData.roles || ['tecnico']).filter(function(r){ return r !== 'creador'; });
@@ -7397,6 +7435,7 @@ function _iniciarSesion() {
         if (u.activo === false) {
           msgEl.textContent = 'Acceso desactivado.';
           _limpiarDatosLocalesCompartidos();
+          _crearNotificacionTecnico(nombre, 'intento_desactivado');
           return;
         }
         var roles = (u.roles || ['tecnico']).filter(function(r){ return r !== 'creador'; });
@@ -7440,6 +7479,13 @@ function _entrarConRol(nombre, rol, multiRol) {
       _rolInfo[nombre.toLowerCase()] = 'tecnico';
     }
     localStorage.setItem('irv_roles', JSON.stringify(_rolInfo));
+  } catch(e) {}
+  // Registrar la última conexión en Firestore, para verla en el catálogo de técnicos
+  try {
+    if (typeof _db !== 'undefined' && _db) {
+      var _docIdConexion = nombre.toLowerCase().replace(/ /g,'_');
+      _db.collection('usuario').doc(_docIdConexion).update({ ultimaConexion: Date.now() }).catch(function(){});
+    }
   } catch(e) {}
   _aplicarSesion(nombre, rol, !!multiRol);
   goTo('w-clientes');
@@ -7546,6 +7592,7 @@ function _iniciarActualizacionPeriodica(){
           _db.collection('usuario').doc(_docIdActivo).get().then(function(doc){
             if (doc.exists && doc.data().activo === false) {
               _limpiarDatosLocalesCompartidos();
+              _crearNotificacionTecnico(_s2.nombre, 'entrada_desactivado');
               cerrarSesion();
             }
           }).catch(function(){});
