@@ -1838,9 +1838,13 @@ function _subirTecnicoAFirestore(t){
     if(typeof _db === 'undefined' || !_db) return;
     if(!t.nombre) return; // solo se necesita el nombre — el PIN es opcional (ayudantes sin login propio)
     var docId = t.nombre.toLowerCase().replace(/ /g,'_');
-    _db.collection('usuario').doc(docId).set({
-      nombre: t.nombre, pin: t.pin||'', activo: t.activo!==false, roles: ['tecnico']
-    }, {merge:true}).catch(function(){});
+    _db.collection('usuario').doc(docId).get().then(function(doc){
+      var rolesExistentes = (doc.exists && doc.data().roles) || [];
+      var roles = rolesExistentes.indexOf('tecnico')>=0 ? rolesExistentes : rolesExistentes.concat(['tecnico']);
+      return _db.collection('usuario').doc(docId).set({
+        nombre: t.nombre, pin: t.pin||'', activo: t.activo!==false, roles: roles
+      }, {merge:true});
+    }).catch(function(){});
   }catch(e){}
 }
 
@@ -7346,7 +7350,13 @@ function _iniciarSesion() {
       var docId = nombre.toLowerCase().replace(/ /g,'_');
       _db.collection('usuario').doc(docId).get().then(function(snap) {
         if (snap.exists) {
-          var roles = (snap.data().roles || ['tecnico']).filter(function(r){ return r !== 'creador'; });
+          var uData = snap.data();
+          if (uData.activo === false) {
+            msgEl.textContent = 'Acceso desactivado.';
+            _limpiarDatosLocalesCompartidos();
+            return;
+          }
+          var roles = (uData.roles || ['tecnico']).filter(function(r){ return r !== 'creador'; });
           if (roles.length === 0) roles = ['tecnico'];
           _iniciarPresentacionLogin(nombre);
           if (roles.length > 1) { _mostrarSelectorRol(nombre, roles); }
@@ -7384,7 +7394,11 @@ function _iniciarSesion() {
       if (snap.exists) {
         var u = snap.data();
         if (u.pin !== pin) { msgEl.textContent = 'PIN incorrecto.'; return; }
-        if (u.activo === false) { msgEl.textContent = 'Acceso desactivado.'; return; }
+        if (u.activo === false) {
+          msgEl.textContent = 'Acceso desactivado.';
+          _limpiarDatosLocalesCompartidos();
+          return;
+        }
         var roles = (u.roles || ['tecnico']).filter(function(r){ return r !== 'creador'; });
         if (roles.length === 0) roles = ['tecnico'];
         _iniciarPresentacionLogin(nombre);
@@ -7525,6 +7539,17 @@ function _iniciarActualizacionPeriodica(){
     setTimeout(function(){
       if(document.visibilityState === 'visible' && window._sesion){
         var _s2 = window._sesion;
+        // Comprobar si el usuario actual sigue activo — si lo desactivaron mientras estaba
+        // dentro de la app, se borran sus datos locales y se le saca de la sesión
+        if (typeof _db !== 'undefined' && _db && _s2.rol !== 'creador') {
+          var _docIdActivo = _s2.nombre.toLowerCase().replace(/ /g,'_');
+          _db.collection('usuario').doc(_docIdActivo).get().then(function(doc){
+            if (doc.exists && doc.data().activo === false) {
+              _limpiarDatosLocalesCompartidos();
+              cerrarSesion();
+            }
+          }).catch(function(){});
+        }
         if (_s2.multiRol || _s2.rol === 'admin' || _s2.rol === 'creador') {
           _verificarConexionFirestore(function(hayConexion){
             if (!hayConexion) {
