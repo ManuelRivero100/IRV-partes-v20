@@ -1257,7 +1257,7 @@ function _sincronizarTecnicosDesdeFirestore(){
         tecs[idx].roles=roles;
         cambiado=true;
       } else {
-        tecs.push({id:'tec_'+Date.now()+'_'+idx, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false, roles:roles});
+        tecs.push({id:'tec_'+doc.id, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false, roles:roles});
         cambiado=true;
       }
     });
