@@ -658,7 +658,7 @@ textarea{resize:vertical;min-height:72px}
     <div id="abn" class="abn"><span>&#128279;</span><span id="abnTxt"></span></div>
     <div id="modeNo">
       <div class="g2">
-        <div class="field"><label>N&ordm; de coches</label><input id="ncoches" type="number" min="1" value="1" placeholder="1" oninput="_actualizarTodosEnlazanVisibilidad()"></div>
+        <div class="field"><label>N&ordm; de coches</label><input id="ncoches" type="number" min="1" value="1" placeholder="1" oninput="_actualizarTodosEnlazanVisibilidad()" onfocus="this.select()"></div>
         <div class="field"></div>
       </div>
       <div class="g2">
@@ -1306,6 +1306,37 @@ function _subirCatalogoAFirestore(){
   }).catch(function(){});
 }
 
+// Modifica el contenido del catálogo (grupos, secciones, materiales, conceptos) leyendo y
+// escribiendo SIEMPRE directamente contra Firestore — nunca usa la copia local como origen
+// del cambio, ya que Firestore es la única fuente de verdad; la copia local solo se
+// actualiza como espejo, después de que el cambio quede confirmado en Firestore.
+// modificarFn recibe el catálogo recién leído y lo modifica en el sitio (sin devolver nada).
+// alTerminar(exito) se llama al terminar, para que quien llama pueda refrescar la pantalla.
+function _modificarCatalogoEnFirestore(modificarFn, alTerminar){
+  if(typeof _db === 'undefined' || !_db || !window._sesion){ if(alTerminar) alTerminar(false); return; }
+  var rol=window._sesion.rol;
+  if(rol!=='admin'&&rol!=='creador'){ if(alTerminar) alTerminar(false); return; }
+  _db.collection('config').doc('catalogo').get().then(function(doc){
+    var catActual = (doc.exists && doc.data().catalogo) ? doc.data().catalogo : {grupos:[], conceptos:[]};
+    // Conservar los técnicos locales — el documento compartido no los incluye
+    catActual.tecnicos = getTecnicos();
+    modificarFn(catActual);
+    var catSinTecnicos = Object.assign({}, catActual);
+    delete catSinTecnicos.tecnicos;
+    return _db.collection('config').doc('catalogo').set({
+      catalogo: catSinTecnicos,
+      version: CAT_V,
+      fechaModificacion: Date.now()
+    }).then(function(){
+      // Actualizar el espejo local con lo que Firestore acaba de confirmar
+      localStorage.setItem(CAT_KEY, JSON.stringify(catActual));
+      if(alTerminar) alTerminar(true);
+    });
+  }).catch(function(){
+    if(alTerminar) alTerminar(false);
+  });
+}
+
 var curCliente = null;
 var _keepForm = false;
 var esFestivo = false;
@@ -1951,15 +1982,16 @@ function catNavRenderSecciones(g, cat){
 
 
 function catNavDelSec(si){
-  var cat=getCat();
-  var g=cat.grupos.find(function(x){return x.id===_catNav.grupoId;});if(!g)return;
-  var sec=g.secciones[si];if(!sec)return;
-  var total=(sec.mats||[]).length+(sec.subsecs||[]).reduce(function(a,ss){return a+(ss.mats||[]).length;},0);
-  if(total>0) return; // solo si está vacía
-  g.secciones.splice(si,1);
-  setCat(cat);
-  _subirCatalogoAFirestore();
-  catNavRender();
+  _modificarCatalogoEnFirestore(function(cat){
+    var g=cat.grupos.find(function(x){return x.id===_catNav.grupoId;});if(!g)return;
+    var sec=g.secciones[si];if(!sec)return;
+    var total=(sec.mats||[]).length+(sec.subsecs||[]).reduce(function(a,ss){return a+(ss.mats||[]).length;},0);
+    if(total>0) return; // solo si está vacía
+    g.secciones.splice(si,1);
+  }, function(exito){
+    if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexión.','error'); return; }
+    catNavRender();
+  });
 }
 function catNavEntrarSec(si){
   _catNav.secIdx=si;_catNav.subIdx=-1;_catNav.nivel='materiales';
@@ -2055,15 +2087,16 @@ function catNavAddMat(key,si,ssi){
     setTimeout(function(){if(inp)inp.style.borderColor='';},1500);
     return;
   }
-  var cat=getCat();
-  var g=cat.grupos.find(function(x){return x.id===_catNav.grupoId;});if(!g)return;
-  var sec=g.secciones[si];if(!sec)return;
-  if(ssi===-1){ sec.mats=sec.mats||[];sec.mats.push({nom:nom}); }
-  else { var ss=sec.subsecs[ssi];if(ss){ss.mats=ss.mats||[];ss.mats.push({nom:nom});} }
-  setCat(cat);
-  _subirCatalogoAFirestore();
-  if(inp)inp.value='';
-  catNavRender();
+  _modificarCatalogoEnFirestore(function(cat){
+    var g=cat.grupos.find(function(x){return x.id===_catNav.grupoId;});if(!g)return;
+    var sec=g.secciones[si];if(!sec)return;
+    if(ssi===-1){ sec.mats=sec.mats||[];sec.mats.push({nom:nom}); }
+    else { var ss=sec.subsecs[ssi];if(ss){ss.mats=ss.mats||[];ss.mats.push({nom:nom});} }
+  }, function(exito){
+    if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexión.','error'); return; }
+    if(inp)inp.value='';
+    catNavRender();
+  });
 }
 
 function catNavToggleSub(ssi){
@@ -2073,12 +2106,15 @@ function catNavToggleSub(ssi){
 
 function catNavNuevaSub(si){
   dlgNombre('Nueva subsecci&#243;n','',function(nom){
-    var cat=getCat();
-    var g=cat.grupos.find(function(x){return x.id===_catNav.grupoId;});if(!g)return;
-    var sec=g.secciones[si];if(!sec)return;
-    sec.subsecs=sec.subsecs||[];
-    sec.subsecs.push({id:'ss_'+Date.now(),nombre:nom,mats:[]});
-    setCat(cat);_subirCatalogoAFirestore();catNavRender();
+    _modificarCatalogoEnFirestore(function(cat){
+      var g=cat.grupos.find(function(x){return x.id===_catNav.grupoId;});if(!g)return;
+      var sec=g.secciones[si];if(!sec)return;
+      sec.subsecs=sec.subsecs||[];
+      sec.subsecs.push({id:'ss_'+Date.now(),nombre:nom,mats:[]});
+    }, function(exito){
+      if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexión.','error'); return; }
+      catNavRender();
+    });
   });
 }
 
@@ -2170,75 +2206,95 @@ function dlgEditMatAc(val){
 function dlgEditMatGuardar(){
   var nuevoNom=$('dlgEditMatNom').value.trim();
   if(!nuevoNom)return;
-  var cat=getCat();
-  var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
-  var si=_dlgEditMat.si,ssi=_dlgEditMat.ssi,mi=_dlgEditMat.mi;
-  var sec=g.secciones[si];if(!sec)return;
-  var mats=ssi===-1?(sec.mats||[]):(sec.subsecs[ssi]?sec.subsecs[ssi].mats||[]:[]);
-  var m=mats[mi];if(!m)return;
-  var viejoNom=m.nom;
-  // Check duplicate
+  // Check duplicate (comprobación previa contra la copia local, solo como aviso rápido)
   var todos=catAllMatsGrupo(_catState.grupoAb);
-  if(nuevoNom!==viejoNom&&todos.find(function(n){return n.toLowerCase()===nuevoNom.toLowerCase();})){
+  var viejoNomPrevio=null;
+  var siPrev=_dlgEditMat.si,ssiPrev=_dlgEditMat.ssi,miPrev=_dlgEditMat.mi;
+  var gPrev=getCat().grupos.find(function(x){return x.id===_catState.grupoAb;});
+  if(gPrev){ var secPrev=gPrev.secciones[siPrev]; if(secPrev){ var matsPrev=ssiPrev===-1?(secPrev.mats||[]):(secPrev.subsecs[ssiPrev]?secPrev.subsecs[ssiPrev].mats||[]:[]); if(matsPrev[miPrev]) viejoNomPrevio=matsPrev[miPrev].nom; } }
+  if(viejoNomPrevio&&nuevoNom!==viejoNomPrevio&&todos.find(function(n){return n.toLowerCase()===nuevoNom.toLowerCase();})){
     alert('"'+nuevoNom+'" ya existe.');return;
   }
-  // Rename
-  m.nom=nuevoNom;
-  // Move to different section if selected
-  var destSi=_dlgEditMat.destSi;
-  var destSsi=_dlgEditMat.destSsi;
-  if(destSi!==undefined&&(destSi!==si||destSsi!==ssi)){
-    // Remove from current
-    mats.splice(mi,1);
-    // Add to dest
-    var destSec=g.secciones[destSi];
-    if(destSec){
-      var destMats=destSsi===-1?(destSec.mats||(destSec.mats=[])):(destSec.subsecs[destSsi]?(destSec.subsecs[destSsi].mats||(destSec.subsecs[destSsi].mats=[])):null);
-      if(destMats&&!destMats.find(function(x){return x.nom===nuevoNom;})) destMats.push({nom:nuevoNom});
+  var viejoNomFinal='';
+  _modificarCatalogoEnFirestore(function(cat){
+    var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
+    var si=_dlgEditMat.si,ssi=_dlgEditMat.ssi,mi=_dlgEditMat.mi;
+    var sec=g.secciones[si];if(!sec)return;
+    var mats=ssi===-1?(sec.mats||[]):(sec.subsecs[ssi]?sec.subsecs[ssi].mats||[]:[]);
+    var m=mats[mi];if(!m)return;
+    var viejoNom=m.nom;
+    viejoNomFinal=viejoNom;
+    // Rename
+    m.nom=nuevoNom;
+    // Move to different section if selected
+    var destSi=_dlgEditMat.destSi;
+    var destSsi=_dlgEditMat.destSsi;
+    if(destSi!==undefined&&(destSi!==si||destSsi!==ssi)){
+      // Remove from current
+      mats.splice(mi,1);
+      // Add to dest
+      var destSec=g.secciones[destSi];
+      if(destSec){
+        var destMats=destSsi===-1?(destSec.mats||(destSec.mats=[])):(destSec.subsecs[destSsi]?(destSec.subsecs[destSsi].mats||(destSec.subsecs[destSsi].mats=[])):null);
+        if(destMats&&!destMats.find(function(x){return x.nom===nuevoNom;})) destMats.push({nom:nuevoNom});
+      }
     }
-  }
-  // Update _MS.sel if was selected
-  if(_MS.sel[viejoNom]!==undefined){_MS.sel[nuevoNom]=_MS.sel[viejoNom];delete _MS.sel[viejoNom];}
-  setCat(cat);
-  _subirCatalogoAFirestore();
-  $('dlgEditMat').classList.remove('show');
-  renderCatGrupoBody();
+  }, function(exito){
+    if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexión.','error'); return; }
+    // Update _MS.sel if was selected
+    if(viejoNomFinal&&_MS.sel[viejoNomFinal]!==undefined){_MS.sel[nuevoNom]=_MS.sel[viejoNomFinal];delete _MS.sel[viejoNomFinal];}
+    $('dlgEditMat').classList.remove('show');
+    renderCatGrupoBody();
+  });
 }
 function dlgEditMatBorrar(){
-  var cat=getCat();
-  var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
-  var si=_dlgEditMat.si,ssi=_dlgEditMat.ssi,mi=_dlgEditMat.mi;
-  var sec=g.secciones[si];if(!sec)return;
-  var mats=ssi===-1?(sec.mats||[]):(sec.subsecs[ssi]?sec.subsecs[ssi].mats||[]:[]);
-  mats.splice(mi,1);
-  setCat(cat);
-  _subirCatalogoAFirestore();
-  $('dlgEditMat').classList.remove('show');
-  renderCatGrupoBody();
+  _modificarCatalogoEnFirestore(function(cat){
+    var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
+    var si=_dlgEditMat.si,ssi=_dlgEditMat.ssi,mi=_dlgEditMat.mi;
+    var sec=g.secciones[si];if(!sec)return;
+    var mats=ssi===-1?(sec.mats||[]):(sec.subsecs[ssi]?sec.subsecs[ssi].mats||[]:[]);
+    mats.splice(mi,1);
+  }, function(exito){
+    if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexión.','error'); return; }
+    $('dlgEditMat').classList.remove('show');
+    renderCatGrupoBody();
+  });
 }
 
 function catEditMat(si,ssi,mi){ catEditMat2(si,ssi,mi); }
 function catDelMat(si,ssi,mi){
-  var cat=getCat();
-  var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
-  var sec=g.secciones[si];if(!sec)return;
-  if(ssi===-1)sec.mats.splice(mi,1);
-  else{var ss=sec.subsecs[ssi];if(ss)ss.mats.splice(mi,1);}
-  setCat(cat);_subirCatalogoAFirestore();renderCatGrupoBody();
+  _modificarCatalogoEnFirestore(function(cat){
+    var g=cat.grupos.find(function(x){return x.id===_catState.grupoAb;});if(!g)return;
+    var sec=g.secciones[si];if(!sec)return;
+    if(ssi===-1)sec.mats.splice(mi,1);
+    else{var ss=sec.subsecs[ssi];if(ss)ss.mats.splice(mi,1);}
+  }, function(exito){
+    if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexión.','error'); return; }
+    renderCatGrupoBody();
+  });
 }
 function catNuevaSec(){
   dlgNombre('Nueva sección','',function(nom){
     var gid=_catNav.grupoId||_catState.grupoAb;
-    var cat=getCat();var g=cat.grupos.find(function(x){return x.id===gid;});if(!g)return;
-    g.secciones.push({id:'s_'+Date.now(),nombre:nom,subsecs:[],mats:[]});
-    setCat(cat);_subirCatalogoAFirestore();catNavRender();
+    _modificarCatalogoEnFirestore(function(cat){
+      var g=cat.grupos.find(function(x){return x.id===gid;});if(!g)return;
+      g.secciones.push({id:'s_'+Date.now(),nombre:nom,subsecs:[],mats:[]});
+    }, function(exito){
+      if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexión.','error'); return; }
+      catNavRender();
+    });
   });
 }
 function catNuevoGrupo(){
   dlgNombre('Nombre del nuevo grupo','',function(nom){
     var icos={'climatización':'❄️','conductos':'💨','electricidad':'⚡','obras':'🏗️','fontanería':'🔧','pintura':'🎨'};
     var ico=icos[nom.toLowerCase()]||'🔧';
-    var cat=getCat();cat.grupos.push({id:'g_'+Date.now(),nombre:nom,ico:ico,secciones:[]});setCat(cat);_subirCatalogoAFirestore();renderCatGrupos();
+    _modificarCatalogoEnFirestore(function(cat){
+      cat.grupos.push({id:'g_'+Date.now(),nombre:nom,ico:ico,secciones:[]});
+    }, function(exito){
+      if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexión.','error'); return; }
+      renderCatGrupos();
+    });
   });
 }
 function catVolverFamilias(){
@@ -2462,7 +2518,16 @@ function renderCatConceptos(){
       }).join('')+'</div>';
   }).join('');
 }
-function catGuardarConceptos(){var cat=getCat();if(window._catConc){Object.keys(window._catConc).forEach(function(i){cat.conceptos[parseInt(i)].precio=window._catConc[i];});window._catConc={};}setCat(cat);_subirCatalogoAFirestore();showMsg('msgCat','Precios guardados.','success');}
+function catGuardarConceptos(){
+  var cambios = window._catConc;
+  _modificarCatalogoEnFirestore(function(cat){
+    if(cambios){ Object.keys(cambios).forEach(function(i){ cat.conceptos[parseInt(i)].precio=cambios[i]; }); }
+  }, function(exito){
+    if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexión.','error'); return; }
+    window._catConc={};
+    showMsg('msgCat','Precios guardados.','success');
+  });
+}
 
 // ===== INIT APP =====
 function parsearCodigos(detalle, roles){
@@ -3166,13 +3231,16 @@ function generarCore(){
     kmT=(aeData?aeData.kmDif:0)+kA; trI=aeData?aeData.trDif:0; trO=tA; heG=lea+tA;
     kmG=kA; trG=tA;
   }
+  var kmTBase=kmT;
   var _nCoches=Math.max(1,+$('ncoches').value||1);
   var _todosEnlazan = $('todosEnlazan') ? $('todosEnlazan').value!=='No' : true;
+  var _kmMultiplicacionSimple = true;
   if(curLink==='Si' && _nCoches>1 && !_todosEnlazan){
     // No todos los coches enlazan: 1 coche usa la fórmula de enlace ya calculada arriba
     // (sin multiplicar), el resto (nCoches-1) usa ida y vuelta al taller (km entrada × 2)
     var kmNoEnlaza = (+$('kmE').value||0) * 2;
     kmT = kmT + (kmNoEnlaza * (_nCoches-1));
+    _kmMultiplicacionSimple = false;
   } else {
     kmT=kmT*_nCoches;
   }
@@ -3208,8 +3276,16 @@ function generarCore(){
   if(tlK) html+=gt(tlK);
   var conPrecios=curCliente&&curCliente.precios===true;
   var _kmCod=gc(curJob,'Km',''); var _kmPr=conPrecios?getPrecioPorCod(_kmCod,'Kmje',curJob):0;
-  if(conPrecios&&_kmPr>0){ html+='<div class="rrow"><span class="rc">'+_kmCod+'</span><span class="rl">Kmje</span><span class="rv">'+fmt(kmT)+' km</span><span class="rp">'+fmtPrecio(_kmPr*kmT)+'</span></div>'; }
-  else { html+=cRow(_kmCod,'Kmje',fmt(kmT)+' km'); }
+  var _kmSubtotal=kmTBase*_nCoches;
+  var _kmValTxt;
+  if(_nCoches>1 && _kmMultiplicacionSimple){
+    _kmValTxt = fmt(kmTBase)+' km x'+_nCoches+'= '+fmt(_kmSubtotal)+' km';
+    if(kmAdic>0) _kmValTxt += ' + '+fmt(kmAdic)+' km adic.= '+fmt(kmT)+' km';
+  } else {
+    _kmValTxt = fmt(kmT)+' km';
+  }
+  if(conPrecios&&_kmPr>0){ html+='<div class="rrow"><span class="rc">'+_kmCod+'</span><span class="rl">Kmje</span><span class="rv">'+_kmValTxt+'</span><span class="rp">'+fmtPrecio(_kmPr*kmT)+'</span></div>'; }
+  else { html+=cRow(_kmCod,'Kmje',_kmValTxt); }
   html+=gt(tlT);
   var hMin;
   if(esNocturno){
@@ -4757,9 +4833,11 @@ function renderWorkers(){
   while(wNames.length<w) wNames.push('');
   wNames=wNames.slice(0,w);
   var html='';
-  // Técnicos disponibles filtrados por job activo
+  // Técnicos disponibles filtrados por job activo — los desactivados no deben salir como
+  // sugerencia para trabajo nuevo, pero siguen apareciendo en el histórico de sus partes
+  // ya guardados, ya que ese histórico lee el nombre directamente del parte, no de aquí
   var _allTecs=getTecnicos().filter(function(t){
-    return !t.jobs||!t.jobs.length||t.jobs.indexOf(curJob)>=0;
+    return t.activo!==false && (!t.jobs||!t.jobs.length||t.jobs.indexOf(curJob)>=0);
   });
   for(var i=0;i<w;i++){
     var _usados=wNames.filter(function(n,ni){return ni!==i&&n&&n.trim();});
@@ -7686,6 +7764,10 @@ function _sincronizarEstadosIncidencias(soloTecnico) {
       estados[k] = d.estado || 'en-ejecucion';
     });
     localStorage.setItem('pm_incidencias_estados', JSON.stringify(estados));
+    // Refrescar los badges de clientes también aquí, por si esta sincronización termina
+    // después de que la app ya se haya revelado — evita que se queden con datos vacíos
+    // o viejos justo tras la limpieza diaria/de usuario
+    if (typeof renderClientes === 'function') renderClientes();
   }).catch(function(){});
 }
 
@@ -8085,8 +8167,15 @@ function abrirCatalogo() {
   if (rol !== 'admin' && rol !== 'creador') {
     alert('Sin acceso. Solo administrador o creador.'); return;
   }
-  // Admin y creador entran directamente, sin PIN adicional
-  goTo('w-catalogo');
+  // El catálogo se lee y se escribe directamente contra Firestore, sin copia local
+  // intermedia — por eso hace falta conexión para entrar, igual que otras acciones de admin
+  _verificarConexionFirestore(function(hayConexion){
+    if (!hayConexion) {
+      alert('Necesitas conexión a internet para acceder al catálogo.');
+      return;
+    }
+    goTo('w-catalogo');
+  });
 }
 
 function confirmarPinCatalogo() {
