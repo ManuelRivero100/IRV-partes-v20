@@ -1745,6 +1745,7 @@ function setCat(d){localStorage.setItem(CAT_KEY,JSON.stringify(d));}
 function catGetGrupoParaJob(job){
   var cat=getCat();
   var j=(job||curJob||'').toLowerCase();
+  if(!j) return null;
   // Try exact name match first, then partial match
   return cat.grupos.find(function(g){return g.nombre.toLowerCase()===j;})
     || cat.grupos.find(function(g){return j.includes(g.nombre.toLowerCase())||g.nombre.toLowerCase().includes(j);})
