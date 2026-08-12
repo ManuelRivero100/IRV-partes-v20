@@ -7655,7 +7655,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
 
 var _actualizacionPeriodicaIniciada = false;
 function _iniciarActualizacionPeriodica(){
-  if(_actualizacionPeriodicaIniciada) return; // solo un intervalo activo, aunque se cambie de rol o se recargue varias veces
+  if(_actualizacionPeriodicaIniciada) return; // solo un ciclo activo, aunque se cambie de rol o se recargue varias veces
   _actualizacionPeriodicaIniciada = true;
   // Chequeo de versión del código: gratis (solo lee el index.html estático de GitHub Pages,
   // no consulta Firestore), así que puede ir mucho más seguido sin coste real.
@@ -7663,27 +7663,14 @@ function _iniciarActualizacionPeriodica(){
     if(document.visibilityState !== 'visible') return;
     _comprobarVersionNueva();
   }, 15000); // cada 15 segundos
-  // Datos (agenda, clientes, técnicos, notificaciones): sí consultan Firestore, que cobra
-  // por lectura — este se queda en 2 minutos para no generar coste innecesario.
-  setInterval(function(){
-    if(document.visibilityState !== 'visible') return;
-    if(!window._sesion) return;
-    _sincronizarClientesDesdeFirestore();
-    _sincronizarTecnicosDesdeFirestore();
-    _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
-    _sincronizarAgendaDesdeFirestore();
-    _sincronizarRegistroGlobal();
-    renderAsgTecnico();
-    renderAsgAdmin();
-    catActualizarBadge();
-  }, 120000); // cada 2 minutos: margen cómodo bajo el límite gratuito de lecturas de Firestore
 
-  // Detectar pérdida/recuperación de conexión en pleno uso, solo si es relevante
-  // (admin/creador actual, o técnico con más de un rol disponible). Ritmo propio,
-  // aparte del ciclo de datos: 1 minuto para admin/creador (lo necesitan más, detección
-  // rápida), 4 minutos para técnico (apenas les afecta) — así se compensa el total de
-  // lecturas entre los dos. Se recalcula en cada ciclo por si el rol cambia en plena sesión.
-  function _programarComprobacionConexion(){
+  // Ciclo único de sincronización completa — todo lo que la app sincroniza al entrar
+  // (clientes, técnicos, catálogo, agenda, registro global, partes, estados de incidencias)
+  // se repite aquí también, para que nada se quede desactualizado mientras la app sigue
+  // abierta. Respeta el tiempo por rol: 1 minuto para admin/creador conectado (lo necesitan
+  // más, detección rápida), 4 minutos para técnico (apenas les afecta). Se recalcula en
+  // cada ciclo por si el rol cambia en plena sesión.
+  function _programarSincronizacionCompleta(){
     var _s = window._sesion;
     var _esAdminAhora = _s && (_s.rol === 'admin' || _s.rol === 'creador');
     var espera = _esAdminAhora ? 60000 : 240000;
@@ -7702,6 +7689,24 @@ function _iniciarActualizacionPeriodica(){
             }
           }).catch(function(){});
         }
+        // Sincronización completa de datos, igual que al entrar
+        _sincronizarClientesDesdeFirestore();
+        _sincronizarTecnicosDesdeFirestore();
+        _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
+        _sincronizarAgendaDesdeFirestore();
+        _sincronizarRegistroGlobal();
+        if (_s2.rol === 'admin' || _s2.rol === 'creador') {
+          _sincronizarEstadosIncidencias();
+          _sincronizarPartesDesdeFirestore(null, function(){});
+        } else if (_s2.rol === 'tecnico') {
+          _sincronizarEstadosIncidencias(_s2.nombre);
+          _sincronizarPartesDesdeFirestore(_s2.nombre, function(){});
+        }
+        renderAsgTecnico();
+        renderAsgAdmin();
+        catActualizarBadge();
+        // Comprobación de conexión, solo si es relevante (admin/creador actual, o técnico
+        // con más de un rol disponible)
         if (_s2.multiRol || _s2.rol === 'admin' || _s2.rol === 'creador') {
           _verificarConexionFirestore(function(hayConexion){
             if (!hayConexion) {
@@ -7720,10 +7725,10 @@ function _iniciarActualizacionPeriodica(){
           });
         }
       }
-      _programarComprobacionConexion(); // reprogramar con la espera correspondiente al rol de ese momento
+      _programarSincronizacionCompleta(); // reprogramar con la espera correspondiente al rol de ese momento
     }, espera);
   }
-  _programarComprobacionConexion();
+  _programarSincronizacionCompleta();
 }
 
 function _comprobarVersionNueva(){
