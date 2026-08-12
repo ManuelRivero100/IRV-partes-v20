@@ -7664,71 +7664,95 @@ function _iniciarActualizacionPeriodica(){
     _comprobarVersionNueva();
   }, 15000); // cada 15 segundos
 
-  // Ciclo único de sincronización completa — todo lo que la app sincroniza al entrar
-  // (clientes, técnicos, catálogo, agenda, registro global, partes, estados de incidencias)
-  // se repite aquí también, para que nada se quede desactualizado mientras la app sigue
-  // abierta. Respeta el tiempo por rol: 1 minuto para admin/creador conectado (lo necesitan
-  // más, detección rápida), 4 minutos para técnico (apenas les afecta). Se recalcula en
-  // cada ciclo por si el rol cambia en plena sesión.
-  function _programarSincronizacionCompleta(){
+  // Sincronización completa — todo lo que la app sincroniza al entrar (clientes, técnicos,
+  // catálogo, agenda, registro global, partes, estados de incidencias) se repite aquí
+  // también, para que nada se quede desactualizado mientras la app sigue abierta.
+  function _sincronizacionCompleta(){
+    if(!window._sesion) return;
+    var _s2 = window._sesion;
+    // Comprobar si el usuario actual sigue activo — si lo desactivaron mientras estaba
+    // dentro de la app, se borran sus datos locales y se le saca de la sesión
+    if (typeof _db !== 'undefined' && _db && _s2.rol !== 'creador') {
+      var _docIdActivo = _s2.nombre.toLowerCase().replace(/ /g,'_');
+      _db.collection('usuario').doc(_docIdActivo).get().then(function(doc){
+        if (doc.exists && doc.data().activo === false) {
+          _limpiarDatosLocalesCompartidos();
+          _crearNotificacionTecnico(_s2.nombre, 'entrada_desactivado');
+          cerrarSesion();
+        }
+      }).catch(function(){});
+    }
+    _sincronizarClientesDesdeFirestore();
+    _sincronizarTecnicosDesdeFirestore();
+    _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
+    _sincronizarAgendaDesdeFirestore();
+    _sincronizarRegistroGlobal();
+    if (_s2.rol === 'admin' || _s2.rol === 'creador') {
+      _sincronizarEstadosIncidencias();
+      _sincronizarPartesDesdeFirestore(null, function(){});
+    } else if (_s2.rol === 'tecnico') {
+      _sincronizarEstadosIncidencias(_s2.nombre);
+      _sincronizarPartesDesdeFirestore(_s2.nombre, function(){});
+    }
+    renderAsgTecnico();
+    renderAsgAdmin();
+    catActualizarBadge();
+    // Comprobación de conexión, solo si es relevante (admin/creador actual, o técnico
+    // con más de un rol disponible)
+    if (_s2.multiRol || _s2.rol === 'admin' || _s2.rol === 'creador') {
+      _verificarConexionFirestore(function(hayConexion){
+        if (!hayConexion) {
+          if (_s2.rol === 'admin' || _s2.rol === 'creador') {
+            var dlg = document.getElementById('dlgSinConexionAdmin');
+            if (dlg) dlg.classList.add('show');
+          }
+          var btnRol = document.getElementById('btnCambiarRol');
+          if (btnRol && _s2.rol !== 'admin' && _s2.rol !== 'creador') btnRol.style.display = 'none';
+        } else {
+          if (_s2.multiRol && _s2.rol !== 'admin' && _s2.rol !== 'creador') {
+            var btnRol2 = document.getElementById('btnCambiarRol');
+            if (btnRol2) { btnRol2.style.display = ''; btnRol2.textContent = '⚙️ Admin'; }
+          }
+        }
+      });
+    }
+  }
+
+  // El ciclo solo cuenta tiempo mientras la app está realmente visible en uso — no un
+  // setTimeout ciego que sigue corriendo en segundo plano. Respeta el tiempo por rol:
+  // 1 minuto para admin/creador conectado (lo necesitan más, detección rápida), 4 minutos
+  // para técnico (apenas les afecta). Se recalcula en cada ciclo por si el rol cambia en
+  // plena sesión.
+  var _timerSincronizacion = null;
+  function _programarSiguienteSincronizacion(){
+    if (_timerSincronizacion) clearTimeout(_timerSincronizacion);
     var _s = window._sesion;
     var _esAdminAhora = _s && (_s.rol === 'admin' || _s.rol === 'creador');
     var espera = _esAdminAhora ? 60000 : 240000;
-    setTimeout(function(){
+    _timerSincronizacion = setTimeout(function(){
       if(document.visibilityState === 'visible' && window._sesion){
-        var _s2 = window._sesion;
-        // Comprobar si el usuario actual sigue activo — si lo desactivaron mientras estaba
-        // dentro de la app, se borran sus datos locales y se le saca de la sesión
-        if (typeof _db !== 'undefined' && _db && _s2.rol !== 'creador') {
-          var _docIdActivo = _s2.nombre.toLowerCase().replace(/ /g,'_');
-          _db.collection('usuario').doc(_docIdActivo).get().then(function(doc){
-            if (doc.exists && doc.data().activo === false) {
-              _limpiarDatosLocalesCompartidos();
-              _crearNotificacionTecnico(_s2.nombre, 'entrada_desactivado');
-              cerrarSesion();
-            }
-          }).catch(function(){});
-        }
-        // Sincronización completa de datos, igual que al entrar
-        _sincronizarClientesDesdeFirestore();
-        _sincronizarTecnicosDesdeFirestore();
-        _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
-        _sincronizarAgendaDesdeFirestore();
-        _sincronizarRegistroGlobal();
-        if (_s2.rol === 'admin' || _s2.rol === 'creador') {
-          _sincronizarEstadosIncidencias();
-          _sincronizarPartesDesdeFirestore(null, function(){});
-        } else if (_s2.rol === 'tecnico') {
-          _sincronizarEstadosIncidencias(_s2.nombre);
-          _sincronizarPartesDesdeFirestore(_s2.nombre, function(){});
-        }
-        renderAsgTecnico();
-        renderAsgAdmin();
-        catActualizarBadge();
-        // Comprobación de conexión, solo si es relevante (admin/creador actual, o técnico
-        // con más de un rol disponible)
-        if (_s2.multiRol || _s2.rol === 'admin' || _s2.rol === 'creador') {
-          _verificarConexionFirestore(function(hayConexion){
-            if (!hayConexion) {
-              if (_s2.rol === 'admin' || _s2.rol === 'creador') {
-                var dlg = document.getElementById('dlgSinConexionAdmin');
-                if (dlg) dlg.classList.add('show');
-              }
-              var btnRol = document.getElementById('btnCambiarRol');
-              if (btnRol && _s2.rol !== 'admin' && _s2.rol !== 'creador') btnRol.style.display = 'none';
-            } else {
-              if (_s2.multiRol && _s2.rol !== 'admin' && _s2.rol !== 'creador') {
-                var btnRol2 = document.getElementById('btnCambiarRol');
-                if (btnRol2) { btnRol2.style.display = ''; btnRol2.textContent = '⚙️ Admin'; }
-              }
-            }
-          });
-        }
+        _sincronizacionCompleta();
       }
-      _programarSincronizacionCompleta(); // reprogramar con la espera correspondiente al rol de ese momento
+      _programarSiguienteSincronizacion(); // reprogramar con la espera correspondiente al rol de ese momento
     }, espera);
   }
-  _programarSincronizacionCompleta();
+
+  // Al volver a la app (dejó de estar oculta) — sincronizar de inmediato y reiniciar el
+  // conteo desde ese momento, en vez de disparar en cuanto se cumpla el tiempo que ya
+  // llevaba corriendo mientras estaba fuera. Al ocultarse — cancelar el temporizador
+  // pendiente, así no cuenta tiempo mientras no se está usando la app.
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'visible') {
+      if (window._sesion) _sincronizacionCompleta();
+      _programarSiguienteSincronizacion();
+    } else {
+      if (_timerSincronizacion) { clearTimeout(_timerSincronizacion); _timerSincronizacion = null; }
+    }
+  });
+
+  // Arranque inicial: si la app ya está visible al llamar esta función, programa el
+  // primer ciclo normal (la sincronización de entrada ya la hizo _aplicarSesion aparte)
+  if (document.visibilityState === 'visible') _programarSiguienteSincronizacion();
 }
 
 function _comprobarVersionNueva(){
