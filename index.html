@@ -512,7 +512,7 @@ textarea{resize:vertical;min-height:72px}
 <div id="w-catalogo" class="win">
   <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
   <div class="cat-tabs">
-    <button class="cat-tab active" onclick="catTab('materiales',this)">&#128295; Materiales</button>
+    <button class="cat-tab active" onclick="catTab('materiales',this)">&#128295; Materiales<span id="catMatFlotanteBadge" style="display:none;background:var(--amber);color:#fff;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:5px;">0</span></button>
     <button class="cat-tab" onclick="catTab('conceptos',this)">&#9201; Conceptos</button>
     <button class="cat-tab" onclick="catTab('tecnicos',this)">&#128119; T&eacute;cnicos</button>
     <button class="cat-tab" onclick="catTab('agenda',this)">&#128220; Agenda<span id="catAgendaBadge" style="display:none;background:var(--amber);color:#fff;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:5px;">0</span></button>
@@ -1242,6 +1242,15 @@ function _sincronizarAgendaDesdeFirestore(){
     if(typeof catActualizarBadge==='function') catActualizarBadge();
   }).catch(function(){});
 }
+function _sincronizarMaterialesFlotantesDesdeFirestore(){
+  if(typeof _db === 'undefined' || !_db) return;
+  _db.collection('materialesFlotantes').get().then(function(snap){
+    var lista=[];
+    snap.forEach(function(doc){ lista.push(Object.assign({id:doc.id}, doc.data())); });
+    setMaterialesFlotantes(lista);
+    if(typeof catActualizarBadge==='function') catActualizarBadge();
+  }).catch(function(){});
+}
 function _sincronizarTecnicosDesdeFirestore(){
   if(typeof _db === 'undefined' || !_db) return;
   _db.collection('usuario').where('roles','array-contains','tecnico').get().then(function(snap){
@@ -1256,9 +1265,10 @@ function _sincronizarTecnicosDesdeFirestore(){
         tecs[idx].activo=d.activo!==false;
         tecs[idx].roles=roles;
         tecs[idx].ultimaConexion=d.ultimaConexion||null;
+        tecs[idx].matFlotante=!!d.matFlotante;
         cambiado=true;
       } else {
-        tecs.push({id:'tec_'+doc.id, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false, roles:roles, ultimaConexion:d.ultimaConexion||null});
+        tecs.push({id:'tec_'+doc.id, nombre:d.nombre, tel:'', jobs:[], pin:d.pin, activo:d.activo!==false, roles:roles, ultimaConexion:d.ultimaConexion||null, matFlotante:!!d.matFlotante});
         cambiado=true;
       }
     });
@@ -1471,6 +1481,15 @@ var MATS_DEF = {
 // ===== STORAGE =====
 function getH(){ return JSON.parse(localStorage.getItem('pm_v4')||'[]'); }
 function setH(d){ localStorage.setItem('pm_v4',JSON.stringify(d)); }
+// Devuelve, con sus índices originales, los partes de una orden concreta (pedido+centro)
+// dentro de h, ordenados por fecha real (más antiguo primero) — nunca por el orden en que
+// se guardaron localmente, que puede no coincidir si un parte se sincroniza o se crea
+// fuera de orden cronológico. No modifica h ni localStorage, solo lee y devuelve una copia.
+function _partesDeOrdenOrdenados(pedido, centro, h){
+  return h.map(function(r,idx){ return {r:r,idx:idx}; })
+    .filter(function(x){ return x.r.pedido===pedido && x.r.centro===centro; })
+    .sort(function(a,b){ return (a.r.fecha||'').localeCompare(b.r.fecha||''); });
+}
 function getHVisible(){
   var h=getH();
   if(window._sesion && window._sesion.rol==='tecnico'){
@@ -1494,6 +1513,14 @@ function jkm(job){ return job==='Climatización'?'Climatizacion':job; }
 // ===== AGENDA DE TIENDAS (Mercadona por ahora) =====
 function getAgenda(){ return JSON.parse(localStorage.getItem('pm_agenda')||'{}'); }
 function setAgenda(d){ localStorage.setItem('pm_agenda',JSON.stringify(d)); }
+// Materiales flotantes: introducidos por un admin (o un técnico con el permiso activado)
+// cuando el material no existe en el catálogo — quedan pendientes de que un admin los
+// asigne a una sección/subsección concreta, momento en el que pasan a ser parte real y
+// permanente del catálogo. Mientras están pendientes, se guardan aquí como copia local
+// (espejo de la colección materialesFlotantes en Firestore), para que la búsqueda de
+// materiales los reconozca al instante sin depender de una consulta en el momento.
+function getMaterialesFlotantes(){ return JSON.parse(localStorage.getItem('pm_mat_flotante')||'[]'); }
+function setMaterialesFlotantes(d){ localStorage.setItem('pm_mat_flotante',JSON.stringify(d)); }
 function agendaKey(clienteId,centro){ return (clienteId||'mercadona')+'_'+(centro||''); }
 function agendaBuscar(clienteId,centro){
   if(!centro) return null;
@@ -1845,7 +1872,10 @@ function tecEliminar(id){
 
 function renderCatTecnicos(){
   var el=$('catTecnicosList'); if(!el) return;
-  var tecs=getTecnicos();
+  var tecs=getTecnicos().slice().sort(function(a,b){
+    var aInactivo = a.activo===false?1:0, bInactivo = b.activo===false?1:0;
+    return aInactivo - bInactivo; // activos primero, inactivos al final
+  });
 
   if(!tecs.length){ el.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:10px 0;">No hay técnicos registrados.</div>'; return; }
   el.innerHTML=tecs.map(function(t){
@@ -1858,9 +1888,10 @@ function renderCatTecnicos(){
       +(t.tel?'<div style="font-size:.8rem;color:var(--text2);margin-top:4px;">📞 '+t.tel+'</div>':'')
       +(t.ultimaConexion?'<div style="font-size:.76rem;color:var(--text3);margin-top:2px;">🕓 Última conexión: '+_fmtFechaHora(t.ultimaConexion)+'</div>':'')
       +(t.jobs&&t.jobs.length?'<div style="font-size:.78rem;color:var(--green);margin-top:4px;">'+t.jobs.join(' · ')+'</div>':'')
-      +'<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">'
       +'<label style="font-size:.75rem;color:var(--text2);font-weight:700;">PIN</label>'
       +'<input type="text" inputmode="numeric" maxlength="4" value="'+(t.pin||'')+'" placeholder="0000" style="width:80px;padding:5px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.9rem;letter-spacing:.2em;text-align:center;background:var(--surface2);color:var(--text);font-family:inherit;" onchange="tecEditarPin(\''+t.id+'\',this.value)">'
+      +'<button onclick="tecToggleMatFlotante(\''+t.id+'\','+(!t.matFlotante)+')" title="Permitir introducir material flotante" style="padding:4px 10px;border-radius:var(--r-sm);border:1.5px solid '+(t.matFlotante?'var(--green)':'var(--border)')+';background:'+(t.matFlotante?'var(--green-light)':'var(--surface2)')+';color:'+(t.matFlotante?'var(--green)':'var(--text2)')+';font-size:.76rem;font-family:inherit;cursor:pointer;">🧩'+(t.matFlotante?' Mat. flotante ✓':' Mat. flotante')+'</button>'
       +'<button onclick="tecToggleActivo(\''+t.id+'\','+inactivo+')" style="margin-left:auto;padding:4px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text2);font-size:.78rem;font-family:inherit;cursor:pointer;">'+(inactivo?'✅ Activar':'⛔ Desactivar')+'</button>'
       +'</div>'
       +'</div>';
@@ -1876,7 +1907,7 @@ function _subirTecnicoAFirestore(t){
       var rolesExistentes = (doc.exists && doc.data().roles) || [];
       var roles = rolesExistentes.indexOf('tecnico')>=0 ? rolesExistentes : rolesExistentes.concat(['tecnico']);
       return _db.collection('usuario').doc(docId).set({
-        nombre: t.nombre, pin: t.pin||'', activo: t.activo!==false, roles: roles
+        nombre: t.nombre, pin: t.pin||'', activo: t.activo!==false, roles: roles, matFlotante: !!t.matFlotante
       }, {merge:true});
     }).catch(function(){});
   }catch(e){}
@@ -1904,6 +1935,12 @@ function tecToggleActivo(id, activarAhora){
   if(t){ t.activo=activarAhora; setTecnicos(tecs); renderCatTecnicos(); _subirTecnicoAFirestore(t); }
 }
 
+function tecToggleMatFlotante(id, activarAhora){
+  var tecs=getTecnicos();
+  var t=tecs.find(function(t){return t.id===id;});
+  if(t){ t.matFlotante=activarAhora; setTecnicos(tecs); renderCatTecnicos(); _subirTecnicoAFirestore(t); }
+}
+
 function catTab(tab,btn){
   document.querySelectorAll('.cat-tab').forEach(function(b){b.classList.remove('active');});
   btn.classList.add('active');
@@ -1922,6 +1959,7 @@ function catTab(tab,btn){
 function renderCatGrupos(){
   var cat=getCat();
   var el=$('catFamiliasList'); if(!el) return;
+  var flotantes=getMaterialesFlotantes();
   var html='';
   cat.grupos.forEach(function(g,gi){
     var total=0;
@@ -1929,9 +1967,11 @@ function renderCatGrupos(){
       total+=(s.mats||[]).length;
       (s.subsecs||[]).forEach(function(ss){total+=(ss.mats||[]).length;});
     });
+    var pendientes=flotantes.filter(function(f){return f.grupo===g.nombre;}).length;
+    var badgeFlot=pendientes>0?'<span style="background:var(--amber);color:#fff;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:5px;">'+pendientes+'</span>':'';
     var div='<div class="cat-familia" data-gid="'+g.id+'" onclick="catAbrirGrupo(this.dataset.gid)">'
       +'<span class="cat-familia-ico">'+g.ico+'</span>'
-      +'<span class="cat-familia-name">'+g.nombre+'</span>'
+      +'<span class="cat-familia-name">'+g.nombre+badgeFlot+'</span>'
       +'<span class="cat-familia-cnt">'+total+' &#8250;</span></div>';
     html+=div;
   });
@@ -1966,6 +2006,23 @@ function catNavRenderSecciones(g, cat){
   var html='<button class="back" onclick="catVolverFamilias()">&#8592; Grupos</button>';
   html+='<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--green);margin-bottom:12px;">'+g.ico+' '+g.nombre+'</div>';
 
+  // Materiales flotantes pendientes de clasificar en este grupo
+  var pendientes=getMaterialesFlotantes().filter(function(f){return f.grupo===g.nombre;});
+  if(pendientes.length){
+    html+='<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--amber);margin:4px 0 8px;">&#129513; Pendientes de clasificar</div>';
+    pendientes.forEach(function(f){
+      var secOpts='<option value="">Secci&oacute;n...</option>'+g.secciones.map(function(s,si){return '<option value="'+si+'">'+s.nombre+'</option>';}).join('');
+      html+='<div style="background:var(--amber-light);border:1px solid var(--amber);border-radius:var(--r-sm);margin-bottom:8px;padding:12px 14px;">'
+        +'<div style="font-size:.9rem;font-weight:700;margin-bottom:2px;">'+f.nombre+'</div>'
+        +'<div style="font-size:.74rem;color:var(--text2);margin-bottom:8px;">A&ntilde;adido por '+(f.creadoPor||'')+' &middot; '+_fmtFechaHora(f.fecha)+'</div>'
+        +'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">'
+        +'<select id="matFlotSec_'+f.id+'" onchange="_matFlotSecCambiada(\''+f.id+'\')" style="flex:1;min-width:120px;padding:6px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-family:inherit;font-size:.84rem;">'+secOpts+'</select>'
+        +'<select id="matFlotSub_'+f.id+'" style="flex:1;min-width:120px;padding:6px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);color:var(--text);font-family:inherit;font-size:.84rem;display:none;"><option value="">Subsecci&oacute;n...</option></select>'
+        +'<button onclick="catAsignarMaterialFlotante(\''+f.id+'\')" style="padding:7px 14px;background:var(--green);color:#fff;border:none;border-radius:var(--r-sm);font-weight:700;font-size:.82rem;cursor:pointer;">Asignar</button>'
+        +'</div></div>';
+    });
+  }
+
   // Secciones
   g.secciones.forEach(function(sec,si){
     var total=(sec.mats||[]).length+(sec.subsecs||[]).reduce(function(a,ss){return a+(ss.mats||[]).length;},0);
@@ -1979,6 +2036,50 @@ function catNavRenderSecciones(g, cat){
 
   html+='<button class="btn-add-mat" style="width:100%;padding:10px;margin-top:6px;" onclick="catNuevaSec()">+ Nueva secci&#243;n</button>';
   $('catNavContainer').innerHTML=html;
+}
+
+function _matFlotSecCambiada(flotId){
+  var selSec=$('matFlotSec_'+flotId); var selSub=$('matFlotSub_'+flotId);
+  if(!selSec||!selSub) return;
+  var g=getCat().grupos.find(function(x){return x.id===_catNav.grupoId;});
+  if(!g){ selSub.style.display='none'; return; }
+  var sec=g.secciones[selSec.value];
+  if(!sec||!sec.subsecs||!sec.subsecs.length){ selSub.style.display='none'; selSub.innerHTML='<option value="">Subsecci&oacute;n...</option>'; return; }
+  selSub.innerHTML='<option value="">(ninguna, va directo a la secci&oacute;n)</option>'+sec.subsecs.map(function(ss,ssi){return '<option value="'+ssi+'">'+ss.nombre+'</option>';}).join('');
+  selSub.style.display='block';
+}
+
+function catAsignarMaterialFlotante(flotId){
+  var selSec=$('matFlotSec_'+flotId); var selSub=$('matFlotSub_'+flotId);
+  if(!selSec||selSec.value===''){ showMsg('msgCat','Elige una secci&oacute;n primero.','error'); return; }
+  var flotante=getMaterialesFlotantes().find(function(f){return f.id===flotId;});
+  if(!flotante){ showMsg('msgCat','Este material ya no est&aacute; pendiente.','error'); return; }
+  var si=parseInt(selSec.value);
+  var ssi=(selSub && selSub.value!=='' && selSub.style.display!=='none') ? parseInt(selSub.value) : -1;
+  _modificarCatalogoEnFirestore(function(cat){
+    var g=cat.grupos.find(function(x){return x.id===_catNav.grupoId;});if(!g)return;
+    var sec=g.secciones[si];if(!sec)return;
+    if(ssi===-1){ sec.mats=sec.mats||[];sec.mats.push({nom:flotante.nombre}); }
+    else { var ss=sec.subsecs[ssi];if(ss){ss.mats=ss.mats||[];ss.mats.push({nom:flotante.nombre});} }
+  }, function(exito){
+    if(!exito){ showMsg('msgCat','No se pudo guardar. Comprueba tu conexi&oacute;n.','error'); return; }
+    // Ya quedó asignado en el catálogo — ahora se retira de pendientes, tanto local como en
+    // Firestore. Se hace después del éxito anterior, nunca antes, para no perder el pendiente
+    // si la escritura al catálogo hubiera fallado.
+    _db.collection('materialesFlotantes').doc(flotId).delete().then(function(){
+      var lista=getMaterialesFlotantes().filter(function(f){return f.id!==flotId;});
+      setMaterialesFlotantes(lista);
+      catActualizarBadge();
+      catNavRender();
+      showMsg('msgCat','Material asignado correctamente.','success');
+    }).catch(function(){
+      // El catálogo ya se guardó bien; si esto falla, el flotante queda visible una vez
+      // más, pero no se pierde ni queda duplicado — el próximo intento de asignar
+      // simplemente lo añadiría de nuevo, así que avisamos para que no se repita sin querer
+      showMsg('msgCat','Asignado, pero no se pudo limpiar el pendiente. Vuelve a intentarlo si sigue apareciendo.','error');
+      catNavRender();
+    });
+  });
 }
 
 
@@ -2310,12 +2411,16 @@ function agendaPendientesCount(){
 }
 function catActualizarBadge(){
   // Actualiza badge en icono catálogo del inicio
-  var n=agendaPendientesCount();
+  var esAdmin = window._sesion && (window._sesion.rol === 'admin' || window._sesion.rol === 'creador');
+  var pendMatFlotante = esAdmin ? getMaterialesFlotantes().length : 0;
+  var n=agendaPendientesCount() + pendMatFlotante;
   document.querySelectorAll('[data-cat-badge]').forEach(function(b){
     b.textContent=n;b.style.display=n>0?'block':'none';
   });
   var ab=$('catAgendaBadge');
   if(ab){ var np=agendaPendientesCount(); ab.textContent=np; ab.style.display=np>0?'inline-block':'none'; }
+  var amb=$('catMatFlotanteBadge');
+  if(amb){ amb.textContent=pendMatFlotante; amb.style.display=pendMatFlotante>0?'inline-block':'none'; }
 }
 function _agDomId(key){ return key.replace(/[^a-zA-Z0-9]/g,'_'); }
 
@@ -4248,11 +4353,13 @@ function renderAsgAdmin() {
   if (!esAdmin) { sec.style.display = 'none'; return; }
   Promise.all([
     _db.collection('incidencias').where('vistaAdmin','==',false).get(),
-    _db.collection('notificacionesTecnico').get()
+    _db.collection('notificacionesTecnico').get(),
+    _db.collection('materialesFlotantes').get()
   ]).then(function(resultados){
     var snap = resultados[0];
     var snapNotif = resultados[1];
-    if (snap.empty && snapNotif.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
+    var snapMatFlotante = resultados[2];
+    if (snap.empty && snapNotif.empty && snapMatFlotante.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
     var html = '';
     snap.forEach(function(doc){
       var d = doc.data();
@@ -4283,9 +4390,34 @@ function renderAsgAdmin() {
         + '<div class="act-sub">'+texto+' · '+_fmtFechaHora(n.fecha)+'</div></div>'
         + '</div>';
     });
+    if(!snapMatFlotante.empty){
+      var flotDocs=[]; snapMatFlotante.forEach(function(doc){ flotDocs.push(Object.assign({id:doc.id}, doc.data())); });
+      var totalFlot=flotDocs.length;
+      if(totalFlot===1){
+        var unico=flotDocs[0];
+        html += '<div class="act-list-item" onclick="verMaterialFlotanteAviso(\''+(unico.grupo||'').replace(/'/g,"\\'")+'\')">'
+          + '<span class="act-num" style="color:var(--amber);">&#129513;</span>'
+          + '<div><div class="act-info">'+unico.nombre+'</div>'
+          + '<div class="act-sub">Material pendiente de clasificar · '+(unico.grupo||'')+'</div></div>'
+          + '</div>';
+      } else {
+        html += '<div class="act-list-item" onclick="verMaterialFlotanteAviso(null)">'
+          + '<span class="act-num" style="color:var(--amber);">&#129513;</span>'
+          + '<div><div class="act-info">'+totalFlot+' materiales pendientes</div>'
+          + '<div class="act-sub">Pendientes de clasificar en el cat&aacute;logo</div></div>'
+          + '</div>';
+      }
+    }
     el.innerHTML = html;
     sec.style.display = 'block';
   }).catch(function(){ sec.style.display = 'none'; });
+}
+function verMaterialFlotanteAviso(nombreGrupo){
+  if(nombreGrupo){
+    var g=getCat().grupos.find(function(x){return x.nombre===nombreGrupo;});
+    if(g){ abrirCatalogo(); setTimeout(function(){ catAbrirGrupo(g.id); }, 50); return; }
+  }
+  abrirCatalogo();
 }
 function verNotificacionTecnico(id){
   _db.collection('notificacionesTecnico').doc(id).delete().then(renderAsgAdmin).catch(function(){});
@@ -4621,9 +4753,15 @@ function msAcGlobal(val){
   var g=catGetGrupoParaJob(_MS.catJob||curJob);
   var todos=g?catAllMatsGrupo(g.id):[];
   var res=todos.filter(function(n){return _normTexto(n).includes(_normTexto(val));}).slice(0,8);
+  var flotantes=getMaterialesFlotantes().filter(function(f){
+    return !todos.some(function(n){return n.toLowerCase()===f.nombre.toLowerCase();}) && _normTexto(f.nombre).includes(_normTexto(val));
+  }).slice(0,4);
   var html='';
   res.forEach(function(nom){
     html+='<div class="ms-ac-item" data-nom="'+nom.replace(/"/g,'&quot;')+'" onmousedown="msAcGlobalSel(this.dataset.nom)" style="padding:9px 12px;font-size:.86rem;cursor:pointer;border-bottom:1px solid var(--border2);">🔧 '+nom+'</div>';
+  });
+  flotantes.forEach(function(f){
+    html+='<div class="ms-ac-item" data-nom="'+f.nombre.replace(/"/g,'&quot;')+'" onmousedown="msAcGlobalSel(this.dataset.nom)" style="padding:9px 12px;font-size:.86rem;cursor:pointer;border-bottom:1px solid var(--border2);color:var(--amber);">🧩 '+f.nombre+' <span style="font-size:.72rem;opacity:.8;">(pendiente clasificar)</span></div>';
   });
   box.innerHTML=html;
   box.style.display=html?'block':'none';
@@ -4635,6 +4773,16 @@ function msAcGlobalSel(nom){
   var box=$('msAcGlobalBox');if(box){box.style.display='none';box.innerHTML='';}
   msRenderExtras();
 }
+// Admin en rol de técnico, o un técnico con el permiso individual activado, puede
+// introducir un material que no existe todavía en el catálogo — queda pendiente de
+// clasificar (flotante) hasta que un admin lo asigne a una sección/subsección.
+function _puedeMaterialFlotante(){
+  var s = window._sesion;
+  if (!s || s.rol !== 'tecnico') return false;
+  if (s.multiRol) return true; // admin actuando como técnico
+  var t = getTecnicos().find(function(x){ return x.nombre.toLowerCase() === s.nombre.toLowerCase(); });
+  return !!(t && t.matFlotante);
+}
 function msAcGlobalConfirm(){
   var inp=$('msAddGlobal');
   var val=inp?inp.value.trim():'';if(!val)return;
@@ -4642,7 +4790,35 @@ function msAcGlobalConfirm(){
   var todos=g?catAllMatsGrupo(g.id):[];
   var exacto=todos.find(function(n){return n.toLowerCase()===val.toLowerCase();});
   if(exacto){ msAcGlobalSel(exacto); return; }
-  _toast('Material no encontrado en el catálogo', 'var(--red)');
+  // ¿Ya existe como flotante pendiente (de cualquier grupo)? Se reutiliza tal cual,
+  // sin crear un segundo pendiente con el mismo nombre
+  var flotantes = getMaterialesFlotantes();
+  var flotanteExacto = flotantes.find(function(f){ return f.nombre.toLowerCase()===val.toLowerCase(); });
+  if(flotanteExacto){ msAcGlobalSel(flotanteExacto.nombre); return; }
+  if(!_puedeMaterialFlotante()){
+    _toast('Material no encontrado en el catálogo', 'var(--red)');
+    return;
+  }
+  _crearMaterialFlotante(val, g ? g.nombre : (_MS.catJob||curJob), function(exito){
+    if(exito) msAcGlobalSel(val);
+    else _toast('No se pudo guardar el material. Comprueba tu conexión.', 'var(--red)');
+  });
+}
+function _crearMaterialFlotante(nombre, grupo, callback){
+  if(typeof _db === 'undefined' || !_db){ if(callback) callback(false); return; }
+  var doc = {
+    nombre: nombre,
+    grupo: grupo,
+    fecha: Date.now(),
+    creadoPor: (window._sesion && window._sesion.nombre) || ''
+  };
+  _db.collection('materialesFlotantes').add(doc).then(function(ref){
+    var lista = getMaterialesFlotantes();
+    lista.push(Object.assign({id:ref.id}, doc));
+    setMaterialesFlotantes(lista);
+    catActualizarBadge();
+    if(callback) callback(true);
+  }).catch(function(){ if(callback) callback(false); });
 }
 function msInitSel(mats){
   _MS.sel={};_MS.extras={};_MS.secAbierta=null;
@@ -5157,7 +5333,7 @@ function verOrden(enc){
     if(x.r.pedido!==pedido||x.r.centro!==centro) return false;
     if(esTecnico && !(x.r.tecnicos && x.r.tecnicos[0] && x.r.tecnicos[0].toLowerCase()===miNombre)) return false;
     return true;
-  });
+  }).sort(function(a,b){ return (a.r.fecha||'').localeCompare(b.r.fecha||''); });
   if(!partes.length) return;
   $('secView').style.display='none'; $('ordenView').style.display='block'; $('parteView').style.display='none';
   var g=partes[0].r;
@@ -6257,6 +6433,13 @@ function renderHistTecBtns(){
       }
     });
     var names = Object.keys(tecsTotal).sort();
+    // Solo técnicos activos y con PIN — el histórico de uno desactivado sigue disponible
+    // en el catálogo de técnicos, no aquí (mismo criterio que renderWorkers())
+    var tecsActivosConPin = {};
+    getTecnicos().forEach(function(t){
+      if(t.activo!==false && t.pin) tecsActivosConPin[t.nombre.toLowerCase()] = true;
+    });
+    names = names.filter(function(t){ return tecsActivosConPin[t.toLowerCase()]; });
     if(!names.length){ el.innerHTML=''; return; }
     el.innerHTML = '<div style="font-size:.72rem;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Por técnico</div>'
       + '<div class="hist-opts" style="flex-wrap:wrap;">'
@@ -6352,9 +6535,8 @@ function _marcarPendienteSync(parte, pendiente){
 }
 function _marcarIncidenciaPendientePorPedido(pedido, centro){
   var h=getH();
-  var last=null;
-  for(var i=h.length-1;i>=0;i--){ if(h[i].pedido===pedido && h[i].centro===centro){ last=h[i]; break; } }
-  if(last) last._pendienteIncidencia=true;
+  var pp=_partesDeOrdenOrdenados(pedido,centro,h);
+  if(pp.length) pp[pp.length-1].r._pendienteIncidencia=true;
   setH(h);
 }
 function _limpiarIncidenciaPendientePorPedido(pedido, centro){
@@ -6724,9 +6906,9 @@ function histShow(ids){
 function jk(job){ return job==='Climatización'?'Climatizacion':job; }
 
 function ordenActiva(pedido,centro,h){
-  var pp=h.filter(function(r){ return r.pedido===pedido&&r.centro===centro; });
+  var pp=_partesDeOrdenOrdenados(pedido,centro,h);
   if(!pp.length) return false;
-  return (pp[pp.length-1].estado||'terminado')==='en-ejecucion';
+  return (pp[pp.length-1].r.estado||'terminado')==='en-ejecucion';
 }
 
 function ov(s,e,a,b){ return Math.max(0,Math.min(e,b)-Math.max(s,a)); }
@@ -7387,6 +7569,7 @@ function _iniciarPresentacionLogin(nombre){
   _sincronizarTecnicosDesdeFirestore();
   _sincronizarCatalogoDesdeFirestore();
   _sincronizarAgendaDesdeFirestore();
+  _sincronizarMaterialesFlotantesDesdeFirestore();
   _sincronizarRegistroGlobal();
   _reintentarPartesPendientes();
 }
@@ -7686,6 +7869,7 @@ function _iniciarActualizacionPeriodica(){
     _sincronizarTecnicosDesdeFirestore();
     _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
     _sincronizarAgendaDesdeFirestore();
+    _sincronizarMaterialesFlotantesDesdeFirestore();
     _sincronizarRegistroGlobal();
     if (_s2.rol === 'admin' || _s2.rol === 'creador') {
       _sincronizarEstadosIncidencias();
