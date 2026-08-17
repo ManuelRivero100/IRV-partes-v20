@@ -7797,9 +7797,8 @@ function _aplicarSesion(nombre, rol, multiRol) {
   // si el usuario tardó en elegir su rol) y la sincronización de partes/incidencias, que sí
   // depende del rol ya decidido. Ninguna de las dos corta a la otra.
   var _syncPartesTerminada = false;
-  var _syncEstadosTerminada = false;
   function _ocultarSplashSiListo() {
-    if (!_loginSplashListo || !_syncPartesTerminada || !_syncEstadosTerminada) return;
+    if (!_loginSplashListo || !_syncPartesTerminada) return;
     var sp = document.getElementById('splash');
     if (sp) {
       sp.classList.add('fade-out');
@@ -7821,27 +7820,19 @@ function _aplicarSesion(nombre, rol, multiRol) {
     _syncPartesTerminada = true;
     _ocultarSplashSiListo();
   }
-  var _syncEstadosYaResuelto = false;
-  function _onEstadosListos() {
-    if (_syncEstadosYaResuelto) return; // ya se resolvió (a tiempo, o por la salvaguarda) — no repetir
-    _syncEstadosYaResuelto = true;
-    _syncEstadosTerminada = true;
-    _ocultarSplashSiListo();
-  }
   // Salvaguarda: si Firestore no responde en 10s (sin conexión, o una consulta colgada),
   // entrar igualmente en vez de quedarse esperando para siempre
   setTimeout(_ocultarOverlay, 10000);
-  setTimeout(_onEstadosListos, 10000);
 
   if (rol === 'admin' || rol === 'creador') {
-    _sincronizarEstadosIncidencias(null, _onEstadosListos);
+    _sincronizarEstadosIncidencias();
     _sincronizarPartesDesdeFirestore(null, _ocultarOverlay);
   }
   else if (rol === 'tecnico') {
-    _sincronizarEstadosIncidencias(nombre, _onEstadosListos);
+    _sincronizarEstadosIncidencias(nombre);
     _sincronizarPartesDesdeFirestore(nombre, _ocultarOverlay);
   }
-  else { _ocultarOverlay(); _onEstadosListos(); }
+  else { _ocultarOverlay(); }
   _iniciarActualizacionPeriodica();
 }
 
@@ -7997,8 +7988,8 @@ function _registroGlobal(pedido, clienteId){
   } catch(e){ return null; }
 }
 
-function _sincronizarEstadosIncidencias(soloTecnico, callback) {
-  if (typeof _db === 'undefined' || !_db) { if(callback) callback(); return; }
+function _sincronizarEstadosIncidencias(soloTecnico) {
+  if (typeof _db === 'undefined' || !_db) return;
   var query = _db.collection('incidencias');
   if (soloTecnico) {
     var _tec = getTecnicos().find(function(t){ return t.nombre.toLowerCase() === soloTecnico.toLowerCase(); });
@@ -8017,8 +8008,7 @@ function _sincronizarEstadosIncidencias(soloTecnico, callback) {
     // después de que la app ya se haya revelado — evita que se queden con datos vacíos
     // o viejos justo tras la limpieza diaria/de usuario
     if (typeof renderClientes === 'function') renderClientes();
-    if(callback) callback();
-  }).catch(function(){ if(callback) callback(); });
+  }).catch(function(){});
 }
 
 function _sincronizarPartesDesdeFirestore(soloTecnico, callback) {
