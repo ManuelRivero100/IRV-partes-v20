@@ -1,5 +1,5 @@
 // sw.js — Partes IRV-10
-const CACHE = 'irv10-v20260717ar';
+const CACHE = 'irv10-v20260717at';
 const FILES = ['./','./index.html','./manifest.json','./icon.png'];
 self.addEventListener('install', function(e){
   self.skipWaiting();
