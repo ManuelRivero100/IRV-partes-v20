@@ -3354,6 +3354,12 @@ function generarCore(){
     }
   }
 
+  // Llamada final de seguridad: recalcula el auto-enlace justo antes de usar curLink,
+  // por si el evento onchange de 'arr' no llegó a dispararse de forma fiable antes de
+  // generar. checkAutoEnlace() ya protege un enlace manual 'Sí' (early-return) y excluye
+  // Servicios y Reparaciones, así que es seguro llamarla aquí sin distinguir cliente/flujo.
+  checkAutoEnlace();
+
   var kmT=0,trI=0,trO=0,kmDG=0,trDG=0,heG=0,kmG=0,trG=0;
   if(curLink==='No'){
     if(!$('km').value||!$('tr').value){ showMsg('msgForm','Indica km y desplazamiento.','error'); return; }
@@ -5163,8 +5169,11 @@ function fmtH(v){
 }
 
 function checkAutoEnlace(){
+  if(curLink==='Si') return; // nunca sobrescribir un enlace manual ya elegido por el técnico
   var fecha=$('fecha').value; var arrVal=$('arr').value;
   if(!fecha||!arrVal){ resetAE(); return; }
+  // Servicios y Reparaciones: trabajos puntuales, nunca se auto-enlazan
+  if(curCliente&&curCliente.id==='c_1779744364343'){ resetAE(); return; }
   // Busca en TODOS los partes del día (cualquier cliente)
   var curCid=curCliente?curCliente.id:'mercadona';
   var same=getH().filter(function(x){ return x.fecha===fecha && (x.clienteId||'mercadona')===curCid; });
@@ -5172,7 +5181,7 @@ function checkAutoEnlace(){
   var last=same[same.length-1];
   if(!last.linkType||last.linkType==='No'){ resetAE(); return; }
   if(!last.horaEnlace){ resetAE(); return; }
-  if(tm(arrVal)===last.horaEnlace){
+  if(Math.abs(tm(arrVal)-last.horaEnlace)<=15){
     $('lnkToggleDiv').style.display='none'; $('modeNo').style.display='none'; $('modeSi').style.display='none'; $('modeAuto').style.display='block';
     $('link').value='Auto'; curLink='Auto';
     var origen=last.tienda||last.centro||'parte anterior';
