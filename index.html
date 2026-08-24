@@ -633,6 +633,11 @@ textarea{resize:vertical;min-height:72px}
       <input id="pedido" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 119137" oninput="buscarPorOrden(this.value);if(this.value.length>3)ocultarLectura()">
       <div class="ac-box" id="acOrden"></div>
     </div>
+    <div class="field" id="fieldNumParte">
+      <label>N&ordm; parte <span class="req">*</span></label>
+      <input id="numParte" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 0391">
+      <div id="msgNumParte" class="msg" style="display:none"></div>
+    </div>
     <div class="field" id="fieldActObras" style="display:none">
       <label>Actuaci&oacute;n</label>
       <div id="actObrasDisplay" style="padding:8px 12px;background:var(--green-light);border:1.5px solid var(--green);border-radius:var(--r-sm);font-family:monospace;font-size:.9rem;font-weight:700;color:var(--green);display:none"></div>
@@ -2731,7 +2736,7 @@ function statsRenderTecnicos(datos){
           for(var k=0;k<h.length;k++){if(h[k].fecha===p.fecha&&h[k].pedido===p.pedido&&h[k].centro===p.centro){realIdx=k;break;}}
           var fP=p.fecha?p.fecha.split('-').reverse().join('/'):'--';
           return '<div class="tec-parte-row" onclick="'+(realIdx>=0?'verParte('+realIdx+')':'')+'">'+
-            '<span class="tec-parte-label">Parte '+(pi+1)+'</span>'+
+            '<span class="tec-parte-label">Parte '+(pi+1)+(p.numParte?' ('+p.numParte+')':'')+'</span>'+
             '<span class="tec-parte-fecha">'+fP+'</span>'+
             '<span style="color:var(--text3);font-size:.75rem;">&#8250;</span></div>';
         }).join('');
@@ -3215,6 +3220,35 @@ function fmtPrecio(v){ return v.toFixed(2).replace('.',',')+' €'; }
 function generar(){
   $('msgForm').className='msg';
 
+  // Nº de parte: obligatorio y nunca puede repetirse (ningún técnico). Con internet se
+  // comprueba en vivo contra Firestore (dato más fiable); sin internet se comprueba contra
+  // la copia local sincronizada periódicamente (pm_numpartes_global) y, si no aparece ahí,
+  // se deja generar igualmente — puede haber sido usado hace poco por otro técnico offline
+  // y aún no sincronizado; ese caso límite se resuelve manualmente si llega a ocurrir.
+  var numParteVal=($('numParte').value||'').trim();
+  if(!numParteVal){ showMsg('msgForm','Indica el número de parte.','error'); return; }
+  if(typeof _db !== 'undefined' && _db){
+    _verificarConexionFirestore(function(hayConexion){
+      if(hayConexion){
+        _db.collection('partes').where('numParte','==',numParteVal).limit(1).get().then(function(snap){
+          if(!snap.empty){ showMsg('msgForm','Ese número de parte ya está usado. Introduce uno distinto.','error'); return; }
+          _generarPaso2();
+        }).catch(function(){
+          if(_numParteUsadoLocal(numParteVal)){ showMsg('msgForm','Ese número de parte ya está usado. Introduce uno distinto.','error'); return; }
+          _generarPaso2();
+        });
+      } else {
+        if(_numParteUsadoLocal(numParteVal)){ showMsg('msgForm','Ese número de parte ya está usado. Introduce uno distinto.','error'); return; }
+        _generarPaso2();
+      }
+    });
+  } else {
+    if(_numParteUsadoLocal(numParteVal)){ showMsg('msgForm','Ese número de parte ya está usado. Introduce uno distinto.','error'); return; }
+    _generarPaso2();
+  }
+}
+
+function _generarPaso2(){
   var esMercadona=curCliente&&curCliente.tipo==='mercadona';
   var esObras=curJob==='Obras';
 
@@ -3264,7 +3298,7 @@ function generarCore(){
   var esMercadona=curCliente&&curCliente.tipo==='mercadona';
   var esObras=curJob==='Obras';
 
-  var req=['fecha','tienda','dir','tel','arr','lea'];
+  var req=['fecha','numParte','tienda','dir','tel','arr','lea'];
   // Validar nombres de trabajadores
   var wVal2=+$('w').value||0;
   var nombresOk=true;
@@ -3375,6 +3409,8 @@ function generarCore(){
   } else {
     html+=iRow('N\u00ba orden',pedidoVal);
   }
+  var _numParteHtml=($('numParte').value||'').trim();
+  if(_numParteHtml) html+=iRow('N\u00ba parte',_numParteHtml);
   html+=iRow('Tienda',$('tienda').value);
   html+=iRow('Direcci\u00f3n',$('dir').value);
   html+=iRow('Tel\u00e9fono',$('tel').value);
@@ -3552,7 +3588,7 @@ function generarCore(){
   if(dieta) codigos.push({cod:gc(curJob,'Dieta',''),lab:'½ Dieta',v:w,u:'dieta'});
 
   window.recTmp={
-    fecha:fecha, pedido:pedidoVal, actObras:(esMercadona&&esObras)?pedidoVal:null,
+    fecha:fecha, pedido:pedidoVal, numParte:($('numParte').value||'').trim(), actObras:(esMercadona&&esObras)?pedidoVal:null,
     centro:$('centro').value, tienda:$('tienda').value,
     dir:$('dir').value, tel:$('tel').value, km:kmG, tr:trG,
     job:curJob, catJob:_MS.catJob||null, roles:roles, detalle:html, fin:lea, trS:trO, totalMin:totMin, dieta:dieta,
@@ -3599,10 +3635,11 @@ function resetearEstadoCompleto(){
   wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
   _MS.sel={}; _MS.extras={}; _MS.secAbierta=null; _MS.catJob=null;
   _keepForm=false;
-  ['pedido','tienda','dir','tel','centro','raw','obs','km','tr',
+  ['pedido','numParte','tienda','dir','tel','centro','raw','obs','km','tr',
    'kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){
     var el=$(id); if(el) el.value='';
   });
+  var mnp=$('msgNumParte'); if(mnp){ mnp.style.display='none'; mnp.textContent=''; }
   $('w').value='2';
   $('job').value='';
   $('link').value='No';
@@ -3640,7 +3677,8 @@ function resetearEstadoCompleto(){
 
 function nuevo(){
   _editIdx=null;
-  ['pedido','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea','kmAdicionales','kmAdicionalesJust'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
+  ['pedido','numParte','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea','kmAdicionales','kmAdicionalesJust'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
+  var mnp2=$('msgNumParte'); if(mnp2){ mnp2.style.display='none'; mnp2.textContent=''; }
   _desbloquearCamposAutorrellenados();
   window._origenAutoLectura=false;
   var _fd=$('fieldDescIncidencia'); if(_fd) _fd.style.display='none'; var _dd=$('descIncidencia'); if(_dd) _dd.value='';
@@ -5360,7 +5398,7 @@ function verOrden(enc){
   var partesHTML=partes.map(function(p,pi){
     var fF=p.r.fecha.split('-').reverse().join('/');
     var dur=fmtH(((p.r.lea?tm(p.r.lea):p.r.fin)-(p.r.arr?tm(p.r.arr):0))/60);
-    return '<div class="orden-parte-item" onclick="verParte('+p.idx+')"><div><div style="font-size:.85rem;font-weight:600;">Parte '+(pi+1)+' &middot; '+fF+'</div><div style="font-size:.76rem;color:var(--text2);">'+(p.r.arr||'--')+' – '+(p.r.lea||'--')+' &middot; '+dur+'</div></div><span style="color:var(--text3);">&#8250;</span></div>';
+    return '<div class="orden-parte-item" onclick="verParte('+p.idx+')"><div><div style="font-size:.85rem;font-weight:600;">Parte '+(pi+1)+(p.r.numParte?' ('+p.r.numParte+')':'')+' &middot; '+fF+'</div><div style="font-size:.76rem;color:var(--text2);">'+(p.r.arr||'--')+' – '+(p.r.lea||'--')+' &middot; '+dur+'</div></div><span style="color:var(--text3);">&#8250;</span></div>';
   }).join('');
 
   var codHTML=Object.values(codAcum).length
@@ -5968,7 +6006,7 @@ function pdfOrden(){
     doc.line(_PDF.mg,y,_PDF.mg,y+7);
     doc.setFontSize(7.5); doc.setFont('helvetica','bold');
     doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
-    doc.text('Parte '+(pi+1)+' \u2014 '+fF,_PDF.mg+3,y+5);
+    doc.text('Parte '+(pi+1)+(r.numParte?' ('+r.numParte+')':'')+' \u2014 '+fF,_PDF.mg+3,y+5);
     doc.setFont('helvetica','normal'); doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
     doc.setFontSize(6.5);
     doc.text((r.arr||'--')+' \u2013 '+(r.lea||'--')+' \u00b7 '+dur,_PDF.mg+_PDF.cW-3,y+5,{align:'right'});
@@ -7979,6 +8017,16 @@ function _sincronizarRegistroGlobal(){
     });
     localStorage.setItem('pm_registro_global', JSON.stringify(reg));
   }).catch(function(){});
+  // Números de parte ya usados (por cualquier técnico) — mismo ciclo de sincronización,
+  // sin crear un temporizador ni una función de sincronización aparte.
+  _db.collection('partes').get().then(function(snap){
+    var usados = {};
+    snap.forEach(function(doc){
+      var d = doc.data();
+      if(d.numParte) usados[String(d.numParte).trim()] = true;
+    });
+    localStorage.setItem('pm_numpartes_global', JSON.stringify(usados));
+  }).catch(function(){});
 }
 function _registroGlobal(pedido, clienteId){
   if(!pedido) return null;
@@ -7986,6 +8034,13 @@ function _registroGlobal(pedido, clienteId){
     var reg = JSON.parse(localStorage.getItem('pm_registro_global')||'{}');
     return reg[(clienteId||'mercadona')+'||'+pedido] || null;
   } catch(e){ return null; }
+}
+function _numParteUsadoLocal(numParte){
+  if(!numParte) return false;
+  try {
+    var usados = JSON.parse(localStorage.getItem('pm_numpartes_global')||'{}');
+    return !!usados[String(numParte).trim()];
+  } catch(e){ return false; }
 }
 
 function _sincronizarEstadosIncidencias(soloTecnico) {
