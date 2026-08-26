@@ -5964,17 +5964,47 @@ function renderSearchResults(){
     var badge=g.estado==='en-ejecucion'?'<span class="badge badge-a">En ejecución</span>':'<span class="badge badge-g">Finalizado</span>';
     var enc=encodeURIComponent(g.pedido)+'||'+encodeURIComponent(g.centro);
     var subTitle=g.actObras?g.actObras+' · '+g.job:'Orden '+g.pedido+' · '+g.job;
-    var _numParteLinea='', _horaLinea='', _tecLinea='';
     if(qf){
+      // Fecha concreta filtrada: título y "Orden · Job ·" en su propia línea completa;
+      // "N parte" con la fecha a la derecha en una fila; "(numParte)" con la hora a la
+      // derecha en otra fila; badge y técnico en sus propias líneas completas debajo.
+      // Las horas del parte: se toma la hora más baja y la más alta entre paréntesis
+      // que aparecen en el propio detalle del parte (r.detalle) — cubre cualquier caso
+      // (sin enlace, con enlace corto o largo) sin depender de linkType/tr/trS.
       var _rPrincipal=g.partes[0].r;
-      if(_rPrincipal.numParte) _numParteLinea='<div style="font-size:.76rem;color:var(--text3);margin-top:2px;">('+_rPrincipal.numParte+')</div>';
-      if(_rPrincipal.arr||_rPrincipal.lea) _horaLinea='<div style="font-size:.76rem;color:var(--text3);margin-top:2px;">'+(_rPrincipal.arr||'--')+' - '+(_rPrincipal.lea||'--')+'</div>';
-      if(_esAdminOCreador&&_rPrincipal.tecnicos&&_rPrincipal.tecnicos[0]) _tecLinea='<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+_rPrincipal.tecnicos[0]+'</div>';
+      var _numParteTxt=_rPrincipal.numParte?'('+_rPrincipal.numParte+')':'';
+      var _horaTxt='';
+      if(_rPrincipal.detalle){
+        var _horasEnParte=(_rPrincipal.detalle.match(/\((\d{2}:\d{2})\)/g)||[]).map(function(s){ return s.slice(1,-1); });
+        if(_horasEnParte.length){
+          var _minMax=_horasEnParte.reduce(function(acc,h){
+            var mh=tm(h);
+            if(acc.min===null||mh<acc.min) acc.min=mh;
+            if(acc.max===null||mh>acc.max) acc.max=mh;
+            return acc;
+          },{min:null,max:null});
+          _horaTxt=fT(_minMax.min)+' - '+fT(_minMax.max);
+        }
+      }
+      // Posición real de este parte dentro de TODOS los partes de la incidencia
+      // (no solo los del día filtrado) — para mostrar "Parte 3" si es el 3º de 5, etc.
+      var _todosDeLaOrden=getHVisible().filter(function(x){ return getGrupKey(x)===getGrupKey(_rPrincipal); }).sort(function(a,b){ return a.fecha.localeCompare(b.fecha); });
+      var _posReal=_todosDeLaOrden.findIndex(function(x){ return x===_rPrincipal; });
+      var _numParteEtiqueta='Parte '+(_posReal>=0?(_posReal+1):1);
+      var _tecLinea=(_esAdminOCreador&&_rPrincipal.tecnicos&&_rPrincipal.tecnicos[0])?'<div class="hi-sub" style="margin-top:4px;">'+_rPrincipal.tecnicos[0]+'</div>':'';
+      return '<div class="hist-item" data-enc="'+enc+'" data-idx="'+gi+'" style="display:block;">'+
+        '<div class="hi-title">'+dot+g.tienda+'</div>'+
+        '<div class="hi-sub">'+subTitle+' ·</div>'+
+        '<div style="display:flex;justify-content:space-between;gap:8px;"><div class="hi-sub">'+_numParteEtiqueta+'</div><div class="hi-date">'+fr+'</div></div>'+
+        (_numParteTxt||_horaTxt?'<div style="display:flex;justify-content:space-between;gap:8px;"><div class="hi-sub">'+_numParteTxt+'</div><div class="hi-date">'+_horaTxt+'</div></div>':'')+
+        '<div style="margin-top:4px;">'+badge+'</div>'+
+        _tecLinea+
+        '</div>';
     }
     return '<div class="hist-item" data-enc="'+enc+'" data-idx="'+gi+'">'+
       '<div><div class="hi-title">'+dot+g.tienda+'</div>'+
-      '<div class="hi-sub">'+subTitle+' · '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+_numParteLinea+'<div style="margin-top:4px;">'+badge+'</div>'+_tecLinea+'</div>'+
-      '<div style="text-align:right;flex-shrink:0;align-self:flex-start;"><div class="hi-date">'+fr+'</div>'+_horaLinea+'</div></div>';
+      '<div class="hi-sub">'+subTitle+' · '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+badge+'</div>'+
+      '<div class="hi-date">'+fr+'</div></div>';
   }).join('');
   el.style.display='block';
   el.innerHTML=html;
