@@ -5973,8 +5973,8 @@ function renderSearchResults(){
     }
     return '<div class="hist-item" data-enc="'+enc+'" data-idx="'+gi+'">'+
       '<div><div class="hi-title">'+dot+g.tienda+'</div>'+
-      '<div class="hi-sub">'+subTitle+' · '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+_numParteLinea+badge+_tecLinea+'</div>'+
-      '<div style="text-align:right;flex-shrink:0;"><div class="hi-date">'+fr+'</div>'+_horaLinea+'</div></div>';
+      '<div class="hi-sub">'+subTitle+' · '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+_numParteLinea+'<div style="margin-top:4px;">'+badge+'</div>'+_tecLinea+'</div>'+
+      '<div style="text-align:right;flex-shrink:0;align-self:flex-start;"><div class="hi-date">'+fr+'</div>'+_horaLinea+'</div></div>';
   }).join('');
   el.style.display='block';
   el.innerHTML=html;
