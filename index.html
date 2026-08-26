@@ -5969,12 +5969,12 @@ function renderSearchResults(){
       var _rPrincipal=g.partes[0].r;
       if(_rPrincipal.numParte) _numParteLinea='<div style="font-size:.76rem;color:var(--text3);margin-top:2px;">('+_rPrincipal.numParte+')</div>';
       if(_rPrincipal.arr||_rPrincipal.lea) _horaLinea='<div style="font-size:.76rem;color:var(--text3);margin-top:2px;">'+(_rPrincipal.arr||'--')+' - '+(_rPrincipal.lea||'--')+'</div>';
-      if(_esAdminOCreador&&_rPrincipal.tecnicos&&_rPrincipal.tecnicos[0]) _tecLinea=' · '+_rPrincipal.tecnicos[0];
+      if(_esAdminOCreador&&_rPrincipal.tecnicos&&_rPrincipal.tecnicos[0]) _tecLinea='<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+_rPrincipal.tecnicos[0]+'</div>';
     }
     return '<div class="hist-item" data-enc="'+enc+'" data-idx="'+gi+'">'+
       '<div><div class="hi-title">'+dot+g.tienda+'</div>'+
       '<div class="hi-sub">'+subTitle+' · '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+_numParteLinea+badge+_tecLinea+'</div>'+
-      '<div class="hi-date">'+fr+'</div>'+_horaLinea+'</div>';
+      '<div style="text-align:right;flex-shrink:0;"><div class="hi-date">'+fr+'</div>'+_horaLinea+'</div></div>';
   }).join('');
   el.style.display='block';
   el.innerHTML=html;
