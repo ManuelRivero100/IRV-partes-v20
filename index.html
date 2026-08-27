@@ -1870,7 +1870,13 @@ function tecGuardar(){
 
 function tecEliminar(id){
   _confirmarApp('¿Eliminar este técnico?', function(){
-    setTecnicos(getTecnicos().filter(function(t){return t.id!==id;}));
+    var tecs=getTecnicos();
+    var tec=tecs.find(function(t){return t.id===id;});
+    setTecnicos(tecs.filter(function(t){return t.id!==id;}));
+    if(tec&&tec.nombre&&typeof _db!=='undefined'&&_db){
+      var docId=tec.nombre.toLowerCase().replace(/ /g,'_');
+      _db.collection('usuario').doc(docId).delete().catch(function(){});
+    }
     renderCatTecnicos();
   });
 }
@@ -5170,6 +5176,8 @@ function fmtH(v){
 
 function checkAutoEnlace(){
   if(curLink==='Si') return; // nunca sobrescribir un enlace manual ya elegido por el técnico
+  if(curLink==='Auto') return; // ya está en modo Auto — no repetir el autorrelleno de kmA/trA,
+                                 // que sobrescribiría un valor que el técnico ya corrigió a mano
   var fecha=$('fecha').value; var arrVal=$('arr').value;
   if(!fecha||!arrVal){ resetAE(); return; }
   // Servicios y Reparaciones: trabajos puntuales, nunca se auto-enlazan
@@ -5187,7 +5195,9 @@ function checkAutoEnlace(){
     var origen=last.tienda||last.centro||'parte anterior';
     $('abn').classList.add('show'); $('abnTxt').textContent='Enlace autom\u00e1tico desde '+origen+'. Indica solo km y despl. de salida.';
     aeData={kmDif:last.kmDif||0,trDif:last.trDif||0};
-    if(last.km){ $('kmA').value=last.km; $('trA').value=last.tr; }
+    // Con enlace, el km/despl. de salida del segundo parte es el trayecto REAL de regreso
+    // — nunca debe sugerirse con un dato del parte anterior (eso sería aplicar la lógica
+    // de "sin enlace" a un caso con enlace). El técnico introduce el valor real.
   } else { resetAE(); }
 }
 
@@ -5988,8 +5998,11 @@ function renderSearchResults(){
       }
       // Posición real de este parte dentro de TODOS los partes de la incidencia
       // (no solo los del día filtrado) — para mostrar "Parte 3" si es el 3º de 5, etc.
+      // Se compara por fecha (getGrupKey ya garantiza mismo pedido+centro), no por
+      // referencia de objeto, ya que getHVisible() vuelve a parsear el JSON cada vez
+      // y genera objetos nuevos que nunca coincidirían con === aunque sean "el mismo" parte.
       var _todosDeLaOrden=getHVisible().filter(function(x){ return getGrupKey(x)===getGrupKey(_rPrincipal); }).sort(function(a,b){ return a.fecha.localeCompare(b.fecha); });
-      var _posReal=_todosDeLaOrden.findIndex(function(x){ return x===_rPrincipal; });
+      var _posReal=_todosDeLaOrden.findIndex(function(x){ return x.fecha===_rPrincipal.fecha; });
       var _numParteEtiqueta='Parte '+(_posReal>=0?(_posReal+1):1);
       var _tecLinea=(_esAdminOCreador&&_rPrincipal.tecnicos&&_rPrincipal.tecnicos[0])?'<div class="hi-sub" style="margin-top:4px;">'+_rPrincipal.tecnicos[0]+'</div>':'';
       return '<div class="hist-item" data-enc="'+enc+'" data-idx="'+gi+'" style="display:block;">'+
