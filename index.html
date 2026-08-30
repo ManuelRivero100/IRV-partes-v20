@@ -3409,7 +3409,7 @@ function generarCore(){
   var autoObs='';
   if(same.length){ var last=same[same.length-1]; if(last.horaEnlace&&last.horaEnlace===arr) autoObs='Desplazamiento desde '+last.tienda+' (Centro '+last.centro+')'; }
   var tlK='',tlT='',tlS='';
-  if(curLink==='No'){ var ku=kmT/2; tlK=tl(arr-trI,arr)+' &middot; '+fmt(ku)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ku)+' km'; }
+  if(curLink==='No'){ var ku=(kmT-kmAdic)/2; tlK=tl(arr-trI,arr)+' &middot; '+fmt(ku)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ku)+' km'; }
   else if(curLink==='Si'){ var kev=+$('kmE').value,ksm=kmDG>0?kev:+$('kmS').value; tlK=tl(arr-trI,arr)+' &middot; '+fmt(kev)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ksm)+' km'; }
   else if(curLink==='Auto'){ var kAv=+$('kmA').value,kd=aeData?aeData.kmDif:0,td2=aeData?aeData.trDif:0; tlK=(kd>0||td2>0)?tl(arr-trI,arr)+' &middot; '+fmt(kd)+' km':''; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(kAv)+' km'; }
 
@@ -3436,6 +3436,8 @@ function generarCore(){
   if(_nCoches>1 && _kmMultiplicacionSimple){
     _kmValTxt = fmt(kmTBase)+' km x'+_nCoches+'= '+fmt(_kmSubtotal)+' km';
     if(kmAdic>0) _kmValTxt += ' + '+fmt(kmAdic)+' km adic.= '+fmt(kmT)+' km';
+  } else if(kmAdic>0){
+    _kmValTxt = fmt(kmT-kmAdic)+' + '+fmt(kmAdic)+' = '+fmt(kmT)+' km';
   } else {
     _kmValTxt = fmt(kmT)+' km';
   }
