@@ -1282,9 +1282,10 @@ function _sincronizarTecnicosDesdeFirestore(){
 }
 function _sincronizarCatalogoDesdeFirestore(){
   if(typeof _db === 'undefined' || !_db || !window._sesion) return;
-  var rol=window._sesion.rol;
-  // Solo admin/creador sube y baja el catálogo
-  if(rol!=='admin'&&rol!=='creador') return;
+  // Todos los roles pueden bajar el catalogo (el tecnico lo necesita para elegir
+  // materiales al generar un parte, aunque no tenga pantalla propia de catalogo).
+  // Solo admin/creador puede subir cambios - eso se controla aparte, en
+  // _subirCatalogoAFirestore() y _modificarCatalogoEnFirestore().
   _db.collection('config').doc('catalogo').get().then(function(doc){
     if(doc.exists){
       var d=doc.data();
@@ -5047,6 +5048,7 @@ function tecSeleccionar(i,nombre){
   wNames[i]=nombre;
   var inp=$('wInp'+i); if(inp) inp.value=nombre;
   renderWorkers();
+  if(i===0) checkAutoEnlace(); // el técnico principal determina el enlace, reevaluar
 }
 function renderWorkers(){
   var w=Math.max(1,Math.min(4,+$('w').value||0));
@@ -5076,7 +5078,7 @@ function renderWorkers(){
     var _dropHtml='<div id="'+_dropId+'" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:99;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);max-height:160px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.4);">'+_dropItems+'</div>';
     var _inp = _esAdminEditando
       ? '<span style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;color:var(--text);display:inline-block;">'+(wNames[i]||'—')+'</span>'
-      : '<input type="text" id="wInp'+i+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;width:100%;" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value" onfocus="tecMostrarDrop('+i+')" onblur="tecOcultarDrop('+i+')">';
+      : '<input type="text" id="wInp'+i+'" placeholder="Nombre" style="flex:1;min-width:120px;padding:5px 9px;font-size:.85rem;width:100%;" value="'+(wNames[i]||'')+'" oninput="wNames['+i+']=this.value'+(i===0?';checkAutoEnlace()':'')+'" onfocus="tecMostrarDrop('+i+')" onblur="tecOcultarDrop('+i+')">';
     if(nr&&i===0){
       html+='<div class="worker-row" style="flex-wrap:wrap;gap:6px"><span class="worker-label">Trabajador 1<span class="wbadge wbadge-auto">Oficial</span></span><div style="position:relative;flex:1;min-width:120px;">'+_inp+_dropHtml+'</div></div>';
     } else if(nr){
@@ -5182,9 +5184,13 @@ function checkAutoEnlace(){
   if(!fecha||!arrVal){ resetAE(); return; }
   // Servicios y Reparaciones: trabajos puntuales, nunca se auto-enlazan
   if(curCliente&&curCliente.id==='c_1779744364343'){ resetAE(); return; }
-  // Busca en TODOS los partes del día (cualquier cliente)
+  // El enlace es siempre por técnico: dos técnicos distintos no pueden compartir
+  // un enlace aunque coincidan en cliente, fecha y horario — cada uno hace su propio trayecto
+  var tecPrincipal=(wNames[0]||'').trim().toLowerCase();
+  if(!tecPrincipal){ resetAE(); return; }
+  // Busca en TODOS los partes del día (cualquier cliente) del mismo técnico principal
   var curCid=curCliente?curCliente.id:'mercadona';
-  var same=getH().filter(function(x){ return x.fecha===fecha && (x.clienteId||'mercadona')===curCid; });
+  var same=getH().filter(function(x){ return x.fecha===fecha && (x.clienteId||'mercadona')===curCid && x.tecnicos && x.tecnicos[0] && x.tecnicos[0].toLowerCase()===tecPrincipal; });
   if(!same.length){ resetAE(); return; }
   var last=same[same.length-1];
   if(!last.linkType||last.linkType==='No'){ resetAE(); return; }
@@ -5194,6 +5200,12 @@ function checkAutoEnlace(){
     $('link').value='Auto'; curLink='Auto';
     var origen=last.tienda||last.centro||'parte anterior';
     $('abn').classList.add('show'); $('abnTxt').textContent='Enlace autom\u00e1tico desde '+origen+'. Indica solo km y despl. de salida.';
+    // El regreso desde esta tienda es el mismo trayecto que la ida ya conocida de ESTE
+    // parte (no del anterior) - trasladarlo antes de ocultar km/tr, en vez de dejar
+    // kmA/trA vacios pidiendo un dato que el formulario ya tenia
+    if(!$('kmA').value) $('kmA').value=$('km').value||'';
+    if(!$('trA').value) $('trA').value=$('tr').value||'';
+    _bloquearCamposAutorrellenados();
     aeData={kmDif:last.kmDif||0,trDif:last.trDif||0};
     // Con enlace, el km/despl. de salida del segundo parte es el trayecto REAL de regreso
     // — nunca debe sugerirse con un dato del parte anterior (eso sería aplicar la lógica
@@ -7075,13 +7087,13 @@ function rellenar(idx,porOrden){
 
 function _bloquearCamposAutorrellenados(){
   if(!(window._sesion && window._sesion.rol==='tecnico')) return;
-  ['centro','tienda','dir','tel','km','tr'].forEach(function(id){
+  ['centro','tienda','dir','tel','km','tr','kmA','trA'].forEach(function(id){
     var el=$(id);
     if(el && el.value){ el.readOnly=true; el.style.background='var(--surface2)'; el.style.color='var(--text2)'; }
   });
 }
 function _desbloquearCamposAutorrellenados(){
-  ['centro','tienda','dir','tel','km','tr'].forEach(function(id){
+  ['centro','tienda','dir','tel','km','tr','kmA','trA'].forEach(function(id){
     var el=$(id);
     if(el){ el.readOnly=false; el.style.background=''; el.style.color=''; }
   });
