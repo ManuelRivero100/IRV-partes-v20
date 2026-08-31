@@ -921,6 +921,13 @@ textarea{resize:vertical;min-height:72px}
     </div>
   </div>
 </div>
+<div class="dialogo" id="dlgIncidenciaDeOtro" onclick="_continuarTrasIncidenciaDeOtro()" style="cursor:pointer;">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo">&#128683; No te corresponde</div>
+    <div class="dialogo-sub" style="margin-bottom:16px;">Esa incidencia ya tiene asignaci&oacute;n y no le corresponde trabajar en ella. Si es necesario, pide la reasignaci&oacute;n.</div>
+    <div class="dialogo-sub" style="text-align:center;font-weight:700;">Toca para continuar</div>
+  </div>
+</div>
 <div class="dialogo" id="dlgInicioOrden">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#128203; &iquest;C&oacute;mo seguimos?</div>
@@ -3335,6 +3342,19 @@ function generarCore(){
   // pedido requerido solo si es Mercadona y no es Obras
   if(esMercadona&&!esObras) req.push('pedido');
   for(var ri=0;ri<req.length;ri++){ if(!$(req[ri]).value.trim()){ showMsg('msgForm','Completa todos los campos obligatorios (*).','error'); return; } }
+  // Red de seguridad: si el técnico escribió el pedido directamente (sin pasar por el
+  // buscador de arriba, que ya avisa mientras escribe) y ese pedido es de otro técnico,
+  // bloquear aquí también — nunca dejar guardar sobre una incidencia ajena.
+  if(window._sesion && window._sesion.rol==='tecnico'){
+    var _pedidoCheck=($('pedido').value||'').trim();
+    if(_pedidoCheck){
+      var _regCheck=_registroGlobal(_pedidoCheck, curCliente?curCliente.id:'mercadona');
+      if(_regCheck && _regCheck.tecnicoPrincipal && _regCheck.tecnicoPrincipal.toLowerCase()!==window._sesion.nombre.toLowerCase()){
+        _mostrarBloqueoIncidenciaDeOtro();
+        return;
+      }
+    }
+  }
   if(!curJob){ showMsg('msgForm','Selecciona el tipo de trabajo.','error'); return; }
   var wVal=+$('w').value||0; if(!wVal){ showMsg('msgForm','Indica el número de trabajadores.','error'); return; }
 
@@ -3675,6 +3695,7 @@ function resetearEstadoCompleto(){
    'kmE','kmS','trE','trS','kmA','trA','arr','lea','enlaceDestino'].forEach(function(id){
     var el=$(id); if(el) el.value='';
   });
+  _desbloquearCamposAutorrellenados();
   var mnp=$('msgNumParte'); if(mnp){ mnp.style.display='none'; mnp.textContent=''; }
   $('w').value='2';
   $('job').value='';
@@ -4386,8 +4407,8 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
   }).catch(function(){ _marcarIncidenciaPendientePorPedido(pedido,centro); });
   if(estado==='terminado'){
     _db.collection('partes').where('pedido','==',pedido).where('centro','==',centro).get().then(function(snap){
-      snap.forEach(function(doc){ doc.ref.update({estado:'terminado'}); });
-    }).catch(function(){});
+      return Promise.all(snap.docs.map(function(doc){ return doc.ref.update({estado:'terminado'}); }));
+    }).catch(function(){ _marcarIncidenciaPendientePorPedido(pedido,centro); });
     var h=getH();
     h.forEach(function(r){ if(r.pedido===pedido && r.centro===centro) r.estado='terminado'; });
     setH(h);
@@ -5444,7 +5465,10 @@ function verOrden(enc){
   $('ordenBackLbl').textContent=lastEstado==='en-ejecucion'?'En ejecución':'Finalizados';
 
   var codAcum={};
-  function sumarCodigo(cod,lab,v,u){ if(!codAcum[cod]) codAcum[cod]={rc:cod,rl:lab,v:0,u:u}; codAcum[cod].v+=v; }
+  // Agrupar por código+etiqueta, no solo por código — así Oficial y Peón (mismo código en
+  // clientes sin código propio como no-Mercadona, pero con etiqueta ".Of"/".Pn" distinta)
+  // no se mezclan en un único total.
+  function sumarCodigo(cod,lab,v,u){ var k=cod+'|'+lab; if(!codAcum[k]) codAcum[k]={rc:cod,rl:lab,v:0,u:u}; codAcum[k].v+=v; }
   partes.forEach(function(p){
     (p.r.codigos||parsearCodigos(p.r.detalle||'', p.r.roles||[])).forEach(function(c){ sumarCodigo(c.cod,c.lab,c.v,c.u); });
   });
@@ -5696,6 +5720,18 @@ function buscarPorCentroORef(val){
   box.innerHTML=html; box.classList.add('show');
 }
 
+// Bloqueo real (no solo un aviso) cuando un técnico intenta trabajar en una incidencia
+// que ya es de otro técnico — se usa tanto al escribir el pedido como justo antes de
+// guardar, para que no se pueda saltar escribiendo el número directamente en el campo.
+function _mostrarBloqueoIncidenciaDeOtro(){
+  var dlg=$('dlgIncidenciaDeOtro'); if(dlg) dlg.classList.add('show');
+}
+function _continuarTrasIncidenciaDeOtro(){
+  var dlg=$('dlgIncidenciaDeOtro'); if(dlg) dlg.classList.remove('show');
+  nuevo();
+  mostrarDlgInicioOrden();
+}
+
 function buscarPorOrden(val){
   var box=$('acOrden');
   box.classList.remove('show'); box.innerHTML='';
@@ -5709,8 +5745,7 @@ function buscarPorOrden(val){
     if(reg){
       var esDeOtro = reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()!==miNombre;
       if(esDeOtro){
-        box.innerHTML='<div class="ac-item" style="color:var(--red);cursor:default;">&#128683; Esa incidencia ya tiene asignaci&oacute;n y no le corresponde trabajar en ella.</div>';
-        box.classList.add('show');
+        _mostrarBloqueoIncidenciaDeOtro();
         return;
       }
       if(reg.estado==='terminado'){
@@ -6526,7 +6561,7 @@ function verResumenCentro(){
   var tienda=h.length?h[h.length-1].tienda:'Centro '+_curCentroFin;
   $('resumenCentroTitle').innerHTML='&#128202; '+tienda;
   var codAcum={};
-  h.forEach(function(r){(r.codigos||[]).forEach(function(c){if(!codAcum[c.cod])codAcum[c.cod]={rc:c.cod,rl:c.lab,v:0,u:c.u};codAcum[c.cod].v+=c.v;});});
+  h.forEach(function(r){(r.codigos||[]).forEach(function(c){var k=c.cod+'|'+c.lab;if(!codAcum[k])codAcum[k]={rc:c.cod,rl:c.lab,v:0,u:c.u};codAcum[k].v+=c.v;});});
   window._resumenCentroCodAcum=codAcum;
   _mostrarResumenCentro('agrupado');
   histShow(['resumenCentroView']);
@@ -6536,7 +6571,7 @@ function verResumenTotal(){
   var h=getH();
   if(curCliente)h=h.filter(function(r){return (r.clienteId||'mercadona')===curCliente.id;});
   var codAcum={};
-  h.forEach(function(r){(r.codigos||[]).forEach(function(c){if(!codAcum[c.cod])codAcum[c.cod]={rc:c.cod,rl:c.lab,v:0,u:c.u};codAcum[c.cod].v+=c.v;});});
+  h.forEach(function(r){(r.codigos||[]).forEach(function(c){var k=c.cod+'|'+c.lab;if(!codAcum[k])codAcum[k]={rc:c.cod,rl:c.lab,v:0,u:c.u};codAcum[k].v+=c.v;});});
   window._resumenTotalCodAcum=codAcum;
   _mostrarResumenTotal('agrupado');
   var el=document.getElementById('resumenTotalView');
@@ -6951,7 +6986,14 @@ function abrirEdicionParte(idx){
   // Enlace
   var lv=r.linkType||'No';
   var lnkBtns=document.querySelectorAll('#lnkTgl button');
-  if(lv==='Si'||lv==='Í'||lv==='Sí'){
+  if(lv==='Auto'){
+    // Restaurar el modo Auto tal cual quedó guardado — setLink() solo sabe alternar
+    // entre "No"/"Si", así que aquí se replica lo que hace checkAutoEnlace() al activarlo
+    $('lnkToggleDiv').style.display='none'; $('modeNo').style.display='none'; $('modeSi').style.display='none'; $('modeAuto').style.display='block';
+    $('link').value='Auto'; curLink='Auto';
+    $('kmA').value=r.km||''; $('trA').value=r.tr||'';
+    aeData={kmDif:r.kmDif||0, trDif:r.trDif||0};
+  } else if(lv==='Si'||lv==='Í'||lv==='Sí'){
     setLink('Si', lnkBtns[1]||lnkBtns[0]);
   } else {
     setLink('No', lnkBtns[0]);
