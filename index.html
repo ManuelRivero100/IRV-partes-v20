@@ -685,6 +685,7 @@ textarea{resize:vertical;min-height:72px}
         <div class="field"><label>Despl. entrada (min)</label><input id="trE" type="number" min="0" placeholder="min"></div>
         <div class="field"><label>Despl. salida (min)</label><input id="trS" type="number" min="0" placeholder="min"></div>
       </div>
+      <div class="field"><label>Tienda destino</label><input id="enlaceDestino" placeholder="Tienda a la que vas después"></div>
       <div class="field" id="todosEnlazanField" style="display:none"><label>&iquest;Todos los coches enlazan?</label>
         <div class="tgl" id="todosEnlazanTgl">
           <button class="active" onclick="setTodosEnlazan(true,this)">S&iacute;</button>
@@ -767,7 +768,7 @@ textarea{resize:vertical;min-height:72px}
         </div>
         <div id="histAdminTools">
         <div class="brow">
-          <button class="btn btn-d btn-sm" onclick="pedirBorrarHist()">&#128465;&#65039; Borrar historial</button>
+          <button class="btn btn-d btn-sm" id="btnBorrarHist" onclick="pedirBorrarHist()">&#128465;&#65039; Borrar historial</button>
           <button class="btn btn-s btn-sm" onclick="limpiarFiltros()">&#10005; Limpiar filtros</button>
         </div>
         <div class="brow" style="margin-top:6px">
@@ -3386,6 +3387,7 @@ function generarCore(){
   checkAutoEnlace();
 
   var kmT=0,trI=0,trO=0,kmDG=0,trDG=0,heG=0,kmG=0,trG=0;
+  var _notaEnlace='';
   if(curLink==='No'){
     if(!$('km').value||!$('tr').value){ showMsg('msgForm','Indica km y desplazamiento.','error'); return; }
     var kv=+$('km').value; var tv=rQ(+$('tr').value);
@@ -3396,11 +3398,14 @@ function generarCore(){
     if(ks>ke){ kmDG=ks-ke; trDG=ts>te?Math.round(ts-te):0; kmT=ke*2; trI=te; trO=te; }
     else { kmT=ke+ks; trI=te; trO=rQ(ts); }
     heG=lea+ts; kmG=ke; trG=te;
+    var _enlaceDestino=$('enlaceDestino')?$('enlaceDestino').value.trim():'';
+    if(_enlaceDestino) _notaEnlace='Desplazamiento Hacia '+_enlaceDestino;
   } else if(curLink==='Auto'){
     if(!$('kmA').value||!$('trA').value){ showMsg('msgForm','Indica km y despl. de salida.','error'); return; }
     var kA=+$('kmA').value,tA=rQ(+$('trA').value);
     kmT=(aeData?aeData.kmDif:0)+kA; trI=aeData?aeData.trDif:0; trO=tA; heG=lea+tA;
     kmG=kA; trG=tA;
+    if(same.length && same[same.length-1].tienda) _notaEnlace='Desplazamiento Desde '+same[same.length-1].tienda;
   }
   var kmTBase=kmT;
   var _nCoches=Math.max(1,+$('ncoches').value||1);
@@ -3424,8 +3429,6 @@ function generarCore(){
   }
   kmT = kmT + kmAdic;
 
-  var autoObs='';
-  if(same.length){ var last=same[same.length-1]; if(last.horaEnlace&&last.horaEnlace===arr) autoObs='Desplazamiento desde '+last.tienda+' (Centro '+last.centro+')'; }
   var tlK='',tlT='',tlS='';
   if(curLink==='No'){ var ku=(kmT-kmAdic)/2; tlK=tl(arr-trI,arr)+' &middot; '+fmt(ku)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ku)+' km'; }
   else if(curLink==='Si'){ var kev=+$('kmE').value,ksm=kmDG>0?kev:+$('kmS').value; tlK=tl(arr-trI,arr)+' &middot; '+fmt(kev)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ksm)+' km'; }
@@ -3447,6 +3450,7 @@ function generarCore(){
   html+=iRow('Tel\u00e9fono',$('tel').value);
 
   if(tlK) html+=gt(tlK);
+  if(_notaEnlace) html+='<div style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2);margin-bottom:8px;">&#128279; '+escHtml(_notaEnlace)+'</div>';
   var conPrecios=curCliente&&curCliente.precios===true;
   var _kmCod=gc(curJob,'Km',''); var _kmPr=conPrecios?getPrecioPorCod(_kmCod,'Kmje',curJob):0;
   var _kmSubtotal=kmTBase*_nCoches;
@@ -3525,7 +3529,6 @@ function generarCore(){
     else { html+=cRow(dCod,'\u00bd Dieta',dVal); }
   }
   else { var info=dietaYa?'&#9989; Media dieta ya aplicada hoy':'&#9203; Acumulado: '+fmt(acum/60)+' h de 5 h (faltan '+fmt(Math.max(0,300-acum)/60)+' h)'; html+='<div style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2)">'+info+'</div>'; }
-  if(autoObs){ html+=gt('Enlace'); html+=oRow('Auto',autoObs); }
   var durTotal=esNocturno?(1440-arr+lea):(lea-arr);
   var noms=wNames.filter(function(n){ return n&&n.trim(); });
 
@@ -3669,7 +3672,7 @@ function resetearEstadoCompleto(){
   _MS.sel={}; _MS.extras={}; _MS.secAbierta=null; _MS.catJob=null;
   _keepForm=false;
   ['pedido','numParte','tienda','dir','tel','centro','raw','obs','km','tr',
-   'kmE','kmS','trE','trS','kmA','trA','arr','lea'].forEach(function(id){
+   'kmE','kmS','trE','trS','kmA','trA','arr','lea','enlaceDestino'].forEach(function(id){
     var el=$(id); if(el) el.value='';
   });
   var mnp=$('msgNumParte'); if(mnp){ mnp.style.display='none'; mnp.textContent=''; }
@@ -3710,7 +3713,7 @@ function resetearEstadoCompleto(){
 
 function nuevo(){
   _editIdx=null;
-  ['pedido','numParte','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea','kmAdicionales','kmAdicionalesJust'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
+  ['pedido','numParte','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea','kmAdicionales','kmAdicionalesJust','enlaceDestino'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
   var mnp2=$('msgNumParte'); if(mnp2){ mnp2.style.display='none'; mnp2.textContent=''; }
   _desbloquearCamposAutorrellenados();
   window._origenAutoLectura=false;
@@ -5530,6 +5533,7 @@ function getGrupKey(r){ return r.pedido+'||'+r.centro; }
 function borrarHistConfirm(ok){
   $('confirmBorrar').style.display='none';
   if(!ok) return;
+  if(!(window._sesion && window._sesion.rol==='creador')) return;
   // solo borrar partes del cliente activo
   if(curCliente){
     var h=getH().filter(function(r){ return (r.clienteId||'mercadona')!==curCliente.id; });
@@ -6162,7 +6166,10 @@ function pdfOrden(){
 }
 
 
-function pedirBorrarHist(){ $('confirmBorrar').style.display='block'; }
+function pedirBorrarHist(){
+  if(!(window._sesion && window._sesion.rol==='creador')) return;
+  $('confirmBorrar').style.display='block';
+}
 
 function respActObras(tipo){
   if(tipo==='nueva'){
@@ -7951,6 +7958,8 @@ function _aplicarSesion(nombre, rol, multiRol) {
   if (icCat) icCat.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   var histTools = document.getElementById('histAdminTools');
   if (histTools) histTools.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
+  var btnBorrarHist = document.getElementById('btnBorrarHist');
+  if (btnBorrarHist) btnBorrarHist.style.display = (rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
 
   // La presentación y las sincronizaciones que no dependen del rol ya se dispararon antes
@@ -7958,9 +7967,14 @@ function _aplicarSesion(nombre, rol, multiRol) {
   // queda esperar a que termine la presentación (bandera global — puede que ya haya terminado,
   // si el usuario tardó en elegir su rol) y la sincronización de partes/incidencias, que sí
   // depende del rol ya decidido. Ninguna de las dos corta a la otra.
-  var _syncPartesTerminada = false;
+  // La pantalla de "Sincronizando" solo se oculta cuando las tres descargas que
+  // alimentan los badges (partes, registro global e incidencias) han terminado —
+  // no basta con que termine solo la de partes, porque entonces se revela la app
+  // con los badges todavía incompletos.
+  var _syncPartesTerminada = false, _syncRegistroTerminado = false, _syncEstadosTerminado = false;
+  function _todoSincronizado(){ return _syncPartesTerminada && _syncRegistroTerminado && _syncEstadosTerminado; }
   function _ocultarSplashSiListo() {
-    if (!_loginSplashListo || !_syncPartesTerminada) return;
+    if (!_loginSplashListo || !_todoSincronizado()) return;
     var sp = document.getElementById('splash');
     if (sp) {
       sp.classList.add('fade-out');
@@ -7980,19 +7994,33 @@ function _aplicarSesion(nombre, rol, multiRol) {
     if (_syncPartesYaResuelto) return; // ya se resolvió (a tiempo, o por la salvaguarda) — no repetir
     _syncPartesYaResuelto = true;
     _syncPartesTerminada = true;
+    _syncRegistroTerminado = true;
+    _syncEstadosTerminado = true;
     _ocultarSplashSiListo();
   }
   // Salvaguarda: si Firestore no responde en 10s (sin conexión, o una consulta colgada),
   // entrar igualmente en vez de quedarse esperando para siempre
   setTimeout(_ocultarOverlay, 10000);
 
+  // La salvaguarda de 10s puede disparar _ocultarOverlay() antes de que las descargas
+  // reales terminen (mucho histórico, mala señal) — su guarda interna evita ocultar la
+  // pantalla de carga dos veces, pero eso también descartaba silenciosamente el
+  // repintado del badge cuando la descarga real llegaba después. Aquí se separan:
+  // _ocultarOverlay() sigue protegido para no repetirse, pero el repintado de cada
+  // descarga se hace siempre que esa descarga termine de verdad, a tiempo o tarde.
+  function _partesListas(){ _syncPartesTerminada = true; _ocultarOverlay(); renderClientes(); refreshCounts(); renderAsgTecnico(); }
+  function _registroListo(){ _syncRegistroTerminado = true; _ocultarSplashSiListo(); }
+  function _estadosListos(){ _syncEstadosTerminado = true; _ocultarSplashSiListo(); }
+
   if (rol === 'admin' || rol === 'creador') {
-    _sincronizarEstadosIncidencias();
-    _sincronizarPartesDesdeFirestore(null, _ocultarOverlay);
+    _sincronizarEstadosIncidencias(null, _estadosListos);
+    _sincronizarRegistroGlobal(_registroListo);
+    _sincronizarPartesDesdeFirestore(null, _partesListas);
   }
   else if (rol === 'tecnico') {
-    _sincronizarEstadosIncidencias(nombre);
-    _sincronizarPartesDesdeFirestore(nombre, _ocultarOverlay);
+    _sincronizarEstadosIncidencias(nombre, _estadosListos);
+    _sincronizarRegistroGlobal(_registroListo);
+    _sincronizarPartesDesdeFirestore(nombre, _partesListas);
   }
   else { _ocultarOverlay(); }
   _iniciarActualizacionPeriodica();
@@ -8035,10 +8063,10 @@ function _iniciarActualizacionPeriodica(){
     _sincronizarRegistroGlobal();
     if (_s2.rol === 'admin' || _s2.rol === 'creador') {
       _sincronizarEstadosIncidencias();
-      _sincronizarPartesDesdeFirestore(null, function(){});
+      _sincronizarPartesDesdeFirestore(null);
     } else if (_s2.rol === 'tecnico') {
       _sincronizarEstadosIncidencias(_s2.nombre);
-      _sincronizarPartesDesdeFirestore(_s2.nombre, function(){});
+      _sincronizarPartesDesdeFirestore(_s2.nombre);
     }
     renderAsgTecnico();
     renderAsgAdmin();
@@ -8121,8 +8149,8 @@ function _comprobarVersionNueva(){
 // A diferencia de pm_incidencias_estados (que para técnico solo trae las suyas),
 // este trae TODAS las incidencias (ligero: solo pedido/centro/tecnicoPrincipal/estado/clienteId),
 // para poder bloquear localmente pedidos que ya son de otro técnico, sin depender de internet en el momento.
-function _sincronizarRegistroGlobal(){
-  if (typeof _db === 'undefined' || !_db) return;
+function _sincronizarRegistroGlobal(callback){
+  if (typeof _db === 'undefined' || !_db) { if(callback) callback(); return; }
   _db.collection('incidencias').get().then(function(snap){
     var reg = {};
     snap.forEach(function(doc){
@@ -8142,7 +8170,8 @@ function _sincronizarRegistroGlobal(){
     localStorage.setItem('pm_registro_global', JSON.stringify(reg));
     if (typeof renderClientes === 'function') renderClientes();
     if (typeof renderHistTecBtns === 'function') renderHistTecBtns();
-  }).catch(function(){});
+    if(callback) callback();
+  }).catch(function(){ if(callback) callback(); });
   // Números de parte ya usados (por cualquier técnico) — mismo ciclo de sincronización,
   // sin crear un temporizador ni una función de sincronización aparte.
   _db.collection('partes').get().then(function(snap){
@@ -8169,8 +8198,8 @@ function _numParteUsadoLocal(numParte){
   } catch(e){ return false; }
 }
 
-function _sincronizarEstadosIncidencias(soloTecnico) {
-  if (typeof _db === 'undefined' || !_db) return;
+function _sincronizarEstadosIncidencias(soloTecnico, callback) {
+  if (typeof _db === 'undefined' || !_db) { if(callback) callback(); return; }
   var query = _db.collection('incidencias');
   if (soloTecnico) {
     var _tec = getTecnicos().find(function(t){ return t.nombre.toLowerCase() === soloTecnico.toLowerCase(); });
@@ -8189,7 +8218,8 @@ function _sincronizarEstadosIncidencias(soloTecnico) {
     // después de que la app ya se haya revelado — evita que se queden con datos vacíos
     // o viejos justo tras la limpieza diaria/de usuario
     if (typeof renderClientes === 'function') renderClientes();
-  }).catch(function(){});
+    if(callback) callback();
+  }).catch(function(){ if(callback) callback(); });
 }
 
 function _sincronizarPartesDesdeFirestore(soloTecnico, callback) {
@@ -8558,13 +8588,21 @@ function confirmarCambioRol() {
   var esManuel = sesion && sesion.nombre.toLowerCase() === 'manuel rivero';
 
   if (esManuel) {
-    if (pin === MANUEL_ADMIN_PIN) {
+    if (pin !== MANUEL_ADMIN_PIN) {
+      msg.textContent = 'PIN incorrecto.';
+      return;
+    }
+    // Sin conexión no se puede verificar nada extra, así que se bloquea igual que el
+    // login de creador — sin conexión, todos quedan como técnico puro, sin excepción.
+    _verificarConexionFirestore(function(hayConexion){
+      if (!hayConexion) {
+        msg.textContent = 'Sin conexión. No se puede entrar como admin sin internet.';
+        return;
+      }
       document.getElementById('dlgCambioRol').classList.remove('show');
       document.getElementById('dlgCambioRolPin').value = '';
       _entrarConRol(sesion.nombre, 'admin', true);
-    } else {
-      msg.textContent = 'PIN incorrecto.';
-    }
+    });
     return;
   }
 
