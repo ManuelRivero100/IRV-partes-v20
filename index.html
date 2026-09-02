@@ -886,7 +886,6 @@ textarea{resize:vertical;min-height:72px}
       <button class="btn btn-p" id="dlgReabrirBtnSi" style="flex:1;justify-content:center" onclick="respReabrir(true)">&#128275; S&iacute;, reabrir</button>
       <button class="btn btn-s" style="flex:1;justify-content:center" onclick="respReabrir(false)">No, ver activas</button>
     </div>
-    <div id="dlgReabrirActivas" style="display:none;max-height:220px;overflow-y:auto;"></div>
     <div style="margin-top:8px;">
       <button class="btn btn-s btn-sm btn-full" onclick="$('dlgReabrir').classList.remove('show');goTo('w-menu');">&#8592; Regresar</button>
     </div>
@@ -1147,7 +1146,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-02-backups-porcentaje';
+var APP_BUILD_ID = 'build-2026-09-02-reabrir-como-seguimos';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -6356,43 +6355,13 @@ function respInicioOrden(tipo){
 
 function respReabrir(si){
   if(!si){
-    // Mostrar órdenes activas en el mismo diálogo
-    var clienteId=curCliente?curCliente.id:'mercadona';
-    var h=getH();
-    var activas=[];
-    var seen={};
-    for(var i=h.length-1;i>=0;i--){
-      var r=h[i];
-      if((r.clienteId||'mercadona')!==clienteId) continue;
-      if((r.estado||'terminado')!=='en-ejecucion') continue;
-      var k=r.pedido+'||'+r.centro;
-      if(seen[k]) continue;
-      seen[k]=true;
-      activas.push({r:r,idx:i});
-    }
-    var esMerc=curCliente&&curCliente.tipo==='mercadona';
-    var lista=$('dlgReabrirActivas');
-    var cerrarBtn=$('dlgReabrirCerrarBtn');
-    if(!activas.length){
-      lista.innerHTML='<div style="font-size:.82rem;color:var(--text3);padding:8px;text-align:center;">No hay órdenes activas.</div>';
-    } else {
-      lista.innerHTML='<div style="font-size:.74rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;padding:6px 0 4px;">Órdenes activas:</div>'+
-        activas.map(function(x){
-          var r=x.r;
-          var fF=r.fecha?r.fecha.split('-').reverse().join('/'):'--';
-          var subTitle=r.actObras?r.actObras:esMerc?'Orden '+r.pedido:'IRV '+r.pedido;
-          return '<div class="act-list-item" onclick="seleccionarOrdenReabrir('+x.idx+')">'
-            +'<div style="flex:1">'
-            +'<div class="act-info">'+(r.tienda||r.centro||'')+'</div>'
-            +'<div class="act-sub">'+subTitle+' &middot; '+fF+'</div>'
-            +'</div>'
-            +'<span style="color:var(--text3);">&#8250;</span>'
-            +'</div>';
-        }).join('');
-    }
-    lista.style.display='block';
-    cerrarBtn.style.display='block';
-    $('pedido').value='';
+    // "Ver activas": en vez de duplicar aquí una lista propia, reutilizar la pantalla
+    // "¿Cómo seguimos?" que ya existe y ya filtra correctamente por técnico (mismo camino
+    // que sigue "No te corresponde" al tocar para continuar) — evita mantener dos veces la
+    // misma lógica de qué es "una orden activa mía".
+    $('dlgReabrir').classList.remove('show');
+    nuevo();
+    mostrarDlgInicioOrden();
     return;
   }
   // Si=true: reabrir directo (admin, o técnico que también tiene rol admin) o solicitar reabrir (técnico puro)
@@ -7368,15 +7337,6 @@ function seleccionarOrdenActiva(idx){
   $('pedido').value=r.pedido||'';
   rellenarDatos(idx,true);
   $('acOrden').classList.remove('show');
-}
-
-function seleccionarOrdenReabrir(idx){
-  $('dlgReabrir').classList.remove('show');
-  var h=getH(); var r=h[idx]; if(!r) return;
-  $('pedido').value=r.pedido||'';
-  rellenarDatos(idx, true); // orden activa: autorellena tipo de trabajo
-  var esMerc=curCliente&&curCliente.tipo==='mercadona';
-  if(!esMerc){ _pedidoNoMerc=r.pedido; $('pedidoGenDisplay').textContent=r.pedido; }
 }
 
 function tl(a,b){ return '('+fT(a)+') - ('+fT(b)+')'; }
