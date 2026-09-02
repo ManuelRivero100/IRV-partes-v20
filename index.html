@@ -939,6 +939,13 @@ textarea{resize:vertical;min-height:72px}
     <div class="dialogo-sub" style="text-align:center;font-weight:700;">Toca para continuar</div>
   </div>
 </div>
+<div class="dialogo" id="dlgKmAdicObligatoria" onclick="_cerrarAvisoKmAdicObligatoria()" style="cursor:pointer;">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo">&#128663; Falta la justificaci&oacute;n</div>
+    <div class="dialogo-sub" style="margin-bottom:16px;">Escribe la justificaci&oacute;n de los km adicionales.</div>
+    <div class="dialogo-sub" style="text-align:center;font-weight:700;">Toca para continuar</div>
+  </div>
+</div>
 <div class="dialogo" id="dlgInicioOrden">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#128203; &iquest;C&oacute;mo seguimos?</div>
@@ -1121,7 +1128,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-02-observaciones-fijas';
+var APP_BUILD_ID = 'build-2026-09-02-aviso-km-adicional';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3466,7 +3473,7 @@ function generarCore(){
   var _notaKmAdicional = '';
   if(kmAdic>0){
     var _kmAdicJust=$('kmAdicionalesJust').value.trim();
-    if(!_kmAdicJust){ showMsg('msgForm','Escribe la justificación de los km adicionales.','error'); return; }
+    if(!_kmAdicJust){ _mostrarAvisoKmAdicObligatoria(); return; }
     _notaKmAdicional = kmAdic+' km adicionales: '+_kmAdicJust;
   } else if(window._notaKmAdicionalOriginal){
     // Editando un parte y no se tocó el km adicional esta vez: conservar la nota original,
@@ -6169,6 +6176,13 @@ function _mostrarAvisoObsObligatoria(){
 function _cerrarAvisoObsObligatoria(){
   var dlg=$('dlgObsObligatoria'); if(dlg) dlg.classList.remove('show');
   var el=$('obs'); if(el) el.focus();
+}
+function _mostrarAvisoKmAdicObligatoria(){
+  var dlg=$('dlgKmAdicObligatoria'); if(dlg) dlg.classList.add('show');
+}
+function _cerrarAvisoKmAdicObligatoria(){
+  var dlg=$('dlgKmAdicObligatoria'); if(dlg) dlg.classList.remove('show');
+  var el=$('kmAdicionalesJust'); if(el) el.focus();
 }
 
 function pdfOrden(){
@@ -9054,3 +9068,4 @@ _iniciarActualizacionPeriodica();
 </div>
 </body>
 </html>
+
