@@ -1110,7 +1110,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-02-editar-parte-fijo';
+var APP_BUILD_ID = 'build-2026-09-02-asignacion-fija';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -5829,7 +5829,12 @@ function compartirResumenTotal(){
 function guardarConEstado(estado){
   $('dlgEstado').classList.remove('show');
   if(!window.recTmp) return;
-  window.recTmp.obs=$('obs').value.trim();
+  // La descripción de la incidencia (qué hay que hacer) queda fija como primera línea de
+  // Observaciones en todos los partes de esa incidencia — no se puede quitar escribiendo
+  // encima; el técnico solo añade las suyas propias a continuación.
+  var _descFija=($('descIncidencia')&&$('descIncidencia').value.trim())||'';
+  var _obsPropia=$('obs').value.trim();
+  window.recTmp.obs=_descFija?(_obsPropia?(_descFija+'\n'+_obsPropia):_descFija):_obsPropia;
   window.recTmp.estado=estado;
   window.recTmp.materiales=msGetSel();
 
@@ -8374,12 +8379,14 @@ function leerAsg(){
   var n=0;
   if(pedido){ $('asgPedido').value=pedido.trim(); n++; }
   if(centro){ $('asgCentro').value=centro.trim(); n++; buscarKmAsg(centro.trim()); }
-  if(denom){
+  // Si el centro es conocido, buscarKmAsg() ya dejó tienda/dir/tel fijos con el dato correcto
+  // de la agenda — el texto pegado nunca debe pisarlos, solo se usa para centros nuevos.
+  if(denom && !$('asgTienda').readOnly){
     var nombreTienda='Mercadona '+denom.trim()+(centro?' '+centro.trim():'');
     $('asgTienda').value=nombreTienda; n++;
   }
-  if(dir){ $('asgDir').value=dir.trim(); n++; }
-  if(tel){ $('asgTel').value=tel.trim(); n++; }
+  if(dir && !$('asgDir').readOnly){ $('asgDir').value=dir.trim(); n++; }
+  if(tel && !$('asgTel').readOnly){ $('asgTel').value=tel.trim(); n++; }
   if(job){
     var jobT=job.trim();
     document.querySelectorAll('#asgJobTgl button').forEach(function(btn){
@@ -8390,16 +8397,28 @@ function leerAsg(){
   $('asgMsg').textContent = n?n+' campo(s) autocompletados.':'No se encontraron datos.';
 }
 
+// Si el centro ya existe en la agenda, tienda/dirección/teléfono/km/despl. se toman SIEMPRE
+// de ahí y quedan fijos (ni el texto pegado ni lo escrito a mano puede pisarlos) — si hay que
+// corregir esos datos, se hace desde Catálogo > Agenda, no desde la asignación. Solo si el
+// centro es nuevo (no está en la agenda) quedan libres para rellenarlos a mano.
 function buscarKmAsg(centro){
-  centro=(centro||'').trim(); if(!centro) return;
+  centro=(centro||'').trim();
   if(!curCliente) return;
-  var ag=agendaBuscar(curCliente.id,centro);
+  var camposAgenda=['asgTienda','asgDir','asgTel','asgKm','asgTr'];
+  var ag=centro?agendaBuscar(curCliente.id,centro):null;
   if(ag){
-    if(!$('asgKm').value && ag.km){ $('asgKm').value=ag.km; }
-    if(!$('asgTr').value && ag.tr){ $('asgTr').value=ag.tr; }
-    if(!$('asgDir').value && ag.dir){ $('asgDir').value=ag.dir; }
-    if(!$('asgTel').value && ag.tel){ $('asgTel').value=ag.tel; }
-    if(!$('asgTienda').value && ag.tienda){ $('asgTienda').value=ag.tienda; }
+    $('asgTienda').value=ag.tienda||'';
+    $('asgDir').value=ag.dir||'';
+    $('asgTel').value=ag.tel||'';
+    $('asgKm').value=ag.km||'';
+    $('asgTr').value=ag.tr||'';
+    camposAgenda.forEach(function(id){
+      var el=$(id); if(el){ el.readOnly=true; el.style.background='var(--surface2)'; el.style.color='var(--text2)'; }
+    });
+  } else {
+    camposAgenda.forEach(function(id){
+      var el=$(id); if(el){ el.readOnly=false; el.style.background=''; el.style.color=''; }
+    });
   }
 }
 
@@ -8408,6 +8427,9 @@ function abrirAsignar() {
   _asgJob = ''; _asgTec = '';
   $('asgRaw').value='';
   $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
+  ['asgTienda','asgDir','asgTel','asgKm','asgTr'].forEach(function(id){
+    var el=$(id); if(el){ el.readOnly=false; el.style.background=''; el.style.color=''; }
+  });
   $('asgMsg').textContent='';
   var esMerc = curCliente.tipo==='mercadona';
   $('asgLabelPedido').innerHTML = esMerc ? 'N&ordm; orden <span class="req">*</span>' : 'N&ordm; orden / referencia';
