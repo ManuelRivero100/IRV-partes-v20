@@ -1009,6 +1009,24 @@ textarea{resize:vertical;min-height:72px}
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;margin-top:12px;height:300px;overflow-y:auto;font-size:.78rem;font-family:monospace;line-height:1.6;" id="migLog"></div>
   <div style="margin-top:8px;background:var(--surface2);border-radius:var(--r-sm);height:6px;overflow:hidden;"><div id="migBar" style="height:100%;background:var(--green);width:0%;transition:width .3s;"></div></div>
 </div>
+<div id="w-backups" class="win">
+  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="card">
+    <div class="card-title">&#128190; Copias de seguridad</div>
+    <p style="font-size:.85rem;color:var(--text2);margin-bottom:12px;">Se genera sola, una vez al d&iacute;a, al entrar como admin o creador. Guarda partes, incidencias, cat&aacute;logo, agenda y t&eacute;cnicos.</p>
+    <div id="backupsEstado" style="font-size:.85rem;color:var(--text2);padding:10px 0;">Consultando&hellip;</div>
+    <div class="brow">
+      <button class="btn btn-s" onclick="_verEstadoBackups()">&#128260; Actualizar</button>
+      <button class="btn btn-p" id="btnGenerarBackupManual" onclick="_generarBackupManual()">&#128190; Generar ahora</button>
+    </div>
+    <div id="backupsMsg" class="msg" style="margin-top:8px;"></div>
+  </div>
+  <div class="card" style="border-color:var(--red);">
+    <div class="card-title" style="color:var(--red);">&#9888;&#65039; Restaurar</div>
+    <p style="font-size:.85rem;color:var(--text2);margin-bottom:12px;">Reemplaza TODOS los partes, incidencias, cat&aacute;logo, agenda y t&eacute;cnicos actuales por los de la &uacute;ltima copia guardada. Lo que se haya hecho despu&eacute;s de esa fecha se pierde. No se puede deshacer.</p>
+    <button class="btn btn-d btn-full" onclick="_confirmarRestaurarBackup()">&#9888;&#65039; Restaurar desde la copia de seguridad</button>
+  </div>
+</div>
 <div class="dialogo" id="dlgCorregir">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#9998; Datos modificados</div>
@@ -1129,7 +1147,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-02-regresar-dlgestado';
+var APP_BUILD_ID = 'build-2026-09-02-backups-firestore';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1449,10 +1467,11 @@ function renderMenu(){
   }
   if(window._sesion && window._sesion.rol==='creador'){
     items.push({ico:'&#128260;',cls:'ico-other',title:'Migración v2',id:'w-migracion'});
+    items.push({ico:'&#128190;',cls:'ico-other',title:'Copias de seguridad',id:'w-backups'});
   }
   var html='';
   items.forEach(function(item){
-    html+='<div class="app-icon" id="'+(item.id==='w-asignar'?'iconAsignar':'')+'" onclick="'+(item.id==='w-asignar'?'abrirAsignar()':'goTo(\''+item.id+'\')')+'" style="'+(item.id==='w-asignar'?'position:relative;':'')+'">'
+    html+='<div class="app-icon" id="'+(item.id==='w-asignar'?'iconAsignar':'')+'" onclick="'+(item.id==='w-asignar'?'abrirAsignar()':item.id==='w-backups'?'abrirBackups()':'goTo(\''+item.id+'\')')+'" style="'+(item.id==='w-asignar'?'position:relative;':'')+'">'
       +'<div class="app-icon-img '+item.cls+'">'+item.ico+'</div>'
       +(item.id==='w-asignar'?'<span id="asgBadge" style="display:none;position:absolute;top:-4px;right:2px;background:#e05555;color:#fff;font-size:.62rem;font-weight:700;padding:2px 6px;border-radius:20px;min-width:18px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.3);">0</span>':'')
       +'<span class="app-icon-label">'+item.title+'</span>'
@@ -8099,6 +8118,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
   var btnBorrarHist = document.getElementById('btnBorrarHist');
   if (btnBorrarHist) btnBorrarHist.style.display = (rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
+  if (rol === 'admin' || rol === 'creador') _comprobarBackupDiario();
 
   // La presentación y las sincronizaciones que no dependen del rol ya se dispararon antes
   // (_iniciarPresentacionLogin, en el momento en que el PIN se confirmó correcto). Aquí solo
@@ -9034,6 +9054,237 @@ function migVerificar() {
       else { _migLog('⚠️ Revisar los números','warn'); }
     } catch(err) { _migLog('Error verificando: '+err.message,'err'); }
   })();
+}
+
+// ===== COPIAS DE SEGURIDAD =====
+// Se genera sola, una vez al día, al entrar como admin o creador (ver _comprobarBackupDiario,
+// llamada desde _aplicarSesion). Vive en su propia colección 'backups', separada de los datos
+// reales, para que un dato mal escrito en 'partes' nunca toque una copia ya guardada. Los
+// partes se dividen en bloques de hasta ~90% de 1MB por antigüedad porque un documento de
+// Firestore no puede superar 1MB y el historial de partes no deja de crecer; el resto
+// (incidencias/catálogo/agenda/técnicos) es pequeño y cabe siempre en un solo documento.
+var BACKUP_LIMITE_BYTES = 900*1024;
+
+function _tamanoJSON(obj){ return new Blob([JSON.stringify(obj)]).size; }
+
+function _construirBloquesPartes(partesOrdenados){
+  var bloques=[], actual=[], actualBytes=2;
+  partesOrdenados.forEach(function(p){
+    var tam=_tamanoJSON(p)+1;
+    if(actual.length && (actualBytes+tam)>BACKUP_LIMITE_BYTES){
+      bloques.push(actual); actual=[]; actualBytes=2;
+    }
+    actual.push(p); actualBytes+=tam;
+  });
+  if(actual.length || !bloques.length) bloques.push(actual);
+  return bloques;
+}
+
+function _comprobarBackupDiario(){
+  if(typeof _db==='undefined'||!_db) return;
+  var hoy=new Date().toISOString().slice(0,10);
+  _db.collection('backups').doc('meta').get().then(function(doc){
+    var meta=doc.exists?doc.data():null;
+    if(meta && meta.ultimaFechaBackup===hoy) return; // ya se hizo hoy, en cualquier dispositivo
+    _generarBackupCompleto(hoy);
+  }).catch(function(){});
+}
+
+// coleccionDestino permite reutilizar esta misma función para la copia de emergencia que se
+// hace justo antes de restaurar (ver _ejecutarRestauracion), apuntando a otra colección para
+// no pisar la copia de seguridad normal de la que se está restaurando.
+function _generarBackupCompleto(hoy, callback, coleccionDestino){
+  coleccionDestino = coleccionDestino || 'backups';
+  if(typeof _db==='undefined'||!_db){ if(callback) callback(false,'Sin conexión.'); return; }
+  _db.collection('partes').get().then(function(snap){
+    var partes=[]; snap.forEach(function(d){ partes.push(d.data()); });
+    partes.sort(function(a,b){ return (a.fecha||'').localeCompare(b.fecha||''); });
+    var bloques=_construirBloquesPartes(partes);
+    var batch=_db.batch();
+    bloques.forEach(function(items,i){
+      batch.set(_db.collection(coleccionDestino).doc('partes_'+i), {
+        items:items, cantidad:items.length,
+        fechaDesde: items.length?items[0].fecha:null,
+        fechaHasta: items.length?items[items.length-1].fecha:null,
+        cerrado: i<bloques.length-1
+      });
+    });
+    return batch.commit().then(function(){
+      return Promise.all([
+        _db.collection('config').doc('catalogo').get(),
+        _db.collection('incidencias').get(),
+        _db.collection('agenda').get(),
+        _db.collection('usuario').get()
+      ]);
+    }).then(function(res){
+      var catDoc=res[0], incSnap=res[1], agSnap=res[2], usrSnap=res[3];
+      var incidencias=[]; incSnap.forEach(function(d){ incidencias.push(Object.assign({_id:d.id},d.data())); });
+      var agenda=[]; agSnap.forEach(function(d){ agenda.push(Object.assign({_id:d.id},d.data())); });
+      var usuarios=[]; usrSnap.forEach(function(d){ usuarios.push(Object.assign({_id:d.id},d.data())); });
+      var batch2=_db.batch();
+      batch2.set(_db.collection(coleccionDestino).doc('incidencias'), {items:incidencias, cantidad:incidencias.length});
+      batch2.set(_db.collection(coleccionDestino).doc('catalogo'), {data: catDoc.exists?(catDoc.data().catalogo||null):null});
+      batch2.set(_db.collection(coleccionDestino).doc('agenda'), {items:agenda, cantidad:agenda.length});
+      batch2.set(_db.collection(coleccionDestino).doc('usuarios'), {items:usuarios, cantidad:usuarios.length});
+      batch2.set(_db.collection(coleccionDestino).doc('meta'), {
+        ultimaFechaBackup:hoy, numBloquesPartes:bloques.length,
+        totalPartesRespaldados:partes.length, totalIncidencias:incidencias.length,
+        fechaActualizacion:Date.now()
+      });
+      return batch2.commit();
+    });
+  }).then(function(){ if(callback) callback(true); }).catch(function(e){ if(callback) callback(false, e && e.message); });
+}
+
+function abrirBackups(){
+  if(!(window._sesion && window._sesion.rol==='creador')) return;
+  _verificarConexionFirestore(function(hayConexion){
+    if(!hayConexion){ alert('Necesitas conexión a internet para acceder a las copias de seguridad.'); return; }
+    goTo('w-backups');
+    _verEstadoBackups();
+  });
+}
+
+function _verEstadoBackups(){
+  var el=$('backupsEstado'); if(el) el.textContent='Consultando…';
+  _db.collection('backups').doc('meta').get().then(function(doc){
+    if(!el) return;
+    if(!doc.exists){ el.textContent='Todavía no se ha generado ninguna copia de seguridad.'; return; }
+    var m=doc.data();
+    el.innerHTML = 'Última copia: <strong>'+escHtml(m.ultimaFechaBackup||'—')+'</strong><br>'
+      +m.totalPartesRespaldados+' partes en '+m.numBloquesPartes+' bloque'+(m.numBloquesPartes===1?'':'s')+' · '
+      +(m.totalIncidencias||0)+' incidencias';
+  }).catch(function(){ if(el) el.textContent='Error al consultar.'; });
+}
+
+function _generarBackupManual(){
+  if(!(window._sesion && window._sesion.rol==='creador')) return;
+  var btn=$('btnGenerarBackupManual'); if(btn){ btn.disabled=true; btn.textContent='Generando…'; }
+  var hoy=new Date().toISOString().slice(0,10);
+  _generarBackupCompleto(hoy, function(exito, error){
+    if(btn){ btn.disabled=false; btn.innerHTML='&#128190; Generar ahora'; }
+    if(exito){ showMsg('backupsMsg','Copia de seguridad generada.','success'); _verEstadoBackups(); }
+    else { showMsg('backupsMsg','Error al generar: '+(error||'desconocido'),'error'); }
+  });
+}
+
+// ===== RESTAURAR =====
+function _confirmarRestaurarBackup(){
+  if(!(window._sesion && window._sesion.rol==='creador')) return;
+  _db.collection('backups').doc('meta').get().then(function(doc){
+    if(!doc.exists){ showMsg('backupsMsg','No hay ninguna copia de seguridad todavía.','error'); return; }
+    var m=doc.data();
+    _confirmarApp('¿Restaurar la copia del '+(m.ultimaFechaBackup||'—')+'? Esto reemplaza TODOS los partes, incidencias, catálogo, agenda y técnicos actuales por los de esa fecha. Lo hecho después se pierde. No se puede deshacer.', function(){
+      _ejecutarRestauracion(m);
+    });
+  }).catch(function(){ showMsg('backupsMsg','Error al consultar la copia de seguridad.','error'); });
+}
+
+function _ejecutarRestauracion(metaBackup){
+  showMsg('backupsMsg','Guardando una copia de emergencia del estado actual antes de restaurar…','warn');
+  var ahora=new Date().toISOString().slice(0,10);
+  _generarBackupCompleto(ahora, function(exitoEmergencia){
+    if(!exitoEmergencia){
+      showMsg('backupsMsg','No se pudo crear la copia de emergencia — restauración cancelada por seguridad.','error');
+      return;
+    }
+    _restaurarAhora(metaBackup);
+  }, 'backups_emergencia');
+}
+
+function _ejecutarPorLotes(operaciones){
+  var TAMANO_LOTE=450; // margen bajo el límite real de Firestore (500 por lote)
+  var lotes=[];
+  for(var i=0;i<operaciones.length;i+=TAMANO_LOTE){ lotes.push(operaciones.slice(i,i+TAMANO_LOTE)); }
+  return lotes.reduce(function(promesa, lote){
+    return promesa.then(function(){
+      var batch=_db.batch();
+      lote.forEach(function(op){
+        if(op.tipo==='set') batch.set(op.ref, op.data);
+        else if(op.tipo==='delete') batch.delete(op.ref);
+      });
+      return batch.commit();
+    });
+  }, Promise.resolve());
+}
+
+function _restaurarAhora(meta){
+  showMsg('backupsMsg','Restaurando…','warn');
+  var bloquesPromesas=[];
+  for(var i=0;i<meta.numBloquesPartes;i++){ bloquesPromesas.push(_db.collection('backups').doc('partes_'+i).get()); }
+  Promise.all(bloquesPromesas).then(function(bloqueDocs){
+    var partesRestaurar=[];
+    bloqueDocs.forEach(function(d){ if(d.exists) partesRestaurar=partesRestaurar.concat(d.data().items||[]); });
+    return Promise.all([
+      _db.collection('backups').doc('incidencias').get(),
+      _db.collection('backups').doc('catalogo').get(),
+      _db.collection('backups').doc('agenda').get(),
+      _db.collection('backups').doc('usuarios').get(),
+      _db.collection('partes').get(),
+      _db.collection('incidencias').get(),
+      _db.collection('agenda').get(),
+      _db.collection('usuario').get()
+    ]).then(function(res){
+      var incRestaurar=res[0].exists?(res[0].data().items||[]):[];
+      var catRestaurar=res[1].exists?res[1].data().data:null;
+      var agRestaurar=res[2].exists?(res[2].data().items||[]):[];
+      var usrRestaurar=res[3].exists?(res[3].data().items||[]):[];
+      var partesActualesIds=[]; res[4].forEach(function(d){ partesActualesIds.push(d.id); });
+      var incActualesIds=[]; res[5].forEach(function(d){ incActualesIds.push(d.id); });
+      var agActualesIds=[]; res[6].forEach(function(d){ agActualesIds.push(d.id); });
+      var usrActualesIds=[]; res[7].forEach(function(d){ usrActualesIds.push(d.id); });
+
+      var operaciones=[];
+      var idsPartesRestaurar={};
+      partesRestaurar.forEach(function(p){
+        var id=((p.clienteId||'mercadona')+'_'+p.fecha+'_'+p.centro+'_'+p.pedido).replace(/[\/\s]/g,'-');
+        idsPartesRestaurar[id]=true;
+        operaciones.push({tipo:'set', ref:_db.collection('partes').doc(id), data:p});
+      });
+      partesActualesIds.forEach(function(id){ if(!idsPartesRestaurar[id]) operaciones.push({tipo:'delete', ref:_db.collection('partes').doc(id)}); });
+
+      var idsIncRestaurar={};
+      incRestaurar.forEach(function(inc){
+        var id=inc._id; if(!id) return;
+        idsIncRestaurar[id]=true;
+        var datos=Object.assign({},inc); delete datos._id;
+        operaciones.push({tipo:'set', ref:_db.collection('incidencias').doc(id), data:datos});
+      });
+      incActualesIds.forEach(function(id){ if(!idsIncRestaurar[id]) operaciones.push({tipo:'delete', ref:_db.collection('incidencias').doc(id)}); });
+
+      var idsAgRestaurar={};
+      agRestaurar.forEach(function(a){
+        var id=a._id; if(!id) return;
+        idsAgRestaurar[id]=true;
+        var datos=Object.assign({},a); delete datos._id;
+        operaciones.push({tipo:'set', ref:_db.collection('agenda').doc(id), data:datos});
+      });
+      agActualesIds.forEach(function(id){ if(!idsAgRestaurar[id]) operaciones.push({tipo:'delete', ref:_db.collection('agenda').doc(id)}); });
+
+      var idsUsrRestaurar={};
+      usrRestaurar.forEach(function(u){
+        var id=u._id; if(!id) return;
+        idsUsrRestaurar[id]=true;
+        var datos=Object.assign({},u); delete datos._id;
+        operaciones.push({tipo:'set', ref:_db.collection('usuario').doc(id), data:datos});
+      });
+      usrActualesIds.forEach(function(id){ if(!idsUsrRestaurar[id]) operaciones.push({tipo:'delete', ref:_db.collection('usuario').doc(id)}); });
+
+      if(catRestaurar){
+        operaciones.push({tipo:'set', ref:_db.collection('config').doc('catalogo'), data:{catalogo:catRestaurar, version:CAT_V, fechaModificacion:Date.now()}});
+      }
+      return _ejecutarPorLotes(operaciones);
+    });
+  }).then(function(){
+    // Limpiar la copia local de este dispositivo — si no, los partes/incidencias borrados en
+    // la restauración se quedarían "fantasma" en localStorage, ya que la sincronización normal
+    // solo añade/actualiza, nunca borra lo que ya no está en Firestore.
+    _limpiarDatosLocalesCompartidos();
+    showMsg('backupsMsg','Restauración completada. Recargando…','success');
+    setTimeout(function(){ location.reload(); }, 1500);
+  }).catch(function(e){
+    showMsg('backupsMsg','Error durante la restauración: '+(e&&e.message||'desconocido')+'. El estado justo antes de restaurar quedó guardado en la colección backups_emergencia.','error');
+  });
 }
 
 // Arranca la comprobación de versión automática, en el mismo bloque donde vive la función —
