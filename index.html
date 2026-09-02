@@ -736,7 +736,11 @@ textarea{resize:vertical;min-height:72px}
       <label style="color:var(--amber);font-weight:700;">&#128203; Descripci&oacute;n de la incidencia</label>
       <textarea id="descIncidencia" style="background:var(--surface2);color:var(--text2);font-size:.85rem;" readonly placeholder="Sin descripci&oacute;n de incidencia&hellip;"></textarea>
     </div>
-    <div class="field"><textarea id="obs" placeholder="Observaciones adicionales (opcional)&hellip;"></textarea></div>
+    <div class="field" id="fieldNotaKmAdic" style="display:none;">
+      <label style="color:var(--amber);font-weight:700;">&#128663; Km adicionales</label>
+      <textarea id="notaKmAdicDisplay" style="background:var(--surface2);color:var(--text2);font-size:.85rem;" readonly></textarea>
+    </div>
+    <div class="field"><label>Descripci&oacute;n del trabajo realizado <span class="req">*</span></label><textarea id="obs" placeholder="Describe brevemente el trabajo realizado&hellip;"></textarea></div>
     <div class="brow">
       <button class="btn btn-p" onclick="mostrarDialogoEstado()" id="gbtn">&#128190; Guardar parte</button>
       <button class="btn btn-s btn-sm" onclick="copiar()">&#128203; Copiar</button>
@@ -928,6 +932,13 @@ textarea{resize:vertical;min-height:72px}
     <div class="dialogo-sub" style="text-align:center;font-weight:700;">Toca para continuar</div>
   </div>
 </div>
+<div class="dialogo" id="dlgObsObligatoria" onclick="_cerrarAvisoObsObligatoria()" style="cursor:pointer;">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo">&#128221; Falta la descripci&oacute;n</div>
+    <div class="dialogo-sub" style="margin-bottom:16px;">Escribe una breve descripci&oacute;n del trabajo realizado.</div>
+    <div class="dialogo-sub" style="text-align:center;font-weight:700;">Toca para continuar</div>
+  </div>
+</div>
 <div class="dialogo" id="dlgInicioOrden">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#128203; &iquest;C&oacute;mo seguimos?</div>
@@ -1110,7 +1121,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-02-asignacion-fija';
+var APP_BUILD_ID = 'build-2026-09-02-observaciones-fijas';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3205,6 +3216,13 @@ function statsCompartir(){
 
 // ===== ROWS =====
 function escHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+// Junta, solo para mostrar/exportar, las observaciones guardadas por separado de un parte:
+// 1) descripción de la incidencia (de la asignación), 2) nota de km adicionales,
+// 3) descripción del trabajo realizado (del técnico). Nunca se guardan mezcladas — así
+// editar un parte no puede duplicarlas ni mezclarlas mal.
+function observacionesCompletas(r){
+  return [r.descIncidencia, r.notaKmAdicional, r.obs].filter(function(s){ return s && s.trim(); }).join('\n');
+}
 function iRow(l,v){ return '<div class="rrow info-row"><span class="rc">'+escHtml(l)+'</span><span class="rl">'+escHtml(v)+'</span><span class="rv"></span></div>'; }
 function cRow(c,l,v){ return '<div class="rrow"><span class="rc">'+escHtml(c)+'</span><span class="rl">'+escHtml(l)+'</span><span class="rv">'+escHtml(v)+'</span></div>'; }
 function oRow(l,v){ return '<div class="rrow obs-row"><span class="rc">'+escHtml(l)+'</span><span class="rl">'+escHtml(v)+'</span><span class="rv"></span></div>'; }
@@ -3445,11 +3463,15 @@ function generarCore(){
     kmT=kmT*_nCoches;
   }
   var kmAdic = +$('kmAdicionales').value || 0;
+  var _notaKmAdicional = '';
   if(kmAdic>0){
     var _kmAdicJust=$('kmAdicionalesJust').value.trim();
-    var _kmAdicTexto=kmAdic+' km adicionales'+(_kmAdicJust?(': '+_kmAdicJust):'');
-    var _obsEl=$('obs');
-    _obsEl.value=_obsEl.value.trim()?(_obsEl.value.trim()+'\n'+_kmAdicTexto):_kmAdicTexto;
+    if(!_kmAdicJust){ showMsg('msgForm','Escribe la justificación de los km adicionales.','error'); return; }
+    _notaKmAdicional = kmAdic+' km adicionales: '+_kmAdicJust;
+  } else if(window._notaKmAdicionalOriginal){
+    // Editando un parte y no se tocó el km adicional esta vez: conservar la nota original,
+    // en vez de perderla (el importe original de km adicionales no queda guardado por separado).
+    _notaKmAdicional = window._notaKmAdicionalOriginal;
   }
   kmT = kmT + kmAdic;
 
@@ -3629,6 +3651,8 @@ function generarCore(){
   $('out').innerHTML=html;
   $('gbtn').textContent='&#128190; Guardar parte'; $('gbtn').disabled=false; $('gbtn').style.opacity='1';
   $('msgRes').className='msg';
+  var _fna=$('fieldNotaKmAdic'), _nkd=$('notaKmAdicDisplay');
+  if(_fna&&_nkd){ if(_notaKmAdicional){ _fna.style.display='block'; _nkd.value=_notaKmAdicional; } else { _fna.style.display='none'; _nkd.value=''; } }
 
   var codigos=[];
   codigos.push({cod:gc(curJob,'Km',''),lab:'Kmje',v:kmT,u:'km'});
@@ -3658,6 +3682,7 @@ function generarCore(){
     clienteId:curCliente?curCliente.id:'mercadona', cod_v:3,
     averiaReportada:_averiaReportada||'',
     descIncidencia:($('descIncidencia')&&$('descIncidencia').value)||'',
+    notaKmAdicional:_notaKmAdicional,
     origenAutoLectura: !!window._origenAutoLectura,
     tecnicos:(function(){
       var tecs=getTecnicos();
@@ -3743,8 +3768,10 @@ function nuevo(){
   _desbloquearCamposAutorrellenados();
   _desbloquearCamposIdentidadParte();
   window._editNumParteOriginal=null;
+  window._notaKmAdicionalOriginal=null;
   window._origenAutoLectura=false;
   var _fd=$('fieldDescIncidencia'); if(_fd) _fd.style.display='none'; var _dd=$('descIncidencia'); if(_dd) _dd.value='';
+  var _fna2=$('fieldNotaKmAdic'); if(_fna2) _fna2.style.display='none'; var _nkd2=$('notaKmAdicDisplay'); if(_nkd2) _nkd2.value='';
   $('w').value='2'; $('job').value=''; $('link').value='No'; $('ncoches').value='1';
   $('todosEnlazan').value='Si';
   document.querySelectorAll('#todosEnlazanTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); });
@@ -3780,7 +3807,7 @@ function compartirParte(i){
   var r=getH()[i]; if(!r) return;
   var mats=(r.materiales||[]).filter(function(m){return m.cantidad&&+m.cantidad>0;});
   var matsText=mats.length?'\nMateriales\n'+mats.map(function(m){return m.cantidad+' '+m.nombre;}).join('\n'):'';
-  compartirDesde(r.detalle||'',r.obs||'',matsText);
+  compartirDesde(r.detalle||'',observacionesCompletas(r),matsText);
 }
 
 
@@ -4151,7 +4178,8 @@ function pdfDesde(r){
     }
   }
 
-  if(r.obs) y=pdfObsRow(doc,y,r.obs);
+  var _obsPdf=observacionesCompletas(r);
+  if(_obsPdf) y=pdfObsRow(doc,y,_obsPdf);
 
   pdfFooter(doc,y+4);
   pdfGuardar(doc,'IRV_'+(r.pedido||r.actObras||'parte')+'_'+(r.centro||'')+'_'+(r.fecha||'').replace(/-/g,''));
@@ -5829,12 +5857,10 @@ function compartirResumenTotal(){
 function guardarConEstado(estado){
   $('dlgEstado').classList.remove('show');
   if(!window.recTmp) return;
-  // La descripción de la incidencia (qué hay que hacer) queda fija como primera línea de
-  // Observaciones en todos los partes de esa incidencia — no se puede quitar escribiendo
-  // encima; el técnico solo añade las suyas propias a continuación.
-  var _descFija=($('descIncidencia')&&$('descIncidencia').value.trim())||'';
-  var _obsPropia=$('obs').value.trim();
-  window.recTmp.obs=_descFija?(_obsPropia?(_descFija+'\n'+_obsPropia):_descFija):_obsPropia;
+  // Observaciones guarda SOLO lo que escribe el técnico — la descripción de la incidencia y
+  // la nota de km adicionales se guardan aparte (recTmp.descIncidencia / recTmp.notaKmAdicional)
+  // y se juntan únicamente al mostrar el parte, para que editar nunca las duplique ni las mezcle.
+  window.recTmp.obs=$('obs').value.trim();
   window.recTmp.estado=estado;
   window.recTmp.materiales=msGetSel();
 
@@ -6133,8 +6159,16 @@ function limpiarFiltros(){ $('busca').value=''; $('buscaF').value=''; refreshCou
 
 function mostrarDialogoEstado(){
   if(!window.recTmp){ showMsg('msgRes','Genera el parte primero.','warn'); return; }
+  if(!$('obs').value.trim()){ _mostrarAvisoObsObligatoria(); return; }
   $('dlgEstadoSub').textContent='Orden '+window.recTmp.pedido+' — '+window.recTmp.tienda;
   $('dlgEstado').classList.add('show');
+}
+function _mostrarAvisoObsObligatoria(){
+  var dlg=$('dlgObsObligatoria'); if(dlg) dlg.classList.add('show');
+}
+function _cerrarAvisoObsObligatoria(){
+  var dlg=$('dlgObsObligatoria'); if(dlg) dlg.classList.remove('show');
+  var el=$('obs'); if(el) el.focus();
 }
 
 function pdfOrden(){
@@ -6535,7 +6569,7 @@ function verParte(idx){
 
     _detalleHTML+
     _totalHTML+
-    (r.obs?'<div class="divider"></div><div class="rrow obs-row" style="height:auto"><span class="rc" style="align-self:flex-start;padding-top:8px">Obs.</span><span class="rl" style="white-space:pre-wrap;word-break:break-word;height:auto;flex:1">'+escHtml(r.obs)+'</span></div>':'')+
+    (function(){ var _obsCompl=observacionesCompletas(r); return _obsCompl?('<div class="divider"></div><div class="rrow obs-row" style="height:auto"><span class="rc" style="align-self:flex-start;padding-top:8px">Obs.</span><span class="rl" style="white-space:pre-wrap;word-break:break-word;height:auto;flex:1">'+escHtml(_obsCompl)+'</span></div>'):''; })()+
     '<div class="divider"></div><div class="brow" style="margin-bottom:8px;">'+
     '<button class="btn btn-s btn-sm" onclick="hacerPDF('+idx+')">PDF</button>'+
     '<button class="btn btn-s btn-sm" onclick="compartirParte('+idx+')">Compartir</button>'+
@@ -7016,8 +7050,17 @@ function abrirEdicionParte(idx){
   // Materiales — después de setJob para que msRender no los sobreescriba
   msInitSel(r.materiales||[]);
   if(curJob) msRender('parteMatCard');
-  // Observaciones (en w-result, no w-form)
+  // Observaciones (en w-result, no w-form) — solo lo que escribió el técnico
   $('obs').value=r.obs||'';
+  // Descripción de la incidencia y nota de km adicionales: se restauran aparte, fijas,
+  // para que no se pierdan ni se dupliquen al regenerar el parte durante la edición.
+  var _fdEdit=$('fieldDescIncidencia'), _ddEdit=$('descIncidencia');
+  if(_ddEdit) _ddEdit.value=r.descIncidencia||'';
+  if(_fdEdit) _fdEdit.style.display=r.descIncidencia?'block':'none';
+  window._notaKmAdicionalOriginal=r.notaKmAdicional||'';
+  var _fnaEdit=$('fieldNotaKmAdic'), _nkdEdit=$('notaKmAdicDisplay');
+  if(_nkdEdit) _nkdEdit.value=r.notaKmAdicional||'';
+  if(_fnaEdit) _fnaEdit.style.display=r.notaKmAdicional?'block':'none';
   // Restaurar tipoDia del parte
   if(r.tipoDia==='festivo'){
     esFestivo=true;
@@ -8462,6 +8505,7 @@ function guardarAsignacion() {
   if (!tel) { showMsg('asgMsg','Falta: Teléfono.','error'); _irAlCampo('asgTel'); return; }
   if (!_asgJob) { showMsg('asgMsg','Falta: Tipo de trabajo (toca uno de los botones).','error'); _irAlCampo('asgJobTgl'); return; }
   if (!_asgTec) { showMsg('asgMsg','Falta: Técnico principal (toca uno de los botones).','error'); _irAlCampo('asgTecTgl'); return; }
+  if (!$('asgDescripcion').value.trim()) { showMsg('asgMsg','Falta: Descripción de lo que hay que hacer.','error'); _irAlCampo('asgDescripcion'); return; }
 
   function _guardar(){
     var data = {
