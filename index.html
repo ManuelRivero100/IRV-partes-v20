@@ -1147,7 +1147,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-02-backups-firestore';
+var APP_BUILD_ID = 'build-2026-09-02-backups-porcentaje';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -9106,7 +9106,8 @@ function _generarBackupCompleto(hoy, callback, coleccionDestino){
         items:items, cantidad:items.length,
         fechaDesde: items.length?items[0].fecha:null,
         fechaHasta: items.length?items[items.length-1].fecha:null,
-        cerrado: i<bloques.length-1
+        cerrado: i<bloques.length-1,
+        tamanoBytes: _tamanoJSON(items)
       });
     });
     return batch.commit().then(function(){
@@ -9151,9 +9152,15 @@ function _verEstadoBackups(){
     if(!el) return;
     if(!doc.exists){ el.textContent='Todavía no se ha generado ninguna copia de seguridad.'; return; }
     var m=doc.data();
-    el.innerHTML = 'Última copia: <strong>'+escHtml(m.ultimaFechaBackup||'—')+'</strong><br>'
-      +m.totalPartesRespaldados+' partes en '+m.numBloquesPartes+' bloque'+(m.numBloquesPartes===1?'':'s')+' · '
-      +(m.totalIncidencias||0)+' incidencias';
+    var bloquesLlenos=Math.max(0,m.numBloquesPartes-1);
+    return _db.collection('backups').doc('partes_'+(m.numBloquesPartes-1)).get().then(function(ultimoBloque){
+      var tam = ultimoBloque.exists?(ultimoBloque.data().tamanoBytes||0):0;
+      var porcentaje = Math.min(100, Math.round((tam/BACKUP_LIMITE_BYTES)*100));
+      el.innerHTML = 'Última copia: <strong>'+escHtml(m.ultimaFechaBackup||'—')+'</strong><br>'
+        +m.totalPartesRespaldados+' partes · '+(m.totalIncidencias||0)+' incidencias<br>'
+        +bloquesLlenos+' bloque'+(bloquesLlenos===1?'':'s')+' lleno'+(bloquesLlenos===1?'':'s')+' y '
+        +'bloque actual al '+porcentaje+'% ('+(tam/1024).toFixed(1)+' KB de '+(BACKUP_LIMITE_BYTES/1024).toFixed(0)+' KB)';
+    });
   }).catch(function(){ if(el) el.textContent='Error al consultar.'; });
 }
 
