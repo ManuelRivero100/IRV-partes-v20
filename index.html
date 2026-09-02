@@ -1025,10 +1025,11 @@ textarea{resize:vertical;min-height:72px}
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#128203; &iquest;La incidencia sigue abierta?</div>
     <div class="dialogo-sub" id="dlgEstadoSub"></div>
-    <div class="brow">
+    <div class="brow" style="margin-bottom:10px;">
       <button class="btn btn-amber" style="flex:1;justify-content:center" onclick="guardarConEstado('en-ejecucion')">&#9203; Sigue abierta</button>
       <button class="btn btn-p" style="flex:1;justify-content:center" onclick="guardarConEstado('terminado')">&#9989; Cerrar incidencia</button>
     </div>
+    <button class="btn btn-s btn-sm btn-full" onclick="$('dlgEstado').classList.remove('show');">&#8592; Regresar</button>
   </div>
 </div>
 
@@ -1128,7 +1129,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-02-aviso-km-adicional';
+var APP_BUILD_ID = 'build-2026-09-02-regresar-dlgestado';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -9068,4 +9069,3 @@ _iniciarActualizacionPeriodica();
 </div>
 </body>
 </html>
-
