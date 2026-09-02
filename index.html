@@ -1110,7 +1110,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-07-17-flotante-off';
+var APP_BUILD_ID = 'build-2026-09-02-editar-parte-fijo';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3260,6 +3260,10 @@ function generar(){
   // y aún no sincronizado; ese caso límite se resuelve manualmente si llega a ocurrir.
   var numParteVal=($('numParte').value||'').trim();
   if(!numParteVal){ showMsg('msgForm','Indica el número de parte.','error'); return; }
+  // Editando un parte existente sin cambiar su número: es el mismo documento reemplazándose
+  // a sí mismo, así que no tiene sentido (ni es seguro) comprobar si "ya está usado" — lo
+  // encontraría a él mismo en Firestore y bloquearía guardar el propio parte.
+  if(_editIdx!==null && numParteVal===(window._editNumParteOriginal||'')){ _generarPaso2(); return; }
   if(typeof _db !== 'undefined' && _db){
     _verificarConexionFirestore(function(hayConexion){
       if(hayConexion){
@@ -3737,6 +3741,8 @@ function nuevo(){
   ['pedido','numParte','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea','kmAdicionales','kmAdicionalesJust','enlaceDestino'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
   var mnp2=$('msgNumParte'); if(mnp2){ mnp2.style.display='none'; mnp2.textContent=''; }
   _desbloquearCamposAutorrellenados();
+  _desbloquearCamposIdentidadParte();
+  window._editNumParteOriginal=null;
   window._origenAutoLectura=false;
   var _fd=$('fieldDescIncidencia'); if(_fd) _fd.style.display='none'; var _dd=$('descIncidencia'); if(_dd) _dd.value='';
   $('w').value='2'; $('job').value=''; $('link').value='No'; $('ncoches').value='1';
@@ -6976,6 +6982,8 @@ function abrirEdicionParte(idx){
   $('tienda').value=r.tienda||'';
   $('dir').value=r.dir||'';
   $('tel').value=r.tel||'';
+  $('numParte').value=r.numParte||'';
+  window._editNumParteOriginal=r.numParte||'';
   $('arr').value=r.arr||'';
   $('lea').value=r.lea||'';
   // Kilometraje y desplazamiento
@@ -7015,6 +7023,8 @@ function abrirEdicionParte(idx){
   }
   // Ocultar lectura
   ocultarLectura();
+  // Bloquear identidad del parte: editar no debe poder convertirse en crear uno distinto
+  _bloquearCamposIdentidadParte();
   // Ir al formulario
   _keepForm=true;
   goToRaw('w-form');
@@ -7186,6 +7196,29 @@ function _desbloquearCamposAutorrellenados(){
   ['centro','tienda','dir','tel','km','tr','kmA','trA'].forEach(function(id){
     var el=$(id);
     if(el){ el.readOnly=false; el.style.background=''; el.style.color=''; }
+  });
+}
+// Al editar un parte ya guardado, estos campos identifican DE QUÉ parte se trata (misma
+// incidencia, misma fecha, misma tienda, mismo número de parte, mismo tipo de trabajo y
+// mismo festivo/normal que tenía) — se bloquean para que "Editar" nunca pueda convertirse
+// en crear un parte distinto. Solo se puede tocar lo que un técnico normalmente introduce
+// al generar un parte: horario, enlace, trabajadores, materiales y observaciones.
+function _bloquearCamposIdentidadParte(){
+  ['fecha','pedido','centro','tienda','dir','tel','numParte'].forEach(function(id){
+    var el=$(id);
+    if(el){ el.readOnly=true; el.style.background='var(--surface2)'; el.style.color='var(--text2)'; }
+  });
+  document.querySelectorAll('#jobTgl button, #festivoTgl button').forEach(function(b){
+    b.disabled=true; b.style.opacity='.55'; b.style.cursor='not-allowed';
+  });
+}
+function _desbloquearCamposIdentidadParte(){
+  ['fecha','pedido','centro','tienda','dir','tel','numParte'].forEach(function(id){
+    var el=$(id);
+    if(el){ el.readOnly=false; el.style.background=''; el.style.color=''; }
+  });
+  document.querySelectorAll('#jobTgl button, #festivoTgl button').forEach(function(b){
+    b.disabled=false; b.style.opacity='1'; b.style.cursor='pointer';
   });
 }
 // ===== Módulo central de autorrelleno del formulario =====
