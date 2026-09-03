@@ -1146,7 +1146,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-03-incidencia-id-fijo';
+var APP_BUILD_ID = 'build-2026-09-03-contador-irv-global';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1664,9 +1664,14 @@ function migrarCierresDesdeHistorial(){
   console.log('Incidencias cerradas encontradas en el historial local: '+claves.length);
   claves.forEach(function(k){
     var r=candidatos[k];
-    _db.collection('incidencias').where('pedido','==',r.pedido).where('centro','==',r.centro).get().then(function(snap){
-      if(snap.empty){
-        _db.collection('incidencias').add({
+    // ID fijo (centro+pedido) en vez de .add(): si este script se ejecuta más de una vez,
+    // o corre sobre varios partes del mismo pedido casi a la vez, siempre cae en el mismo
+    // documento — no puede volver a crear duplicados (esto fue justo lo que causó los 3
+    // duplicados de IRV-0008 el 2026-09-03, con la versión antigua de este script).
+    var ref = _db.collection('incidencias').doc(incidenciaId(r.centro, r.pedido));
+    ref.get().then(function(doc){
+      if(!doc.exists){
+        ref.set({
           clienteId: r.clienteId||'mercadona',
           pedido: r.pedido, centro: r.centro||'',
           tienda: r.tienda||'', dir: r.dir||'', tel: r.tel||'',
@@ -1677,13 +1682,18 @@ function migrarCierresDesdeHistorial(){
         }).catch(function(){});
         return;
       }
-      snap.forEach(function(doc){ doc.ref.update({estado:'terminado', vista:true}); });
+      ref.update({estado:'terminado', vista:true});
     }).catch(function(){});
   });
   console.log('Migración lanzada para '+claves.length+' incidencias cerradas. Espera unos segundos y revisa con la consulta a Firestore.');
 }
 
-// Siguiente número IRV global (único en toda la app)
+// Siguiente número IRV global (único en toda la app, sin importar el cliente).
+// Además del historial local de este móvil, se tiene en cuenta un contador compartido en
+// Firestore (config/contadorIRV) que se sincroniza periódicamente — así, aunque este
+// dispositivo lleve tiempo sin sincronizar, no repite un número que otro técnico ya usó
+// desde otro móvil. Sigue funcionando sin conexión igual que siempre (usa la última copia
+// local del contador que tenga).
 function nextIRV(){
   var h=getH();
   var max=0;
@@ -1697,8 +1707,40 @@ function nextIRV(){
       if(n2>max) max=n2;
     }
   });
-  var next=max+1;
+  var siguienteGlobal = +(localStorage.getItem('pm_siguiente_irv')||0);
+  var next = Math.max(max+1, siguienteGlobal);
   return 'IRV-'+('000'+next).slice(-4);
+}
+
+// Sincroniza hacia este móvil el contador compartido del siguiente número IRV disponible.
+function _sincronizarContadorIRV(){
+  if(typeof _db === 'undefined' || !_db) return;
+  _db.collection('config').doc('contadorIRV').get().then(function(doc){
+    if(!doc.exists) return;
+    var remoto = doc.data().siguiente||0;
+    var local = +(localStorage.getItem('pm_siguiente_irv')||0);
+    if(remoto>local) localStorage.setItem('pm_siguiente_irv', String(remoto));
+  }).catch(function(){});
+}
+
+// Avisa a Firestore de que se ha usado un número IRV, para adelantar el contador
+// compartido si hace falta (nunca lo retrocede). Transacción atómica: si dos técnicos
+// avisan casi a la vez, no se pisan entre sí. No bloquea el guardado del parte — se llama
+// igual que _actualizarIncidenciaPorOrden, en segundo plano.
+function _avanzarContadorIRV(pedidoIRV){
+  if(typeof _db === 'undefined' || !_db || !pedidoIRV) return;
+  var n = parseInt(pedidoIRV.replace('IRV-',''),10);
+  if(!n) return;
+  var ref = _db.collection('config').doc('contadorIRV');
+  _db.runTransaction(function(t){
+    return t.get(ref).then(function(doc){
+      var actual = (doc.exists && doc.data().siguiente) || 0;
+      if(n+1>actual) t.set(ref, {siguiente:n+1});
+    });
+  }).then(function(){
+    var local = +(localStorage.getItem('pm_siguiente_irv')||0);
+    if(n+1>local) localStorage.setItem('pm_siguiente_irv', String(n+1));
+  }).catch(function(){});
 }
 
 function getActuacionesObrasAbiertas(){
@@ -4507,24 +4549,67 @@ function renderAsgTecnico() {
   var miNombre = window._sesion.nombre;
   var _tec = getTecnicos().find(function(t){ return t.nombre.toLowerCase() === miNombre.toLowerCase(); });
   if (_tec) miNombre = _tec.nombre;
-  _db.collection('incidencias')
-    .where('tecnicoPrincipal','==',miNombre)
-    .where('estado','in',['pendiente','en-ejecucion'])
-    .get().then(function(snap){
-      var html = '';
-      snap.forEach(function(doc){
-        var d = doc.data();
-        if (d.vista === true) return; // ya vista por el técnico
-        var refs=[]; if(d.pedido) refs.push('Orden '+escHtml(d.pedido)); if(d.centro) refs.push('Centro '+escHtml(d.centro));
-        html += '<div class="act-list-item" onclick="abrirAsgTecOpciones(\''+doc.id+'\')">'
-          + '<span class="act-num">&#128229;</span>'
-          + '<div><div class="act-info">'+escHtml(d.tienda)+'</div>'
-          + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+escHtml(d.job)+'</div></div>'
-          + '</div>';
-      });
-      if (!html) { sec.style.display = 'none'; el.innerHTML=''; }
-      else { el.innerHTML = html; sec.style.display = 'block'; }
-    }).catch(function(){ sec.style.display = 'none'; });
+  Promise.all([
+    _db.collection('incidencias')
+      .where('tecnicoPrincipal','==',miNombre)
+      .where('estado','in',['pendiente','en-ejecucion'])
+      .get(),
+    _db.collection('incidencias')
+      .where('solicitudReabrir.tecnico','==',miNombre)
+      .get()
+  ]).then(function(resultados){
+    var snap = resultados[0], snapRechazadas = resultados[1];
+    var html = '';
+    snap.forEach(function(doc){
+      var d = doc.data();
+      if (d.vista === true) return; // ya vista por el técnico
+      var refs=[]; if(d.pedido) refs.push('Orden '+escHtml(d.pedido)); if(d.centro) refs.push('Centro '+escHtml(d.centro));
+      html += '<div class="act-list-item" onclick="abrirAsgTecOpciones(\''+doc.id+'\')">'
+        + '<span class="act-num">&#128229;</span>'
+        + '<div><div class="act-info">'+escHtml(d.tienda)+'</div>'
+        + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+escHtml(d.job)+'</div></div>'
+        + '</div>';
+    });
+    snapRechazadas.forEach(function(doc){
+      var d = doc.data();
+      if (!d.solicitudReabrir || !d.solicitudReabrir.rechazada) return; // aún no resuelta, o ya aceptada
+      var refs=[]; if(d.pedido) refs.push('Orden '+escHtml(d.pedido)); if(d.centro) refs.push('Centro '+escHtml(d.centro));
+      html += '<div class="act-list-item" onclick="verSolicitudRechazada(\''+doc.id+'\')">'
+        + '<span class="act-num" style="color:var(--red);">&#128274;</span>'
+        + '<div><div class="act-info">'+escHtml(d.tienda)+'</div>'
+        + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+'Solicitud de reabrir rechazada</div></div>'
+        + '</div>';
+    });
+    if (!html) { sec.style.display = 'none'; el.innerHTML=''; }
+    else { el.innerHTML = html; sec.style.display = 'block'; }
+  }).catch(function(){ sec.style.display = 'none'; });
+}
+
+function verSolicitudRechazada(id){
+  _db.collection('incidencias').doc(id).get().then(function(doc){
+    if (!doc.exists) return;
+    var d = doc.data();
+    var refs=[]; if(d.pedido) refs.push('Orden '+escHtml(d.pedido)); if(d.centro) refs.push('Centro '+escHtml(d.centro));
+    var html = '<div class="card"><div class="card-title">&#128274; Solicitud de reapertura rechazada</div>'
+      + '<div class="rrow info-row"><span class="rc">'+escHtml(d.tienda||'')+'</span><span class="rl"></span><span class="rv"></span></div>'
+      + (refs.length?'<div class="rrow info-row"><span class="rc">Datos</span><span class="rl">'+refs.join(' · ')+'</span><span class="rv"></span></div>':'')
+      + '<div class="dialogo-sub" style="margin-top:10px;">Un administrador no aprobó reabrir esta incidencia. Si es necesario, contacta con un administrador.</div>'
+      + '</div>'
+      + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="_confirmarVistaSolicitudRechazada(\''+id+'\')">&#10003; Entendido</button>';
+    document.querySelectorAll('.win').forEach(function(w){w.classList.remove('active');});
+    $('w-consultaAsg').classList.add('active');
+    $('consultaAsgBody').innerHTML = html;
+  });
+}
+function _confirmarVistaSolicitudRechazada(id){
+  _db.collection('incidencias').doc(id).update({
+    solicitudReabrir: firebase.firestore.FieldValue.delete()
+  }).then(function(){
+    renderAsgTecnico();
+    goTo('w-clientes');
+  }).catch(function(){
+    _toast('No se pudo actualizar. Comprueba tu conexión.', 'var(--red)');
+  });
 }
 
 function renderAsgAdmin() {
@@ -4607,7 +4692,8 @@ function verAsgAdminAviso(id, clienteId) {
   _db.collection('incidencias').doc(id).get().then(function(doc){
     if (!doc.exists) return;
     var d = doc.data();
-    _db.collection('incidencias').doc(id).update({ vistaAdmin: true }).then(renderAsgAdmin);
+    // vistaAdmin ya NO se marca aquí, solo al mirar — se queda pendiente hasta que de
+    // verdad se resuelve (pulsando "Ver / reasignar"), igual que "material flotante".
     var refs=[]; if(d.pedido) refs.push('Orden '+d.pedido); if(d.centro) refs.push('Centro '+d.centro);
     var html = '<div class="card"><div class="card-title">&#128229; '+(d.tienda||'')+'</div>'
       + (d.verificarDatos?'<div class="rrow info-row" style="color:var(--amber);font-weight:600;"><span class="rc">&#9888;&#65039; Aviso</span><span class="rl">Datos por lectura autom&aacute;tica — verificar y validar</span><span class="rv"></span></div>':'')
@@ -4620,13 +4706,16 @@ function verAsgAdminAviso(id, clienteId) {
       + (d.tr?'<div class="rrow info-row"><span class="rc">Despl.</span><span class="rl">'+d.tr+' min</span><span class="rv"></span></div>':'')
       + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion.replace(/\n/g,'<br>')+'</span><span class="rv"></span></div>':'')
       + '</div>'
-      + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="verAsgAdminReasignar(\''+clienteId+'\')">&#128260; Ver / reasignar</button>'
+      + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="verAsgAdminReasignar(\''+clienteId+'\',\''+id+'\')">&#128260; Ver / reasignar</button>'
       + '<button class="btn btn-s btn-full" style="margin-top:8px;" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
     $('consultaAsgBody').innerHTML = html;
     goTo('w-consultaAsg');
   });
 }
-function verAsgAdminReasignar(clienteId) {
+function verAsgAdminReasignar(clienteId, id) {
+  // Aquí sí se marca vistaAdmin: true — es la acción real de resolver el aviso, no de
+  // solo abrirlo a mirar.
+  if (id) _db.collection('incidencias').doc(id).update({ vistaAdmin: true }).then(renderAsgAdmin).catch(function(){});
   var cli = getClientes().find(function(c){ return c.id === clienteId; });
   if (cli) { seleccionarCliente(clienteId); abrirAsignar(); }
 }
@@ -4649,10 +4738,33 @@ function verSolicitudReabrir(id) {
       + (d.descripcion?'<div class="rrow obs-row"><span class="rc">Descripci&oacute;n</span><span class="rl">'+d.descripcion.replace(/\n/g,'<br>')+'</span><span class="rv"></span></div>':'')
       + '</div>'
       + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="ejecutarSolicitudReabrir(\''+id+'\')">&#128275; Reabrir y asignar a '+tec+'</button>'
+      + '<button class="btn btn-d btn-full" style="margin-top:8px;" onclick="rechazarSolicitudReabrir(\''+id+'\')">&#10005; Rechazar</button>'
       + '<button class="btn btn-s btn-full" style="margin-top:8px;" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
     $('consultaAsgBody').innerHTML = html;
     goTo('w-consultaAsg');
-    _db.collection('incidencias').doc(id).update({ vistaAdmin: true }).then(renderAsgAdmin);
+    // vistaAdmin ya NO se marca aquí, solo al mirar — se queda pendiente hasta que se
+    // resuelve de verdad (aceptando o rechazando), igual que "material flotante".
+  });
+}
+
+function rechazarSolicitudReabrir(id) {
+  _confirmarApp('¿Rechazar esta solicitud de reapertura? El técnico verá que fue rechazada.', function(){
+    _db.collection('incidencias').doc(id).get().then(function(doc){
+      if (!doc.exists) return;
+      var d = doc.data();
+      var tec = (d.solicitudReabrir&&d.solicitudReabrir.tecnico)||'';
+      doc.ref.update({
+        vistaAdmin: true,
+        'solicitudReabrir.rechazada': true,
+        'solicitudReabrir.fechaRechazo': Date.now()
+      }).then(function(){
+        renderAsgAdmin();
+        goTo('w-clientes');
+        _toast('Solicitud rechazada. '+tec+' verá el aviso.');
+      }).catch(function(){
+        _toast('No se pudo rechazar. Comprueba la conexión e inténtalo de nuevo.', 'var(--red)');
+      });
+    });
   });
 }
 
@@ -6824,6 +6936,8 @@ function _subirParteAFirestore(parte){
       _marcarPendienteSync(parte, true);
     });
     if(parte.pedido) _actualizarIncidenciaPorOrden(parte.pedido, parte.centro, parte.estado||'en-ejecucion', datos);
+    if(parte.pedido && parte.pedido.indexOf('IRV-')===0) _avanzarContadorIRV(parte.pedido);
+    if(parte.actObras && parte.actObras.indexOf('IRV-')===0) _avanzarContadorIRV(parte.actObras);
     _subirAgendaEntry(parte.clienteId, parte.centro, parte.tienda, parte.dir, parte.tel, parte.km, parte.tr);
     _completarAgendaFaltantes(parte.clienteId, parte.centro, parte.km, parte.tr);
   }catch(e){ _marcarPendienteSync(parte, true); }
@@ -7879,6 +7993,7 @@ function _iniciarPresentacionLogin(nombre){
   _sincronizarAgendaDesdeFirestore();
   _sincronizarMaterialesFlotantesDesdeFirestore();
   _sincronizarRegistroGlobal();
+  _sincronizarContadorIRV();
   _reintentarPartesPendientes();
 }
 
@@ -8198,6 +8313,7 @@ function _iniciarActualizacionPeriodica(){
     _sincronizarAgendaDesdeFirestore();
     _sincronizarMaterialesFlotantesDesdeFirestore();
     _sincronizarRegistroGlobal();
+    _sincronizarContadorIRV();
     if (_s2.rol === 'admin' || _s2.rol === 'creador') {
       _sincronizarEstadosIncidencias();
       _sincronizarPartesDesdeFirestore(null);
