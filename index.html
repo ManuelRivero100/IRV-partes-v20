@@ -1150,7 +1150,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-05-enlace-parejas-tiendas';
+var APP_BUILD_ID = 'build-2026-09-05-enlace-estructurado';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1585,6 +1585,16 @@ function agendaKey(clienteId,centro){ return (clienteId||'mercadona')+'_'+(centr
 // que hizo fallar el primer intento) siempre aterriza en el MISMO documento — nunca puede
 // crear una incidencia paralela.
 function incidenciaId(centro,pedido){ return ((centro||'')+'_'+(pedido||'')).replace(/[\/\s]/g,'-'); }
+// Registro simple de última modificación (quién/cuándo/por qué) para poder investigar más
+// tarde un estado inesperado en una incidencia, sin necesitar un historial completo — solo
+// se guarda el último cambio, se sobreescribe en cada escritura.
+function _marcaModificacion(razon){
+  return {
+    ultimaModificacionPor: (window._sesion&&window._sesion.nombre)||'',
+    ultimaModificacionFecha: Date.now(),
+    ultimaModificacionRazon: razon
+  };
+}
 function agendaBuscar(clienteId,centro){
   if(!centro) return null;
   var a=getAgenda();
@@ -1717,7 +1727,7 @@ function migrarCierresDesdeHistorial(){
     var ref = _db.collection('incidencias').doc(incidenciaId(r.centro, r.pedido));
     ref.get().then(function(doc){
       if(!doc.exists){
-        ref.set({
+        ref.set(Object.assign({
           clienteId: r.clienteId||'mercadona',
           pedido: r.pedido, centro: r.centro||'',
           tienda: r.tienda||'', dir: r.dir||'', tel: r.tel||'',
@@ -1725,10 +1735,10 @@ function migrarCierresDesdeHistorial(){
           creadoPor: (r.tecnicos&&r.tecnicos[0])||'', estado: 'terminado',
           descripcion: r.averiaReportada||r.obs||'',
           vista: true, vistaAdmin: true, fechaCreacion: Date.now()
-        }).catch(function(){});
+        }, _marcaModificacion('Migración de cierre histórico'))).catch(function(){});
         return;
       }
-      ref.update({estado:'terminado', vista:true});
+      ref.update(Object.assign({estado:'terminado', vista:true}, _marcaModificacion('Migración de cierre histórico')));
     }).catch(function(){});
   });
   console.log('Migración lanzada para '+claves.length+' incidencias cerradas. Espera unos segundos y revisa con la consulta a Firestore.');
@@ -3591,6 +3601,7 @@ function generarCore(){
 
   var kmT=0,trI=0,trO=0,kmDG=0,trDG=0,heG=0,kmG=0,trG=0;
   var _notaEnlace='';
+  var _origenPedidoAuto=null, _origenCentroAuto=null;
   if(curLink==='No'){
     if(!$('km').value||!$('tr').value){ showMsg('msgForm','Indica km y desplazamiento.','error'); return; }
     var kv=+$('km').value; var tv=rQ(+$('tr').value);
@@ -3617,6 +3628,7 @@ function generarCore(){
     kmT=(aeData?aeData.kmDif:0)+kA; trI=aeData?aeData.trDif:0; trO=tA; heG=lea+tA;
     kmG=kA; trG=tA;
     if(same.length && same[same.length-1].tienda) _notaEnlace='Desplazamiento Desde '+same[same.length-1].tienda;
+    if(same.length){ _origenPedidoAuto=same[same.length-1].pedido||null; _origenCentroAuto=same[same.length-1].centro||null; }
   }
   var kmTBase=kmT;
   var _nCoches=Math.max(1,+$('ncoches').value||1);
@@ -3850,6 +3862,8 @@ function generarCore(){
     job:curJob, catJob:_MS.catJob||null, roles:roles, detalle:html, fin:lea, trS:trO, totalMin:totMin, dieta:dieta,
     arr:$('arr').value, lea:$('lea').value, obs:'', linkType:curLink,
     kmDif:kmDG, trDif:trDG, horaEnlace:heG, tipoDia:td,
+    enlaceDestinoCentro:(typeof _centroDestinoVal!=='undefined'&&_centroDestinoVal)?_centroDestinoVal:null,
+    enlaceOrigenPedido:_origenPedidoAuto, enlaceOrigenCentro:_origenCentroAuto,
     estado:'en-ejecucion', materiales:msGetSel(), codigos:codigos,
     clienteId:curCliente?curCliente.id:'mercadona', cod_v:3,
     averiaReportada:_averiaReportada||'',
@@ -4537,7 +4551,7 @@ function importarDesdeTexto(){
 function cerrarIncidenciaActual(){
   var o=window._ordenActual;if(!o)return;
   var h=getH();
-  h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro){r.estado='terminado';_subirParteAFirestore(r);}});
+  h.forEach(function(r){if(r.pedido===o.pedido&&r.centro===o.centro){r.estado='terminado';_subirParteAFirestore(r,'Cierre directo');}});
   setH(h);
   // Actualizar también el estado de la incidencia en Firestore (fuente real de verdad),
   // igual que ya hace reabrirIncidenciaActual() al reabrir — así "Asignaciones" deja de
@@ -4547,7 +4561,7 @@ function cerrarIncidenciaActual(){
     .where('centro','==',o.centro)
     .get().then(function(snap){
       snap.forEach(function(doc){
-        _db.collection('incidencias').doc(doc.id).update({estado:'terminado'});
+        _db.collection('incidencias').doc(doc.id).update(Object.assign({estado:'terminado'}, _marcaModificacion('Cierre directo')));
       });
       try {
         var estados = JSON.parse(localStorage.getItem('pm_incidencias_estados')||'{}');
@@ -4572,7 +4586,7 @@ function reabrirIncidenciaActual(){
     .where('centro','==',o.centro)
     .get().then(function(snap){
       snap.forEach(function(doc){
-        _db.collection('incidencias').doc(doc.id).update({estado:'en-ejecucion'});
+        _db.collection('incidencias').doc(doc.id).update(Object.assign({estado:'en-ejecucion'}, _marcaModificacion('Reapertura directa')));
       });
       // Actualizar estado local
       try {
@@ -4588,9 +4602,10 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
   if(typeof _db === 'undefined' || !_db || !pedido) return;
   var _clienteIdInc = (datosParte && datosParte.clienteId) || 'mercadona';
   var _refInc = _db.collection('incidencias').doc(incidenciaId(centro,pedido));
+  var _razonMod = estado==='terminado' ? 'Parte generado (cerrada)' : 'Parte generado (sigue abierta)';
   function _actualizarRefs(refs){
     var _descNueva = datosParte && (datosParte.averiaReportada||datosParte.obs);
-    var _updateData = {estado:estado, vista:true};
+    var _updateData = Object.assign({estado:estado, vista:true}, _marcaModificacion(_razonMod));
     if(_descNueva) _updateData.descripcion = _descNueva;
     return Promise.all(refs.map(function(ref){ return ref.update(_updateData); }));
   }
@@ -4599,7 +4614,7 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
     // Crear incidencia siempre — incluido cuando se cierra en el primer parte.
     // ID fijo en vez de .add(): si este mismo guardado se repitiera (reintento tras un
     // corte de conexión), cae sobre el MISMO documento en vez de crear uno paralelo.
-    return _refInc.set({
+    return _refInc.set(Object.assign({
       clienteId: _clienteIdInc,
       pedido: pedido, centro: centro||'',
       tienda: datosParte.tienda||'', dir: datosParte.dir||'', tel: datosParte.tel||'',
@@ -4608,7 +4623,7 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
       descripcion: datosParte.averiaReportada||datosParte.obs||'',
       verificarDatos: !!datosParte.origenAutoLectura,
       vista: true, vistaAdmin: false, fechaCreacion: Date.now()
-    });
+    }, _marcaModificacion(_razonMod)));
   }
   _refInc.get().then(function(doc){
     if(doc.exists) return _actualizarRefs([_refInc]);
@@ -4698,9 +4713,9 @@ function verSolicitudRechazada(id){
   });
 }
 function _confirmarVistaSolicitudRechazada(id){
-  _db.collection('incidencias').doc(id).update({
+  _db.collection('incidencias').doc(id).update(Object.assign({
     solicitudReabrir: firebase.firestore.FieldValue.delete()
-  }).then(function(){
+  }, _marcaModificacion('Técnico confirmó ver rechazo'))).then(function(){
     renderAsgTecnico();
     goTo('w-clientes');
   }).catch(function(){
@@ -4811,7 +4826,7 @@ function verAsgAdminAviso(id, clienteId) {
 function verAsgAdminReasignar(clienteId, id) {
   // Aquí sí se marca vistaAdmin: true — es la acción real de resolver el aviso, no de
   // solo abrirlo a mirar.
-  if (id) _db.collection('incidencias').doc(id).update({ vistaAdmin: true }).then(renderAsgAdmin).catch(function(){});
+  if (id) _db.collection('incidencias').doc(id).update(Object.assign({ vistaAdmin: true }, _marcaModificacion('Aviso visto por admin'))).then(renderAsgAdmin).catch(function(){});
   var cli = getClientes().find(function(c){ return c.id === clienteId; });
   if (cli) { seleccionarCliente(clienteId); abrirAsignar(); }
 }
@@ -4849,11 +4864,11 @@ function rechazarSolicitudReabrir(id) {
       if (!doc.exists) return;
       var d = doc.data();
       var tec = (d.solicitudReabrir&&d.solicitudReabrir.tecnico)||'';
-      doc.ref.update({
+      doc.ref.update(Object.assign({
         vistaAdmin: true,
         'solicitudReabrir.rechazada': true,
         'solicitudReabrir.fechaRechazo': Date.now()
-      }).then(function(){
+      }, _marcaModificacion('Solicitud de reapertura rechazada'))).then(function(){
         renderAsgAdmin();
         goTo('w-clientes');
         _toast('Solicitud rechazada. '+tec+' verá el aviso.');
@@ -4871,13 +4886,13 @@ function ejecutarSolicitudReabrir(id) {
     var tec = (d.solicitudReabrir&&d.solicitudReabrir.tecnico)||d.tecnicoPrincipal;
     var _tec2=getTecnicos().find(function(t){ return t.nombre.toLowerCase()===(tec||'').toLowerCase(); });
     if(_tec2) tec=_tec2.nombre;
-    doc.ref.update({
+    doc.ref.update(Object.assign({
       estado: 'en-ejecucion',
       tecnicoPrincipal: tec,
       vista: false,
       vistaAdmin: true,
       solicitudReabrir: firebase.firestore.FieldValue.delete()
-    }).then(function(){
+    }, _marcaModificacion('Reapertura aprobada'))).then(function(){
       _sincronizarRegistroGlobal();
       renderAsgAdmin();
       goTo('w-clientes');
@@ -6619,10 +6634,10 @@ function _confirmarSolicitudReabrir(){
       return;
     }
     var doc=snap.docs[0];
-    doc.ref.update({
+    doc.ref.update(Object.assign({
       solicitudReabrir: { tecnico: miNombre, fecha: Date.now() },
       vistaAdmin: false
-    }).then(function(){
+    }, _marcaModificacion('Técnico solicitó reabrir'))).then(function(){
       _toast('Solicitud enviada. Un administrador debe aprobarla antes de continuar con esta orden.');
       $('pedido').value='';
       goTo('w-clientes');
@@ -7042,7 +7057,7 @@ function _limpiarIncidenciaPendientePorPedido(pedido, centro){
   if(cambiado) setH(h);
 }
 
-function _subirParteAFirestore(parte){
+function _subirParteAFirestore(parte, razon){
   try{
     if(typeof _db === 'undefined' || !_db || !window._sesion) { _marcarPendienteSync(parte, true); return; }
     var docId = (parte.clienteId||'mercadona')+'_'+parte.fecha+'_'+parte.centro+'_'+parte.pedido;
@@ -7050,7 +7065,8 @@ function _subirParteAFirestore(parte){
     var datos = Object.assign({}, parte, {
       tecnicoPrincipal: (parte.tecnicos&&parte.tecnicos[0])||window._sesion.nombre,
       creadoPor: window._sesion.nombre,
-      fechaModificacion: Date.now()
+      fechaModificacion: Date.now(),
+      ultimaModificacionRazon: razon||'Parte nuevo'
     });
     _db.collection('partes').doc(docId).set(datos, {merge:true}).then(function(){
       _marcarPendienteSync(parte, false);
@@ -7069,7 +7085,7 @@ function _reintentarPartesPendientes(){
   if(typeof _db === 'undefined' || !_db || !window._sesion) return;
   var h=getH();
   var pendientes=h.filter(function(r){ return r._pendienteSync; });
-  pendientes.forEach(function(r){ _subirParteAFirestore(r); });
+  pendientes.forEach(function(r){ _subirParteAFirestore(r,'Reintento tras fallo de conexión'); });
   var pendientesIncidencia=h.filter(function(r){ return r._pendienteIncidencia; });
   pendientesIncidencia.forEach(function(r){
     var datos = Object.assign({}, r, {
@@ -7115,7 +7131,7 @@ function _finalizarGuardado(estado){
       }
     }
     _editIdx=null; window._editIdxBackup=null;
-    _subirParteAFirestore(r);
+    _subirParteAFirestore(r,'Parte editado');
     showMsg('msgRes','Parte actualizado.','success');
     $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
     setTimeout(function(){ goTo('w-menu'); },1200);
@@ -7126,7 +7142,7 @@ function _finalizarGuardado(estado){
   if(_idxDup>=0){
     _confirmarApp('Ya existe un parte con la misma fecha, centro y orden.\n¿Reemplazar el parte existente?\n(Cancela para descartar el nuevo)', function(){
       h[_idxDup]=r; setH(h);
-      _subirParteAFirestore(r);
+      _subirParteAFirestore(r,'Parte reemplazado (mismo pedido/fecha/centro)');
       showMsg('msgRes','Parte reemplazado.','success');
       $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
       setTimeout(function(){ goTo('w-menu'); },1200);
@@ -7138,8 +7154,12 @@ function _finalizarGuardado(estado){
   h.push(r); setH(h);
   _subirParteAFirestore(r);
   if (_asgTecActual && _asgTecActual.id) {
-    _db.collection('incidencias').doc(_asgTecActual.id).update({ estado: 'en-ejecucion', vista: true }).then(function(){ renderAsgTecnico(); }).catch(function(){ _marcarIncidenciaPendientePorPedido(r.pedido, r.centro); });
+    // El estado real ya lo deja correcto _actualizarIncidenciaPorOrden() (llamado dentro de
+    // _subirParteAFirestore, justo arriba) según lo que el técnico eligió — no forzar aquí
+    // 'en-ejecucion' fijo, que competía en paralelo con esa escritura y podía dejar una
+    // incidencia recién cerrada marcada otra vez como en curso.
     _asgTecActual = null;
+    renderAsgTecnico();
   }
   showMsg('msgRes','Guardado correctamente.','success');
   $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
@@ -8663,6 +8683,7 @@ function leerAsg(){
   if(!centro&&denom){ var cm=denom.trim().match(/(\d{3,5})\s*$/); if(cm) centro=cm[1]; }
   var tel=cap(/TEL[EÉ]FONO[^:]*[:\s]+(\+?\d[\d\s\-]{6,})/i,t);
   var dir=cap(/DIRECCI[OÓ]N[:\s]+([\s\S]+?)(?=\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ° ]+:|\n|$)/i,t);
+  if(dir) dir = dir.replace(/\s+Persona\s+de\s*$/i,'').trim();
   var jobKeys=['Climatización','Conductos','Obras'];
   var job=null;
   var clasif=cap(/Clasificaci[oó]n[:\s]+([^\n]+)/i,t);
@@ -8775,6 +8796,7 @@ function guardarAsignacion() {
       vista: false,
       fechaCreacion: Date.now()
     };
+    Object.assign(data, _marcaModificacion('Asignación creada'));
     // ID fijo (cliente+centro+pedido) cuando hay pedido — igual que _actualizarIncidenciaPorOrden,
     // evita que una asignación pueda acabar duplicada en dos documentos paralelos. Si ya existía
     // una incidencia antigua (terminada, con ID aleatorio) para este mismo pedido, se reutiliza
@@ -8874,7 +8896,7 @@ function _renderAsgTecGrupoBody(nom){
 
 function reasignarIncidencia(id, nuevoTec) {
   if (!nuevoTec) return;
-  _db.collection('incidencias').doc(id).update({ tecnicoPrincipal: nuevoTec, vista:false }).then(function(){
+  _db.collection('incidencias').doc(id).update(Object.assign({ tecnicoPrincipal: nuevoTec, vista:false }, _marcaModificacion('Reasignada a otro técnico'))).then(function(){
     renderAsgLista();
   });
 }
@@ -9473,7 +9495,8 @@ function _restaurarAhora(meta){
       partesRestaurar.forEach(function(p){
         var id=((p.clienteId||'mercadona')+'_'+p.fecha+'_'+p.centro+'_'+p.pedido).replace(/[\/\s]/g,'-');
         idsPartesRestaurar[id]=true;
-        operaciones.push({tipo:'set', ref:_db.collection('partes').doc(id), data:p});
+        var pDatos=Object.assign({}, p, {ultimaModificacionRazon:'Restaurado desde copia de seguridad'});
+        operaciones.push({tipo:'set', ref:_db.collection('partes').doc(id), data:pDatos});
       });
       partesActualesIds.forEach(function(id){ if(!idsPartesRestaurar[id]) operaciones.push({tipo:'delete', ref:_db.collection('partes').doc(id)}); });
 
@@ -9482,6 +9505,7 @@ function _restaurarAhora(meta){
         var id=inc._id; if(!id) return;
         idsIncRestaurar[id]=true;
         var datos=Object.assign({},inc); delete datos._id;
+        Object.assign(datos, _marcaModificacion('Restaurado desde copia de seguridad'));
         operaciones.push({tipo:'set', ref:_db.collection('incidencias').doc(id), data:datos});
       });
       incActualesIds.forEach(function(id){ if(!idsIncRestaurar[id]) operaciones.push({tipo:'delete', ref:_db.collection('incidencias').doc(id)}); });
