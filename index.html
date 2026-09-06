@@ -660,7 +660,15 @@ textarea{resize:vertical;min-height:72px}
     <div class="field"><label>Direcci&oacute;n <span class="req">*</span></label><input id="dir"></div>
     <div class="field"><label>Tel&eacute;fono <span class="req">*</span></label><input id="tel" type="tel" inputmode="numeric"></div>
   </div>
-  <div class="card"><div class="card-title">&#128279; Enlace</div>
+  <div class="card"><div class="card-title">&#128506;&#65039; Trayectoria</div>
+    <div id="origToggleDiv" class="field"><label>Origen</label>
+      <div class="tgl" id="origTgl">
+        <button class="active" onclick="setOrigen('nave',this)">Desde la nave</button>
+        <button onclick="setOrigen('otro',this)">Otro punto</button>
+      </div>
+      <input type="hidden" id="origen" value="nave">
+    </div>
+    <div id="modeNave">
     <div id="lnkToggleDiv" class="field"><label>Tipo</label>
       <div class="tgl" id="lnkTgl">
         <button class="active" onclick="setLink('No',this)">Sin enlace</button>
@@ -711,6 +719,19 @@ textarea{resize:vertical;min-height:72px}
       <div class="g2">
         <div class="field"><label>Km salida</label><input id="kmA" type="number" min="0" placeholder="km"></div>
         <div class="field"><label>Despl. salida (min)</label><input id="trA" type="number" min="0" placeholder="min"></div>
+      </div>
+    </div>
+    </div>
+    <div id="modeOtroPunto" style="display:none">
+      <div class="field"><label>Partida desde</label><input id="otroPartidaDesde" placeholder="Ej: Hotel en Almer&iacute;a"></div>
+      <div class="g2">
+        <div class="field"><label>Km ida</label><input id="kmOtroIda" type="number" min="0" placeholder="km"></div>
+        <div class="field"><label>Despl. ida (min)</label><input id="trOtroIda" type="number" min="0" placeholder="min"></div>
+      </div>
+      <div class="field"><label>Llegada hacia</label><input id="otroLlegadaHacia" placeholder="Ej: Regreso a Almer&iacute;a"></div>
+      <div class="g2">
+        <div class="field"><label>Km vuelta</label><input id="kmOtroVuelta" type="number" min="0" placeholder="km"></div>
+        <div class="field"><label>Despl. vuelta (min)</label><input id="trOtroVuelta" type="number" min="0" placeholder="min"></div>
       </div>
     </div>
   </div>
@@ -1080,8 +1101,10 @@ PROTOCOLOS EXISTENTES
    - TOCA solo aquí para cambiar cómo se rellenan campos
    - NO CREES un nuevo auto-relleno si ya existe uno
 
-3. KILOMETRAJE Y ENLACE — setLink(), checkAutoEnlace(), resetAE()
-   - 3 modos: No / Si / Auto (detecta parte anterior del mismo día)
+3. TRAYECTORIA — setOrigen(), setLink(), checkAutoEnlace(), resetAE()
+   - Origen: Desde la nave (normal) / Otro punto (ida y vuelta manuales, no sale de la nave)
+   - "Desde la nave" tiene 3 modos de enlace: No / Si / Auto (detecta parte anterior del mismo día)
+   - "Otro punto" NO usa enlace — checkAutoEnlace() se sale sin hacer nada si curOrigen==='otro'
    - Auto-enlace se activa por hora de llegada, NO modificar esa lógica
    - TOCA solo aquí para cambiar cálculos de km y desplazamiento
 
@@ -1150,7 +1173,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-05-titulo-notificaciones';
+var APP_BUILD_ID = 'build-2026-09-06-trayectoria-en-pdf';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3615,7 +3638,15 @@ function generarCore(){
   var kmT=0,trI=0,trO=0,kmDG=0,trDG=0,heG=0,kmG=0,trG=0;
   var _notaEnlace='';
   var _origenPedidoAuto=null, _origenCentroAuto=null;
-  if(curLink==='No'){
+  if(curOrigen==='otro'){
+    if(!$('kmOtroIda').value||!$('trOtroIda').value||!$('kmOtroVuelta').value||!$('trOtroVuelta').value){ showMsg('msgForm','Indica km y despl. de ida y vuelta.','error'); return; }
+    var kOI=+$('kmOtroIda').value, tOI=rQ(+$('trOtroIda').value);
+    var kOV=+$('kmOtroVuelta').value, tOV=rQ(+$('trOtroVuelta').value);
+    kmT=kOI+kOV; trI=tOI; trO=tOV; heG=lea+tOV; kmG=kOI; trG=tOI;
+    var _otroDesde=$('otroPartidaDesde')?$('otroPartidaDesde').value.trim():'';
+    var _otroHacia=$('otroLlegadaHacia')?$('otroLlegadaHacia').value.trim():'';
+    if(_otroDesde||_otroHacia) _notaEnlace='Trayectoria: '+(_otroDesde?'partida desde '+_otroDesde:'')+(_otroDesde&&_otroHacia?' · ':'')+(_otroHacia?'llegada hacia '+_otroHacia:'');
+  } else if(curLink==='No'){
     if(!$('km').value||!$('tr').value){ showMsg('msgForm','Indica km y desplazamiento.','error'); return; }
     var kv=+$('km').value; var tv=rQ(+$('tr').value);
     kmT=kv*2; trI=tv; trO=tv; heG=lea+tv; kmG=kv; trG=tv;
@@ -3670,7 +3701,8 @@ function generarCore(){
   kmT = kmT + kmAdic;
 
   var tlK='',tlT='',tlS='';
-  if(curLink==='No'){ var ku=(kmT-kmAdic)/2; tlK=tl(arr-trI,arr)+' &middot; '+fmt(ku)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ku)+' km'; }
+  if(curOrigen==='otro'){ tlK=tl(arr-trI,arr)+' &middot; '+fmt(kOI)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(kOV)+' km'; }
+  else if(curLink==='No'){ var ku=(kmT-kmAdic)/2; tlK=tl(arr-trI,arr)+' &middot; '+fmt(ku)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ku)+' km'; }
   else if(curLink==='Si'){ var kev=+$('kmE').value,ksm=kmDG>0?kev:+$('kmS').value; tlK=tl(arr-trI,arr)+' &middot; '+fmt(kev)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ksm)+' km'; }
   else if(curLink==='Auto'){ var kAv=+$('kmA').value,kd=aeData?aeData.kmDif:0,td2=aeData?aeData.trDif:0; tlK=(kd>0||td2>0)?tl(arr-trI,arr)+' &middot; '+fmt(kd)+' km':''; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(kAv)+' km'; }
 
@@ -3758,7 +3790,7 @@ function generarCore(){
   var dietaYa=sameCliente.some(function(x){ return x.dieta; });
   var acum=sameCliente.reduce(function(z,r){ return z+(r.totalMin||0); },0)+totMin;
   var dieta=acum>=300&&!dietaYa;
-  if(_notaEnlace) html+='<div style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2);margin-bottom:8px;">&#128279; '+escHtml(_notaEnlace)+'</div>';
+  if(_notaEnlace) html+='<div class="nota-trayectoria" style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2);margin-bottom:8px;">&#128279; '+escHtml(_notaEnlace)+'</div>';
   html+='<div style="height:1px;background:var(--border);margin:10px 0"></div>';
   var subtotalServicio=0;
   if(dieta){
@@ -3877,6 +3909,10 @@ function generarCore(){
     kmDif:kmDG, trDif:trDG, horaEnlace:heG, tipoDia:td,
     enlaceDestinoCentro:(typeof _centroDestinoVal!=='undefined'&&_centroDestinoVal)?_centroDestinoVal:null,
     enlaceOrigenPedido:_origenPedidoAuto, enlaceOrigenCentro:_origenCentroAuto,
+    origen:curOrigen,
+    otroPartidaDesde:(typeof _otroDesde!=='undefined'&&_otroDesde)?_otroDesde:null,
+    otroLlegadaHacia:(typeof _otroHacia!=='undefined'&&_otroHacia)?_otroHacia:null,
+    otroKmVuelta:(typeof kOV!=='undefined')?kOV:null, otroTrVuelta:(typeof tOV!=='undefined')?tOV:null,
     estado:'en-ejecucion', materiales:msGetSel(), codigos:codigos,
     clienteId:curCliente?curCliente.id:'mercadona', cod_v:3,
     averiaReportada:_averiaReportada||'',
@@ -3915,12 +3951,13 @@ function copiar(){
 function resetearEstadoCompleto(){
   _editIdx=null; _actObrasSeleccionada=null; _pedidoNoMerc=null; _averiaReportada='';
   aeData=null; esFestivo=false; _nocturnoConfirmado=false;
-  curJob=''; curLink='No'; wRoles=[];
+  curJob=''; curLink='No'; curOrigen='nave'; wRoles=[];
   wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
   _MS.sel={}; _MS.extras={}; _MS.secAbierta=null; _MS.catJob=null;
   _keepForm=false;
   ['pedido','numParte','tienda','dir','tel','centro','raw','obs','km','tr',
-   'kmE','kmS','trE','trS','kmA','trA','arr','lea','enlaceDestino','enlaceDestinoCentro'].forEach(function(id){
+   'kmE','kmS','trE','trS','kmA','trA','arr','lea','enlaceDestino','enlaceDestinoCentro',
+   'otroPartidaDesde','otroLlegadaHacia','kmOtroIda','trOtroIda','kmOtroVuelta','trOtroVuelta'].forEach(function(id){
     var el=$(id); if(el) el.value='';
   });
   _desbloquearCamposAutorrellenados();
@@ -3940,6 +3977,9 @@ function resetearEstadoCompleto(){
   $('modeSi').style.display='none';
   $('modeAuto').style.display='none';
   $('lnkToggleDiv').style.display='block';
+  $('modeNave').style.display='block';
+  $('modeOtroPunto').style.display='none';
+  $('origen').value='nave';
   $('abn').classList.remove('show');
   $('acOrden').classList.remove('show');
   $('acCentro').classList.remove('show');
@@ -3950,6 +3990,7 @@ function resetearEstadoCompleto(){
   onFechaChange();
   document.querySelectorAll('#jobTgl button').forEach(function(b){ b.classList.remove('active'); });
   document.querySelectorAll('#lnkTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); });
+  document.querySelectorAll('#origTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); });
   document.querySelectorAll('#festivoTgl button').forEach(function(b,i){
     b.classList.toggle('active',i===0);
     b.disabled=false; b.style.opacity='1'; b.style.cursor='pointer';
@@ -3962,7 +4003,7 @@ function resetearEstadoCompleto(){
 
 function nuevo(){
   _editIdx=null;
-  ['pedido','numParte','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea','kmAdicionales','kmAdicionalesJust','enlaceDestino','enlaceDestinoCentro'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
+  ['pedido','numParte','tienda','dir','tel','centro','raw','obs','km','tr','kmE','kmS','trE','trS','kmA','trA','arr','lea','kmAdicionales','kmAdicionalesJust','enlaceDestino','enlaceDestinoCentro','otroPartidaDesde','otroLlegadaHacia','kmOtroIda','trOtroIda','kmOtroVuelta','trOtroVuelta'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
   var mnp2=$('msgNumParte'); if(mnp2){ mnp2.style.display='none'; mnp2.textContent=''; }
   _desbloquearCamposAutorrellenados();
   _desbloquearCamposIdentidadParte();
@@ -3975,7 +4016,7 @@ function nuevo(){
   $('todosEnlazan').value='Si';
   document.querySelectorAll('#todosEnlazanTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); });
   $('todosEnlazanField').style.display='none';
-  curJob=''; curLink='No'; wRoles=[];
+  curJob=''; curLink='No'; curOrigen='nave'; wRoles=[];
   wNames = (window._sesion && window._sesion.rol === 'tecnico') ? [window._sesion.nombre] : [];
   esFestivo=false; _cAC=null; _oAC=null; aeData=null;
   _actObrasSeleccionada=null;
@@ -3985,9 +4026,11 @@ function nuevo(){
   $('fieldPedido').style.display='block'; $('fieldActObras').style.display='none';
   document.querySelectorAll('#jobTgl button').forEach(function(b){ b.classList.remove('active'); });
   document.querySelectorAll('#lnkTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); });
+  document.querySelectorAll('#origTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); });
   document.querySelectorAll('#festivoTgl button').forEach(function(b,i){ b.classList.toggle('active',i===0); b.disabled=false; b.style.opacity='1'; b.style.cursor='pointer'; });
   $('workersRol').style.display='none'; $('workersList').innerHTML='';
   $('modeNo').style.display='block'; $('modeSi').style.display='none'; $('modeAuto').style.display='none';
+  $('modeNave').style.display='block'; $('modeOtroPunto').style.display='none'; $('origen').value='nave';
   $('lnkToggleDiv').style.display='block'; $('abn').classList.remove('show');
   $('acOrden').classList.remove('show'); $('acCentro').classList.remove('show');
   $('msgForm').className='msg'; $('out').innerHTML=''; window.recTmp=null;
@@ -4191,6 +4234,26 @@ function pdfObsRow(doc,y,txt){
   return y+h+1;
 }
 
+function pdfNotaTrayectoriaRow(doc,y,txt){
+  if(!txt) return y;
+  var lines=doc.splitTextToSize(txt,_PDF.cW-_PDF.RC-4);
+  var h=Math.max(_PDF.RH+2, lines.length*4.5+5);
+  y=pdfCheck(doc,y,h+1);
+  doc.setFillColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.rect(_PDF.mg,y,_PDF.RC,h,'F');
+  doc.setFillColor(_PDF.bgSurf2[0],_PDF.bgSurf2[1],_PDF.bgSurf2[2]);
+  doc.rect(_PDF.mg+_PDF.RC,y,_PDF.cW-_PDF.RC,h,'F');
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,h);
+  doc.setFontSize(6.5); doc.setFont('helvetica','bold');
+  doc.setTextColor(255,255,255);
+  doc.text('TRAYEC.',_PDF.mg+_PDF.RC/2,y+h/2+2,{align:'center'});
+  doc.setFontSize(7.5); doc.setFont('helvetica','normal');
+  doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.text(lines,_PDF.mg+_PDF.RC+3,y+5);
+  return y+h+1;
+}
+
 function pdfDivider(doc,y){
   y=pdfCheck(doc,y,5);
   doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
@@ -4287,11 +4350,13 @@ function pdfDesde(r){
   if(r.detalle){
     var _tmp=document.createElement('div'); _tmp.innerHTML=r.detalle;
     var _nodos=Array.from(_tmp.childNodes).filter(function(n){
-      return n.nodeType===1&&(n.classList.contains('rgroup-title')||n.classList.contains('rrow'));
+      return n.nodeType===1&&(n.classList.contains('rgroup-title')||n.classList.contains('rrow')||n.classList.contains('nota-trayectoria'));
     });
     var hTotal=0;
     _nodos.forEach(function(el){
-      if(el.classList.contains('rgroup-title')){
+      if(el.classList.contains('nota-trayectoria')){
+        y=pdfNotaTrayectoriaRow(doc,y,el.textContent.replace(/^\s*🔗\s*/,'').trim());
+      } else if(el.classList.contains('rgroup-title')){
         var txt=el.textContent.trim();
         if(txt&&txt!=='Datos generales') y=pdfGroupTitle(doc,y,txt);
       } else if(el.classList.contains('info-row')&&el.querySelector('.rc')&&el.querySelector('.rc').textContent.trim()==='Técnicos'){
@@ -5419,6 +5484,7 @@ function fmtH(v){
 }
 
 function checkAutoEnlace(){
+  if(curOrigen==='otro') return; // trayecto libre, no sale de la nave — el enlace no aplica
   if(curLink==='Si') return; // nunca sobrescribir un enlace manual ya elegido por el técnico
   if(curLink==='Auto') return; // ya está en modo Auto — no repetir el autorrelleno de kmA/trA,
                                  // que sobrescribiría un valor que el técnico ya corrigió a mano
@@ -6637,6 +6703,15 @@ function setLink(v,btn){
   _actualizarTodosEnlazanVisibilidad();
 }
 
+var curOrigen='nave';
+function setOrigen(v,btn){
+  curOrigen=v; $('origen').value=v;
+  document.querySelectorAll('#origTgl button').forEach(function(b){ b.classList.remove('active'); });
+  if(btn) btn.classList.add('active');
+  $('modeNave').style.display=v==='otro'?'none':'block';
+  $('modeOtroPunto').style.display=v==='otro'?'block':'none';
+}
+
 // Busca si ya existe una pareja de tiendas guardada (tienda actual + tienda destino) —
 // si existe, autorrellena y bloquea km/despl. de salida (exclusivos de esa pareja); si no,
 // los deja libres para rellenar a mano (se guardan al generar el parte, sirven en los dos
@@ -6964,8 +7039,12 @@ function _subirParteAFirestore(parte, razon){
     if(parte.pedido) _actualizarIncidenciaPorOrden(parte.pedido, parte.centro, parte.estado||'en-ejecucion', datos);
     if(parte.pedido && parte.pedido.indexOf('IRV-')===0) _avanzarContadorIRV(parte.pedido);
     if(parte.actObras && parte.actObras.indexOf('IRV-')===0) _avanzarContadorIRV(parte.actObras);
-    _subirAgendaEntry(parte.clienteId, parte.centro, parte.tienda, parte.dir, parte.tel, parte.km, parte.tr);
-    _completarAgendaFaltantes(parte.clienteId, parte.centro, parte.km, parte.tr);
+    // "Otro punto": el km/despl. no sale de la nave, no es representativo de la tienda —
+    // no debe autorrellenar ni completar la Agenda (contaminaría la distancia típica).
+    if(parte.origen!=='otro'){
+      _subirAgendaEntry(parte.clienteId, parte.centro, parte.tienda, parte.dir, parte.tel, parte.km, parte.tr);
+      _completarAgendaFaltantes(parte.clienteId, parte.centro, parte.km, parte.tr);
+    }
   }catch(e){ _marcarPendienteSync(parte, true); }
 }
 
@@ -7210,6 +7289,17 @@ function abrirEdicionParte(idx){
     setLink('Si', lnkBtns[1]||lnkBtns[0]);
   } else {
     setLink('No', lnkBtns[0]);
+  }
+  // Origen del trayecto (nave / otro punto)
+  var origBtns=document.querySelectorAll('#origTgl button');
+  if(r.origen==='otro'){
+    setOrigen('otro', origBtns[1]||origBtns[0]);
+    $('kmOtroIda').value=r.km||''; $('trOtroIda').value=r.tr||'';
+    $('kmOtroVuelta').value=r.otroKmVuelta||''; $('trOtroVuelta').value=r.otroTrVuelta||'';
+    $('otroPartidaDesde').value=r.otroPartidaDesde||'';
+    $('otroLlegadaHacia').value=r.otroLlegadaHacia||'';
+  } else {
+    setOrigen('nave', origBtns[0]);
   }
   // Renderizar trabajadores con nombres
   renderWorkers();
