@@ -1173,7 +1173,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-06-trayectoria-en-pdf';
+var APP_BUILD_ID = 'build-2026-09-07-auditoria-completa';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3704,7 +3704,7 @@ function generarCore(){
   if(curOrigen==='otro'){ tlK=tl(arr-trI,arr)+' &middot; '+fmt(kOI)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(kOV)+' km'; }
   else if(curLink==='No'){ var ku=(kmT-kmAdic)/2; tlK=tl(arr-trI,arr)+' &middot; '+fmt(ku)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ku)+' km'; }
   else if(curLink==='Si'){ var kev=+$('kmE').value,ksm=kmDG>0?kev:+$('kmS').value; tlK=tl(arr-trI,arr)+' &middot; '+fmt(kev)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ksm)+' km'; }
-  else if(curLink==='Auto'){ var kAv=+$('kmA').value,kd=aeData?aeData.kmDif:0,td2=aeData?aeData.trDif:0; tlK=(kd>0||td2>0)?tl(arr-trI,arr)+' &middot; '+fmt(kd)+' km':''; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(kAv)+' km'; }
+  else if(curLink==='Auto'){ var kAv=+$('kmA').value,kd=aeData?aeData.kmDif:0,td2=aeData?aeData.trDif:0; tlK=(td2>0)?tl(arr-trI,arr)+' &middot; '+fmt(kd)+' km':''; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(kAv)+' km'; }
 
   var html='';
   html+=tRow(curJob);
@@ -4592,7 +4592,7 @@ function _actualizarIncidenciaPorOrden(pedido,centro,estado,datosParte){
     .catch(function(){ _marcarIncidenciaPendientePorPedido(pedido,centro); });
   if(estado==='terminado'){
     _db.collection('partes').where('pedido','==',pedido).where('centro','==',centro).get().then(function(snap){
-      return Promise.all(snap.docs.map(function(doc){ return doc.ref.update({estado:'terminado'}); }));
+      return Promise.all(snap.docs.map(function(doc){ return doc.ref.update({estado:'terminado', fechaModificacion:Date.now(), ultimaModificacionRazon:'Cierre de incidencia (sincronizado)'}); }));
     }).catch(function(){ _marcarIncidenciaPendientePorPedido(pedido,centro); });
     var h=getH();
     h.forEach(function(r){ if(r.pedido===pedido && r.centro===centro) r.estado='terminado'; });
@@ -7508,7 +7508,14 @@ function _desbloquearCamposAutorrellenados(){
 // en crear un parte distinto. Solo se puede tocar lo que un técnico normalmente introduce
 // al generar un parte: horario, enlace, trabajadores, materiales y observaciones.
 function _bloquearCamposIdentidadParte(){
-  ['fecha','pedido','centro','tienda','dir','tel','numParte'].forEach(function(id){
+  // El admin/creador sí puede corregir el nº de parte de uno ya guardado (p.ej. al anular
+  // uno y necesitar reordenar la numeración) — el técnico no, para que "Editar" nunca se
+  // convierta en crear un parte distinto.
+  var esAdminOCreador = window._sesion && (window._sesion.rol==='admin' || window._sesion.rol==='creador');
+  var camposIdentidad = esAdminOCreador
+    ? ['fecha','pedido','centro','tienda','dir','tel']
+    : ['fecha','pedido','centro','tienda','dir','tel','numParte'];
+  camposIdentidad.forEach(function(id){
     var el=$(id);
     if(el){ el.readOnly=true; el.style.background='var(--surface2)'; el.style.color='var(--text2)'; }
   });
