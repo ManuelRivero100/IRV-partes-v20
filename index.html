@@ -984,20 +984,6 @@ textarea{resize:vertical;min-height:72px}
     </div>
   </div>
 </div>
-<div class="dialogo" id="dlgActObras">
-  <div class="dialogo-box">
-    <div class="dialogo-titulo">&#128295; Actuaci&oacute;n de Obras</div>
-    <div class="dialogo-sub">¿Es una actuaci&oacute;n nueva o continúa una existente?</div>
-    <div class="brow" style="margin-bottom:14px">
-      <button class="btn btn-p" style="flex:1" onclick="respActObras('nueva')">&#43; Nueva actuaci&oacute;n</button>
-      <button class="btn btn-s" style="flex:1" onclick="respActObras('existente')">Existente</button>
-    </div>
-    <div id="actObrasLista" style="display:none;max-height:260px;overflow-y:auto"></div>
-    <div style="margin-top:10px;">
-      <button class="btn btn-s btn-sm btn-full" onclick="$('dlgActObras').classList.remove('show');goTo('w-menu');">&#8592; Regresar</button>
-    </div>
-  </div>
-</div>
 <div class="dialogo" id="dlgAsgTec">
   <div class="dialogo-box">
     <div class="dialogo-titulo" id="dlgAsgTecTitulo">Incidencia</div>
@@ -1173,7 +1159,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-07-auditoria-completa';
+var APP_BUILD_ID = 'build-2026-09-08-limpieza-editpanel';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1819,20 +1805,6 @@ function _avanzarContadorIRV(pedidoIRV){
     var local = +(localStorage.getItem('pm_siguiente_irv')||0);
     if(n+1>local) localStorage.setItem('pm_siguiente_irv', String(n+1));
   }).catch(function(){});
-}
-
-function getActuacionesObrasAbiertas(){
-  var h=getH();
-  var grupos={};
-  h.forEach(function(r){
-    if(r.job!=='Obras'||!r.actObras) return;
-    var k=r.actObras;
-    if(!grupos[k]) grupos[k]={actObras:r.actObras,tienda:r.tienda,centro:r.centro,partes:0,estado:'terminado',fechaMax:r.fecha};
-    grupos[k].partes++;
-    if(r.fecha>grupos[k].fechaMax){ grupos[k].fechaMax=r.fecha; grupos[k].estado=r.estado||'terminado'; }
-    if((r.estado||'terminado')==='en-ejecucion') grupos[k].estado='en-ejecucion';
-  });
-  return Object.values(grupos).filter(function(g){ return g.estado==='en-ejecucion'; });
 }
 
 // ===== CATÁLOGO GLOBAL =====
@@ -3482,13 +3454,11 @@ function _generarPaso2(){
     $('pedidoGenDisplay').textContent=_pedidoNoMerc;
   }
 
-  // Obras Mercadona: gestionar actuación
+  // Obras Mercadona: el IRV ya se generó solo al elegir "Obras" (setJob) — red de
+  // seguridad por si algún camino llegara aquí sin haberlo asignado todavía.
   if(esMercadona&&esObras&&!_actObrasSeleccionada){
-    mostrarDialogoActObras(function(num){
-      _actObrasSeleccionada=num;
-      generarCore();
-    });
-    return;
+    _actObrasSeleccionada=nextIRV();
+    $('actObrasDisplay').textContent=_actObrasSeleccionada; $('actObrasDisplay').style.display='block';
   }
 
   // Detectar turno nocturno (salida anterior a llegada)
@@ -3788,7 +3758,22 @@ function generarCore(){
   var clienteIdActual=curCliente?curCliente.id:'mercadona';
   var sameCliente=same.filter(function(x){ return (x.clienteId||'mercadona')===clienteIdActual; });
   var dietaYa=sameCliente.some(function(x){ return x.dieta; });
-  var acum=sameCliente.reduce(function(z,r){ return z+(r.totalMin||0); },0)+totMin;
+  // La media dieta solo acumula horas de un tramo REALMENTE continuo: se suma un parte
+  // anterior solo si el hueco hasta el siguiente (o hasta el actual) es de 1h o menos —
+  // si hay un hueco mayor, ahí se corta la cadena y no cuenta como el mismo tramo.
+  // Solo cuentan partes que ya terminaron ANTES de la llegada de este (nunca uno posterior,
+  // que puede existir si se está editando/regenerando uno de una hora más temprana).
+  var _anteriores=sameCliente.filter(function(x){ return tm(x.arr)<=arr; })
+    .slice().sort(function(a,b){ return tm(a.arr)-tm(b.arr); });
+  var acum=totMin;
+  var _inicioTramo=arr;
+  for(var _si=_anteriores.length-1;_si>=0;_si--){
+    var _prev=_anteriores[_si];
+    var _finPrev=tm(_prev.lea);
+    if(!_prev.lea || _inicioTramo-_finPrev>60) break;
+    acum+=(_prev.totalMin||0);
+    _inicioTramo=tm(_prev.arr);
+  }
   var dieta=acum>=300&&!dietaYa;
   if(_notaEnlace) html+='<div class="nota-trayectoria" style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2);margin-bottom:8px;">&#128279; '+escHtml(_notaEnlace)+'</div>';
   html+='<div style="height:1px;background:var(--border);margin:10px 0"></div>';
@@ -3908,6 +3893,8 @@ function generarCore(){
     arr:$('arr').value, lea:$('lea').value, obs:'', linkType:curLink,
     kmDif:kmDG, trDif:trDG, horaEnlace:heG, tipoDia:td,
     enlaceDestinoCentro:(typeof _centroDestinoVal!=='undefined'&&_centroDestinoVal)?_centroDestinoVal:null,
+    enlaceDestino:(typeof _enlaceDestino!=='undefined'&&_enlaceDestino)?_enlaceDestino:null,
+    enlaceKmSalida:(typeof ks!=='undefined')?ks:null, enlaceTrSalida:(typeof ts!=='undefined')?ts:null,
     enlaceOrigenPedido:_origenPedidoAuto, enlaceOrigenCentro:_origenCentroAuto,
     origen:curOrigen,
     otroPartidaDesde:(typeof _otroDesde!=='undefined'&&_otroDesde)?_otroDesde:null,
@@ -5569,25 +5556,6 @@ function getTD(fecha){
   return 'normal';
 }
 
-function mostrarDialogoActObras(callback){
-  var abiertas=getActuacionesObrasAbiertas();
-  _actObrasCallback=callback;
-  var lista=$('actObrasLista');
-  if(!abiertas.length){
-    lista.style.display='none';
-  } else {
-    lista.style.display='block';
-    lista.innerHTML=abiertas.map(function(g){
-      return '<div class="act-list-item" onclick="selActObras(\''+g.actObras+'\')">'
-        +'<span class="act-num">'+escHtml(g.actObras)+'</span>'
-        +'<div><div class="act-info">'+escHtml(g.tienda)+'</div><div class="act-sub">Centro '+escHtml(g.centro)+' &middot; '+g.partes+' parte'+(g.partes===1?'':'s')+'</div></div>'
-        +'</div>';
-    }).join('');
-  }
-  $('dlgActObras').classList.add('show');
-}
-var _actObrasCallback=null;
-
 function mostrarDlgInicioOrden(){
   var clienteId=curCliente?curCliente.id:'mercadona';
   var h=getH();
@@ -5683,6 +5651,15 @@ function setJob(v,btn){
   var esMercadona=curCliente&&curCliente.tipo==='mercadona';
   $('fieldPedido').style.display=(esMercadona&&esObras)?'none':'block';
   $('fieldActObras').style.display=(esMercadona&&esObras)?'block':'none';
+  // El código IRV de Obras es de uso interno — el técnico nunca lo escribe. Se genera solo
+  // en cuanto se elige Obras (a menos que ya venga asignado de una actuación existente,
+  // p.ej. desde "¿Cómo seguimos?", "Ejecutar asignación" o al editar un parte guardado).
+  if(esMercadona&&esObras){
+    if(!_actObrasSeleccionada) _actObrasSeleccionada=nextIRV();
+    var ad=$('actObrasDisplay');
+    if(ad){ ad.textContent=_actObrasSeleccionada; ad.style.display='block'; }
+    var ah=$('actObrasHint'); if(ah) ah.style.display='none';
+  }
 }
 function setObrasMatTipo(tipo,btn){
   _MS.catJob=tipo;
@@ -6473,20 +6450,6 @@ function pedirBorrarHist(){
   $('confirmBorrar').style.display='block';
 }
 
-function respActObras(tipo){
-  if(tipo==='nueva'){
-    $('dlgActObras').classList.remove('show');
-    var num=nextIRV();
-    _actObrasSeleccionada=num;
-    $('actObrasDisplay').textContent=num; $('actObrasDisplay').style.display='block';
-    $('actObrasHint').style.display='none';
-    if(_actObrasCallback) _actObrasCallback(num);
-  } else {
-    // mostrar lista si no está visible
-    var lista=$('actObrasLista'); lista.style.display='block';
-  }
-}
-
 function respCorregir(actualizar){
   $('dlgCorregir').classList.remove('show');
   var r=window.recTmp; if(!r) return;
@@ -6603,30 +6566,6 @@ function _confirmarSolicitudReabrir(){
   });
 }
 
-function selActObras(num){
-  $('dlgActObras').classList.remove('show');
-  _actObrasSeleccionada=num;
-  $('actObrasDisplay').textContent=num; $('actObrasDisplay').style.display='block';
-  $('actObrasHint').style.display='none';
-  // Autorellenar datos del parte anterior de esta actuación
-  var h=getH();
-  for(var i=h.length-1;i>=0;i--){
-    var r=h[i];
-    if(r.actObras===num){
-      _rellenarFormulario({
-        centro: $('centro').value?undefined:r.centro,
-        tienda: $('tienda').value?undefined:r.tienda,
-        dir: $('dir').value?undefined:r.dir,
-        tel: $('tel').value?undefined:r.tel,
-        km: $('km').value?undefined:r.km,
-        tr: $('km').value?undefined:r.tr
-      });
-      break;
-    }
-  }
-  if(_actObrasCallback) _actObrasCallback(num);
-}
-
 // ===== AUTOCOMPLETADO =====
 var _cAC=null,_oAC=null;
 
@@ -6635,6 +6574,10 @@ function seleccionarOrdenInicioForm(idx){
   goToRaw('w-form');
   nuevo();
   var h=getH(); var r=h[idx]; if(!r) return;
+  // Si es una actuación de Obras, fijar el IRV ANTES de rellenar el tipo de trabajo —
+  // así, cuando rellenarDatos() active "Obras", setJob() ve que ya hay uno asignado y no
+  // genera un IRV nuevo de más.
+  if(r.actObras) _actObrasSeleccionada=r.actObras;
   // Autorrellenar todo
   if(r.pedido) $('pedido').value=r.pedido;
   rellenarDatos(idx, true); // orden activa: autorellena tipo de trabajo
@@ -6813,21 +6756,6 @@ function verParte(idx){
     '<div style="font-size:.88rem;font-weight:600;color:var(--red);margin-bottom:8px">&iquest;Borrar este parte?</div>'+
     '<div style="display:flex;gap:8px"><button class="btn btn-d btn-sm" onclick="borrarParteOk('+idx+')">S&iacute;, borrar</button><button class="btn btn-s btn-sm" onclick="$(\'confirmDel\').style.display=\'none\'">Cancelar</button></div>'+
     '</div>'+
-    '<div id="editPanel" style="display:none;margin-top:10px;padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);">'+
-    '<div style="font-size:.8rem;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;">Editar parte</div>'+
-    '<div class="field"><label>N&ordm; orden</label><input id="editPedido" type="text" style="width:100%"></div>'+
-    '<div class="field"><label>N&ordm; centro</label><input id="editCentro" type="text" style="width:100%"></div>'+
-    '<div class="field"><label>Tienda</label><input id="editTienda" type="text" style="width:100%"></div>'+
-    '<div class="field"><label>Direcci&oacute;n</label><input id="editDir" type="text" style="width:100%"></div>'+
-    '<div class="field"><label>Tel&eacute;fono</label><input id="editTel" type="tel" style="width:100%"></div>'+
-    '<div class="field"><label>Observaciones</label><textarea id="editObs" rows="3" style="width:100%;resize:vertical;"></textarea></div>'+
-    '<div style="margin:8px 0;"><button class="btn btn-s btn-sm" onclick="editToggleMats()" id="editBtnMats">&#128230; Materiales</button></div>'+
-    '<div id="editMatZone" style="display:none;margin-bottom:8px;border:1px solid var(--border);border-radius:var(--r-sm);overflow:hidden;"><div id="editMatCard"></div></div>'+
-    '<div id="msgEdit" style="display:none;margin:6px 0;"></div>'+
-    '<div style="display:flex;gap:8px;margin-top:8px;">'+
-    '<button class="btn btn-g btn-sm" onclick="guardarEdicionParte()">Guardar</button>'+
-    '<button class="btn btn-s btn-sm" onclick="cerrarEditPanel()">Cancelar</button>'+
-    '</div></div>'+
     '</div>'+matHTML;
 }
 
@@ -7208,7 +7136,6 @@ function _renderAcumAgrupado(codAcum){
   return html||'<div style="font-size:.82rem;color:var(--text3);">Sin datos.</div>';
 }
 
-function cerrarEditPanel(){var p=document.getElementById('editPanel');if(p)p.style.display='none';}
 function abrirEdicionParte(idx){
   var h=getH(); var r=h[idx]; if(!r) return;
   // Guardar pedido y centro originales para detectar cambios al guardar
@@ -7287,6 +7214,10 @@ function abrirEdicionParte(idx){
     aeData={kmDif:r.kmDif||0, trDif:r.trDif||0};
   } else if(lv==='Si'||lv==='Í'||lv==='Sí'){
     setLink('Si', lnkBtns[1]||lnkBtns[0]);
+    $('enlaceDestinoCentro').value=r.enlaceDestinoCentro||'';
+    $('enlaceDestino').value=r.enlaceDestino||'';
+    $('kmS').value=(r.enlaceKmSalida!=null)?r.enlaceKmSalida:'';
+    $('trS').value=(r.enlaceTrSalida!=null)?r.enlaceTrSalida:'';
   } else {
     setLink('No', lnkBtns[0]);
   }
@@ -7381,47 +7312,6 @@ function _fmtFechaHora(ms){
 function fmt(v){ var r=Math.round(v*100)/100; return Number.isInteger(r)?''+r:(''+r).replace(/0+$/,'').replace(/\.$/,''); }
 
 function gc(job,lab,rol){ if(!curCliente||curCliente.tipo!=='mercadona') return lab; var e=COD[jk(job)]&&COD[jk(job)][lab]; if(!e) return lab; if(e.r&&rol) return e.c[rol]||lab; return e.c||lab; }
-
-function guardarEdicionParte(){
-  if(_editIdx===null)return;
-  var h=getH();var r=h[_editIdx];if(!r)return;
-  var newPedido=$('editPedido').value.trim();
-  var newCentro=$('editCentro').value.trim();
-  var newTienda=$('editTienda').value.trim();
-  var newDir=$('editDir').value.trim();
-  var newTel=$('editTel').value.trim();
-  var newObs=$('editObs').value.trim();
-  if(!newTienda){showMsg('msgEdit','La tienda no puede estar vacía.','error');return;}
-  // Recoger materiales si el panel está abierto
-  if($('editMatZone')&&$('editMatZone').style.display!=='none') window._editMats=msGetSel();
-  if(newPedido) r.pedido=newPedido;
-  if(newCentro) r.centro=newCentro;
-  r.tienda=newTienda; r.dir=newDir; r.tel=newTel; r.obs=newObs;
-  r.materiales=window._editMats||r.materiales||[];
-  // Actualizar detalle HTML con los nuevos datos
-  if(r.detalle){
-    r.detalle=r.detalle
-      .replace(/(<span class="rc">N[ºo°]? orden<\/span><span class="rl">)[^<]*/g,function(m,p){return p+(r.pedido||'');})
-      .replace(/(<span class="rc">Tienda<\/span><span class="rl">)[^<]*/g,function(m,p){return p+newTienda;})
-      .replace(/(<span class="rc">Direcci[oó]n<\/span><span class="rl">)[^<]*/g,function(m,p){return p+newDir;})
-      .replace(/(<span class="rc">Tel[eé]fono<\/span><span class="rl">)[^<]*/g,function(m,p){return p+newTel;});
-  }
-  setH(h);
-  // Subir parte a Firestore sin actualizar la incidencia (edición de datos básicos)
-  // Si cambió pedido o centro, borrar el docId anterior para evitar fantasmas
-  try{
-    if(typeof _db !== 'undefined' && _db && window._sesion){
-      var docIdAnterior=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r._centroOriginal+'_'+r._pedidoOriginal).replace(/[\/\s]/g,'-');
-      var docIdNuevo=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
-      if(docIdAnterior !== docIdNuevo){
-        _db.collection('partes').doc(docIdAnterior).delete().catch(function(){});
-      }
-      _db.collection('partes').doc(docIdNuevo).set(Object.assign({},r,{fechaModificacion:Date.now()}),{merge:true}).catch(function(){_marcarPendienteSync(r,true);});
-    } else { _marcarPendienteSync(r,true); }
-  }catch(e){ _marcarPendienteSync(r,true); }
-  showMsg('msgEdit','Guardado correctamente.','success');
-  setTimeout(function(){verParte(_editIdx);},700);
-}
 
 function histShow(ids){
   ['histOpts','secView','centrosView','incidenciasView','ordenView','parteView',
