@@ -507,6 +507,10 @@ textarea{resize:vertical;min-height:72px}
       <div class="app-icon-img ico-other">&#128190;</div>
       <span class="app-icon-label">Copias de seguridad</span>
     </div>
+    <div class="app-icon" id="iconPapelera" style="display:none;" onclick="abrirPapelera()">
+      <div class="app-icon-img ico-other">&#128465;</div>
+      <span class="app-icon-label">Papelera</span>
+    </div>
   </div>
   <div id="asgTecSection" style="display:none;margin-top:14px;">
     <div class="section-label">&#128229; Incidencias asignadas</div>
@@ -1037,6 +1041,14 @@ textarea{resize:vertical;min-height:72px}
     <button class="btn btn-d btn-full" onclick="_confirmarRestaurarBackup()">&#9888;&#65039; Restaurar desde la copia de seguridad</button>
   </div>
 </div>
+<div id="w-papelera" class="win">
+  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="card">
+    <div class="card-title">&#128465; Papelera</div>
+    <p style="font-size:.85rem;color:var(--text2);margin-bottom:0;">Partes e incidencias borrados. En vez de desaparecer, quedan aqu&iacute; guardados y se pueden restaurar en cualquier momento.</p>
+  </div>
+  <div id="papeleraLista"></div>
+</div>
 <div class="dialogo" id="dlgCorregir">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#9998; Datos modificados</div>
@@ -1159,7 +1171,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-08-limpieza-editpanel';
+var APP_BUILD_ID = 'build-2026-09-09-papelera';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -6990,17 +7002,20 @@ function _reintentarPartesPendientes(){
     _actualizarIncidenciaPorOrden(r.pedido, r.centro, r.estado||'en-ejecucion', datos);
   });
   var borrarPendiente=JSON.parse(localStorage.getItem('pm_partes_borrar_pendiente')||'[]');
-  borrarPendiente.forEach(function(docId){
-    _db.collection('partes').doc(docId).delete().then(function(){
+  borrarPendiente.forEach(function(item){
+    // Compatibilidad con el formato viejo (solo el docId, sin razón) por si quedó algo pendiente de antes
+    var docId = (typeof item==='string') ? item : item.docId;
+    var razon = (typeof item==='string') ? 'Borrado pendiente' : item.razon;
+    _moverAPapelera('partes', docId, razon).then(function(){
       var lista=JSON.parse(localStorage.getItem('pm_partes_borrar_pendiente')||'[]');
-      localStorage.setItem('pm_partes_borrar_pendiente', JSON.stringify(lista.filter(function(d){ return d!==docId; })));
+      localStorage.setItem('pm_partes_borrar_pendiente', JSON.stringify(lista.filter(function(x){ return (typeof x==='string'?x:x.docId)!==docId; })));
     }).catch(function(){});
   });
 }
 window.addEventListener('online', _reintentarPartesPendientes);
-function _marcarParteBorrarPendiente(docId){
+function _marcarParteBorrarPendiente(docId, razon){
   var lista=JSON.parse(localStorage.getItem('pm_partes_borrar_pendiente')||'[]');
-  if(lista.indexOf(docId)<0) lista.push(docId);
+  if(!lista.some(function(x){ return (typeof x==='string'?x:x.docId)===docId; })) lista.push({docId:docId, razon:razon||'Borrado pendiente'});
   localStorage.setItem('pm_partes_borrar_pendiente', JSON.stringify(lista));
 }
 
@@ -7022,7 +7037,7 @@ function _finalizarGuardado(estado){
       var docIdViejo=((orig.clienteId||'mercadona')+'_'+orig.fecha+'_'+orig.centro+'_'+orig.pedido).replace(/[\/\s]/g,'-');
       var docIdNuevo=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
       if(docIdViejo!==docIdNuevo){
-        _db.collection('partes').doc(docIdViejo).delete().catch(function(){ _marcarParteBorrarPendiente(docIdViejo); });
+        _moverAPapelera('partes', docIdViejo, 'Reemplazado al editar (cambio de identidad)').catch(function(){ _marcarParteBorrarPendiente(docIdViejo, 'Reemplazado al editar (cambio de identidad)'); });
       }
     }
     _editIdx=null; window._editIdxBackup=null;
@@ -7291,11 +7306,46 @@ function avisoCruzadoIdx(idx){
   avisoCruzado(r.tienda,nombreCliente,idx);
 }
 
+// ===== PAPELERA =====
+// En vez de borrar de verdad, todo borrado real (parte o incidencia) pasa primero por aquí:
+// se guarda una copia completa en la colección "papelera" (con quién/cuándo/por qué) y solo
+// entonces se borra el original. Así ningún borrado —accidental, a propósito o por un fallo
+// futuro que use este mismo camino— puede perderse sin que quede recuperable.
+function _moverAPapelera(coleccion, docId, razon){
+  if(typeof _db === 'undefined' || !_db) return Promise.reject(new Error('Sin conexión.'));
+  var idPapelera = coleccion+'__'+docId;
+  return _db.collection(coleccion).doc(docId).get().then(function(snap){
+    if(!snap.exists) return;
+    return _db.collection('papelera').doc(idPapelera).set({
+      coleccionOriginal: coleccion,
+      docIdOriginal: docId,
+      datos: snap.data(),
+      eliminadoPor: (window._sesion&&window._sesion.nombre)||'',
+      eliminadoFecha: Date.now(),
+      eliminadoRazon: razon||''
+    }).then(function(){
+      return _db.collection(coleccion).doc(docId).delete();
+    });
+  });
+}
+function _restaurarDePapelera(idPapelera){
+  return _db.collection('papelera').doc(idPapelera).get().then(function(snap){
+    if(!snap.exists) throw new Error('No existe en la papelera.');
+    var p = snap.data();
+    return _db.collection(p.coleccionOriginal).doc(p.docIdOriginal).set(p.datos).then(function(){
+      return _db.collection('papelera').doc(idPapelera).delete();
+    });
+  });
+}
+function _purgarDePapelera(idPapelera){
+  return _db.collection('papelera').doc(idPapelera).delete();
+}
+
 function borrarParteOk(i){
   var h=getH(); var r=h[i]; if(!r){ return; }
   if(typeof _db !== 'undefined' && _db){
     var docId=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
-    _db.collection('partes').doc(docId).delete().catch(function(){});
+    _moverAPapelera('partes', docId, 'Borrado manual').catch(function(){ _marcarParteBorrarPendiente(docId, 'Borrado manual'); });
   }
   h.splice(i,1); setH(h); volverSec(); verSec(_secActual);
 }
@@ -8233,6 +8283,8 @@ function _aplicarSesion(nombre, rol, multiRol) {
   if (icMigracion) icMigracion.style.display = (rol === 'creador') ? '' : 'none';
   var icBackups = document.getElementById('iconBackups');
   if (icBackups) icBackups.style.display = (rol === 'creador') ? '' : 'none';
+  var icPapelera = document.getElementById('iconPapelera');
+  if (icPapelera) icPapelera.style.display = (rol === 'admin' || rol === 'creador') ? '' : 'none';
   setTimeout(_mostrarIconoUsuarios, 0);
   if (rol === 'admin' || rol === 'creador') _comprobarBackupDiario();
 
@@ -8782,7 +8834,7 @@ function reasignarIncidencia(id, nuevoTec) {
 
 function eliminarIncidencia(id) {
   _confirmarApp('¿Eliminar esta incidencia asignada?', function(){
-    _db.collection('incidencias').doc(id).delete().then(function(){ renderAsgLista(); });
+    _moverAPapelera('incidencias', id, 'Eliminada desde Asignar incidencia').then(function(){ renderAsgLista(); });
   });
 }
 
@@ -9300,6 +9352,49 @@ function _generarBackupManual(){
     if(btn){ btn.disabled=false; btn.innerHTML='&#128190; Generar ahora'; }
     if(exito){ showMsg('backupsMsg','Copia de seguridad generada.','success'); _verEstadoBackups(); }
     else { showMsg('backupsMsg','Error al generar: '+(error||'desconocido'),'error'); }
+  });
+}
+
+// ===== PAPELERA (pantalla) =====
+function abrirPapelera(){
+  if(!(window._sesion && (window._sesion.rol==='admin'||window._sesion.rol==='creador'))) return;
+  _verificarConexionFirestore(function(hayConexion){
+    if(!hayConexion){ alert('Necesitas conexión a internet para acceder a la papelera.'); return; }
+    goTo('w-papelera');
+    _renderPapelera();
+  });
+}
+function _renderPapelera(){
+  var el=$('papeleraLista'); if(!el) return;
+  el.innerHTML='<p style="font-size:.85rem;color:var(--text2);padding:10px 0;">Consultando…</p>';
+  if(typeof _db==='undefined'||!_db){ el.innerHTML='<p style="font-size:.85rem;color:var(--text2);padding:10px 0;">Necesitas conexión a internet.</p>'; return; }
+  _db.collection('papelera').get().then(function(snap){
+    var items=[]; snap.forEach(function(d){ items.push(Object.assign({_id:d.id}, d.data())); });
+    items.sort(function(a,b){ return (b.eliminadoFecha||0)-(a.eliminadoFecha||0); });
+    if(!items.length){ el.innerHTML='<p style="font-size:.85rem;color:var(--text2);padding:10px 0;">La papelera está vacía.</p>'; return; }
+    var esCreador = window._sesion && window._sesion.rol==='creador';
+    el.innerHTML = items.map(function(it){
+      var d = it.datos||{};
+      var etiqueta = it.coleccionOriginal==='partes'
+        ? ('Parte · '+escHtml(d.tienda||'')+' · '+escHtml(d.fecha||'')+(d.numParte?(' · Nº '+escHtml(d.numParte)):''))
+        : ('Incidencia · '+escHtml(d.tienda||'')+' · '+escHtml(d.pedido||''));
+      return '<div class="card">'
+        +'<div style="font-size:.9rem;font-weight:700;margin-bottom:4px;">'+etiqueta+'</div>'
+        +'<div style="font-size:.78rem;color:var(--text2);margin-bottom:10px;">Borrado por '+escHtml(it.eliminadoPor||'—')+' · '+_fmtFechaHora(it.eliminadoFecha||0)+'<br>Motivo: '+escHtml(it.eliminadoRazon||'—')+'</div>'
+        +'<div class="brow">'
+        +'<button class="btn btn-g btn-sm" onclick="_restaurarDePapeleraUI(\''+it._id+'\')">&#9989; Restaurar</button>'
+        +(esCreador?'<button class="btn btn-d btn-sm" onclick="_purgarDePapeleraUI(\''+it._id+'\')">&#128465; Eliminar definitivamente</button>':'')
+        +'</div></div>';
+    }).join('');
+  }).catch(function(){ el.innerHTML='<p style="font-size:.85rem;color:var(--red);padding:10px 0;">Error al consultar la papelera.</p>'; });
+}
+function _restaurarDePapeleraUI(idPapelera){
+  _restaurarDePapelera(idPapelera).then(function(){ _renderPapelera(); }).catch(function(){ alert('No se pudo restaurar. Comprueba tu conexión e inténtalo de nuevo.'); });
+}
+function _purgarDePapeleraUI(idPapelera){
+  if(!(window._sesion && window._sesion.rol==='creador')) return;
+  _confirmarApp('¿Eliminar definitivamente? Esto ya no se puede deshacer.', function(){
+    _purgarDePapelera(idPapelera).then(function(){ _renderPapelera(); });
   });
 }
 
