@@ -657,7 +657,7 @@ textarea{resize:vertical;min-height:72px}
     </div>
     <div class="field" id="fieldCentro">
       <label id="labelCentro">N&ordm; centro</label>
-      <input id="centro" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 2721" oninput="buscarPorCentroORef(this.value);if(this.value.length>2)ocultarLectura()">
+      <input id="centro" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 2721" oninput="buscarPorCentroORef(this.value);if(this.value.length>2)ocultarLectura();checkAutoEnlace()">
       <div class="ac-box" id="acCentro"></div>
     </div>
     <div class="field"><label id="labelTienda">Tienda <span class="req">*</span></label><input id="tienda" placeholder="Mercadona SAN JAVIER 2721" oninput="buscarRefNoMerc(this.value)" autocomplete="off"><div class="ac-box" id="acRef"></div></div>
@@ -1099,11 +1099,14 @@ PROTOCOLOS EXISTENTES
    - TOCA solo aquí para cambiar cómo se rellenan campos
    - NO CREES un nuevo auto-relleno si ya existe uno
 
-3. TRAYECTORIA — setOrigen(), setLink(), checkAutoEnlace(), resetAE()
+3. TRAYECTORIA — setOrigen(), setLink(), checkAutoEnlace(), resetAE(), _activarEnlaceAuto()
    - Origen: Desde la nave (normal) / Otro punto (ida y vuelta manuales, no sale de la nave)
    - "Desde la nave" tiene 3 modos de enlace: No / Si / Auto (detecta parte anterior del mismo día)
    - "Otro punto" NO usa enlace — checkAutoEnlace() se sale sin hacer nada si curOrigen==='otro'
-   - Auto-enlace se activa por hora de llegada, NO modificar esa lógica
+   - Auto-enlace se activa de 2 formas (checkAutoEnlace()): (1) por tienda destino ya anunciada
+     — si el parte anterior declaró "Con enlace" hacia el Nº de centro que se acaba de escribir,
+     enlaza al instante sin mirar la hora (más fiable en trayectos largos); (2) si no hay destino
+     anunciado o no coincide, cae al margen de 15 min sobre la hora de llegada estimada, como antes
    - TOCA solo aquí para cambiar cálculos de km y desplazamiento
 
 4. FRANJAS HORARIAS — calcMin(), franjas(), gc()
@@ -1171,7 +1174,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-09-papelera';
+var APP_BUILD_ID = 'build-2026-09-09-nota-enlace-antes-total';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3771,23 +3774,28 @@ function generarCore(){
   var sameCliente=same.filter(function(x){ return (x.clienteId||'mercadona')===clienteIdActual; });
   var dietaYa=sameCliente.some(function(x){ return x.dieta; });
   // La media dieta solo acumula horas de un tramo REALMENTE continuo: se suma un parte
-  // anterior solo si el hueco hasta el siguiente (o hasta el actual) es de 1h o menos —
-  // si hay un hueco mayor, ahí se corta la cadena y no cuenta como el mismo tramo.
-  // Solo cuentan partes que ya terminaron ANTES de la llegada de este (nunca uno posterior,
-  // que puede existir si se está editando/regenerando uno de una hora más temprana).
+  // anterior solo si el hueco hasta el siguiente (o hasta el actual) es de 1h o menos, O si
+  // los dos partes están enlazados de verdad (Con enlace / Auto) — un enlace ya explica y
+  // cubre ese hueco (es el trayecto declarado), así que ahí no hace falta mirar el reloj.
+  // Si hay un hueco mayor SIN enlace de por medio, ahí se corta la cadena y no cuenta como
+  // el mismo tramo. Solo cuentan partes que ya terminaron ANTES de la llegada de este (nunca
+  // uno posterior, que puede existir si se está editando/regenerando uno de una hora más
+  // temprana).
   var _anteriores=sameCliente.filter(function(x){ return tm(x.arr)<=arr; })
     .slice().sort(function(a,b){ return tm(a.arr)-tm(b.arr); });
   var acum=totMin;
   var _inicioTramo=arr;
+  var _enlazadoConAnterior=(curLink==='Auto');
   for(var _si=_anteriores.length-1;_si>=0;_si--){
     var _prev=_anteriores[_si];
     var _finPrev=tm(_prev.lea);
-    if(!_prev.lea || _inicioTramo-_finPrev>60) break;
+    if(!_prev.lea) break;
+    if(!_enlazadoConAnterior && _inicioTramo-_finPrev>60) break;
     acum+=(_prev.totalMin||0);
     _inicioTramo=tm(_prev.arr);
+    _enlazadoConAnterior=(_prev.linkType==='Auto');
   }
   var dieta=acum>=300&&!dietaYa;
-  if(_notaEnlace) html+='<div class="nota-trayectoria" style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2);margin-bottom:8px;">&#128279; '+escHtml(_notaEnlace)+'</div>';
   html+='<div style="height:1px;background:var(--border);margin:10px 0"></div>';
   var subtotalServicio=0;
   if(dieta){
@@ -3862,6 +3870,7 @@ function generarCore(){
     }
   }
 
+  if(_notaEnlace) html+='<div class="nota-trayectoria" style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2);margin-bottom:8px;">&#128279; '+escHtml(_notaEnlace)+'</div>';
   // Fila TOTAL con horas y precio total si aplica
   var totalPrecio=subtotalServicio+subtotalMats;
   if(conPrecios&&totalPrecio>0){
@@ -5487,8 +5496,8 @@ function checkAutoEnlace(){
   if(curLink==='Si') return; // nunca sobrescribir un enlace manual ya elegido por el técnico
   if(curLink==='Auto') return; // ya está en modo Auto — no repetir el autorrelleno de kmA/trA,
                                  // que sobrescribiría un valor que el técnico ya corrigió a mano
-  var fecha=$('fecha').value; var arrVal=$('arr').value;
-  if(!fecha||!arrVal){ resetAE(); return; }
+  var fecha=$('fecha').value;
+  if(!fecha){ resetAE(); return; }
   // Servicios y Reparaciones: trabajos puntuales, nunca se auto-enlazan
   if(curCliente&&curCliente.id==='c_1779744364343'){ resetAE(); return; }
   // El enlace es siempre por técnico: dos técnicos distintos no pueden compartir
@@ -5501,8 +5510,26 @@ function checkAutoEnlace(){
   if(!same.length){ resetAE(); return; }
   var last=same[same.length-1];
   if(!last.linkType||last.linkType==='No'){ resetAE(); return; }
+
+  // 1) El parte anterior ya anunció con enlace manual hacia una tienda destino concreta: si el
+  // Nº de centro de este parte coincide, enlazar al instante — sin mirar la hora de llegada. Un
+  // enlace declarado por número de tienda es más fiable que una ventana de tiempo fija, sobre
+  // todo en trayectos largos donde el margen de 15 min no es realista (caso real Espinardo ->
+  // La Loma, 09/09/2026: 75 min de trayecto declarado, 30 min de diferencia real con la hora
+  // estimada, fuera del margen de 15 min que había antes).
+  var centroActual=($('centro').value||'').trim();
+  if(last.linkType==='Si' && last.enlaceDestinoCentro && centroActual && last.enlaceDestinoCentro===centroActual){
+    _activarEnlaceAuto(last); return;
+  }
+
+  // 2) Si no hay tienda destino anunciada o no coincide, respaldo de siempre: margen de 15 min
+  // sobre la hora de llegada estimada del parte anterior.
+  var arrVal=$('arr').value;
+  if(!arrVal){ resetAE(); return; }
   if(!last.horaEnlace){ resetAE(); return; }
-  if(Math.abs(tm(arrVal)-last.horaEnlace)<=15){
+  if(Math.abs(tm(arrVal)-last.horaEnlace)<=15){ _activarEnlaceAuto(last); } else { resetAE(); }
+}
+function _activarEnlaceAuto(last){
     $('lnkToggleDiv').style.display='none'; $('modeNo').style.display='none'; $('modeSi').style.display='none'; $('modeAuto').style.display='block';
     $('link').value='Auto'; curLink='Auto';
     var origen=last.tienda||last.centro||'parte anterior';
@@ -5517,7 +5544,6 @@ function checkAutoEnlace(){
     // Con enlace, el km/despl. de salida del segundo parte es el trayecto REAL de regreso
     // — nunca debe sugerirse con un dato del parte anterior (eso sería aplicar la lógica
     // de "sin enlace" a un caso con enlace). El técnico introduce el valor real.
-  } else { resetAE(); }
 }
 
 
