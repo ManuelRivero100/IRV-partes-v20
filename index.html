@@ -1175,7 +1175,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-10-certificacion-partes-v2';
+var APP_BUILD_ID = 'build-2026-09-10-certificacion-fecha';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -4527,11 +4527,11 @@ function _siguienteBloqueCertificado(pedido, centro, clienteId){
   });
   return max+1;
 }
-function _marcarCertificadoEnFirestore(r, bloque){
+function _marcarCertificadoEnFirestore(r, bloque, fechaCert){
   if(typeof _db==='undefined'||!_db) return;
   var docId=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
   _db.collection('partes').doc(docId).set({
-    bloqueCertificado: bloque, fechaModificacion: Date.now(),
+    bloqueCertificado: bloque, fechaCertificado: fechaCert, fechaModificacion: Date.now(),
     ultimaModificacionRazon: 'Certificado (bloque '+bloque+')'
   }, {merge:true}).catch(function(){});
 }
@@ -4540,15 +4540,19 @@ function _marcarCertificadoEnFirestore(r, bloque){
 function certificarOrden(pedido, centro, clienteId){
   var cid = clienteId||'mercadona';
   var nuevoBloque = _siguienteBloqueCertificado(pedido, centro, cid);
+  // fechaCertificado es un campo propio (distinto de fechaModificacion, que cualquier
+  // edición posterior del parte sobreescribe) — así la fecha mostrada en el resumen no se
+  // pierde si el parte se toca por otro motivo después de certificarse.
+  var ahora = Date.now();
   var h = getH();
   var afectados=[];
   h.forEach(function(r){
     if(r.pedido===pedido && r.centro===centro && (r.clienteId||'mercadona')===cid && !r.bloqueCertificado){
-      r.bloqueCertificado = nuevoBloque; afectados.push(r);
+      r.bloqueCertificado = nuevoBloque; r.fechaCertificado = ahora; afectados.push(r);
     }
   });
   setH(h);
-  afectados.forEach(function(r){ _marcarCertificadoEnFirestore(r, nuevoBloque); });
+  afectados.forEach(function(r){ _marcarCertificadoEnFirestore(r, nuevoBloque, ahora); });
   return nuevoBloque;
 }
 function certificarOrdenActual(){
@@ -4567,7 +4571,8 @@ function certificarDesdeDialogo(){
   var r=window.recTmp;
   var cid=r.clienteId||'mercadona';
   var nuevoBloque=_siguienteBloqueCertificado(r.pedido, r.centro, cid);
-  r.bloqueCertificado=nuevoBloque;
+  var ahora=Date.now();
+  r.bloqueCertificado=nuevoBloque; r.fechaCertificado=ahora;
   // Marcar los demás partes sin certificar de la orden ANTES de guardarConEstado(): si el
   // parte actual resulta duplicado (misma fecha/pedido/centro que uno ya existente),
   // guardarConEstado() abre un diálogo de confirmación y guarda sobre un snapshot de h
@@ -4580,7 +4585,7 @@ function certificarDesdeDialogo(){
     // Excluir el idx de edición: si se está editando, esa entrada es la versión vieja del
     // propio parte que se está guardando ahora (r), no otro parte distinto de la orden.
     if(i!==_idxEdicion && x!==r && x.pedido===r.pedido && x.centro===r.centro && (x.clienteId||'mercadona')===cid && !x.bloqueCertificado){
-      x.bloqueCertificado=nuevoBloque; _marcarCertificadoEnFirestore(x, nuevoBloque);
+      x.bloqueCertificado=nuevoBloque; x.fechaCertificado=ahora; _marcarCertificadoEnFirestore(x, nuevoBloque, ahora);
     }
   });
   setH(h);
@@ -5864,14 +5869,18 @@ function verOrden(enc){
     var _color=_bloque?_colorPorBloque[_bloque]:'';
     var _esUltimoParteOrden=(p.idx===_idxUltimoParteOrden);
     var _esUltimoDelBloque=!!_esUltimoDelBloquePorIdx[p.idx];
-    var _etiqueta='';
+    var _etiqueta='', _fechaCertHTML='';
     if(_esUltimoParteOrden && lastEstado==='terminado' && _bloques.length){
       _etiqueta=' <span style="font-size:.68rem;font-weight:700;color:var(--text3);">&middot; Cerrada</span>';
     } else if(_esUltimoDelBloque){
       _etiqueta=' <span style="font-size:.68rem;font-weight:700;color:#4ade80;">&middot; Certificados</span>';
+      // fechaCertificado es el campo propio de la certificación; en partes certificados antes
+      // de que existiera ese campo, se cae a fechaModificacion (que en su momento coincidía).
+      var _msCert=p.r.fechaCertificado||p.r.fechaModificacion;
+      if(_msCert) _fechaCertHTML='<div style="font-size:.72rem;color:#4ade80;margin-top:1px;">Certificado el '+_fmtFechaHora(_msCert)+'</div>';
     }
     var _tituloStyle='font-size:.85rem;font-weight:600;'+(_color?('color:'+_color+';'):'');
-    return '<div class="orden-parte-item" onclick="verParte('+p.idx+')"><div><div style="'+_tituloStyle+'">Parte '+(pi+1)+(p.r.numParte?' ('+p.r.numParte+')':'')+' &middot; '+fF+_etiqueta+'</div><div style="font-size:.76rem;color:var(--text2);">'+(p.r.arr||'--')+' – '+(p.r.lea||'--')+' &middot; '+dur+'</div></div><span style="color:var(--text3);">&#8250;</span></div>';
+    return '<div class="orden-parte-item" onclick="verParte('+p.idx+')"><div><div style="'+_tituloStyle+'">Parte '+(pi+1)+(p.r.numParte?' ('+p.r.numParte+')':'')+' &middot; '+fF+_etiqueta+'</div><div style="font-size:.76rem;color:var(--text2);">'+(p.r.arr||'--')+' – '+(p.r.lea||'--')+' &middot; '+dur+'</div>'+_fechaCertHTML+'</div><span style="color:var(--text3);">&#8250;</span></div>';
   }).join('');
 
   var codHTML=Object.values(codAcum).length
