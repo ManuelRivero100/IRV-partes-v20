@@ -1067,6 +1067,7 @@ textarea{resize:vertical;min-height:72px}
     <div class="dialogo-sub" id="dlgEstadoSub"></div>
     <div class="brow" style="margin-bottom:10px;">
       <button class="btn btn-amber" style="flex:1;justify-content:center" onclick="guardarConEstado('en-ejecucion')">&#9203; Sigue abierta</button>
+      <button class="btn btn-p" id="btnCertificarDialogo" style="display:none;flex:1;justify-content:center" onclick="certificarDesdeDialogo()">&#9989; Certificar</button>
       <button class="btn btn-p" style="flex:1;justify-content:center" onclick="guardarConEstado('terminado')">&#9989; Cerrar incidencia</button>
     </div>
     <button class="btn btn-s btn-sm btn-full" onclick="$('dlgEstado').classList.remove('show');">&#8592; Regresar</button>
@@ -1174,7 +1175,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-09-nota-enlace-antes-total';
+var APP_BUILD_ID = 'build-2026-09-10-certificacion-partes-v2';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -4509,6 +4510,83 @@ function compartirDesde(detalle,obsVal,matsText){
 
 // ===== INIT =====
 
+// ===== CERTIFICACIÓN DE PARTES =====
+// Cada 4 (o más) partes sin certificar de una misma orden, se ofrece agruparlos en un
+// "bloque certificado" (campo bloqueCertificado en el parte, número de bloque correlativo
+// por orden). Es solo una marca — no cambia el estado de la incidencia ni ningún cálculo
+// de horas/km/dieta existente.
+function _partesSinCertificar(pedido, centro, clienteId){
+  var cid = clienteId||'mercadona';
+  return getH().filter(function(r){ return r.pedido===pedido && r.centro===centro && (r.clienteId||'mercadona')===cid && !r.bloqueCertificado; });
+}
+function _siguienteBloqueCertificado(pedido, centro, clienteId){
+  var cid = clienteId||'mercadona';
+  var max=0;
+  getH().forEach(function(r){
+    if(r.pedido===pedido && r.centro===centro && (r.clienteId||'mercadona')===cid && r.bloqueCertificado>max) max=r.bloqueCertificado;
+  });
+  return max+1;
+}
+function _marcarCertificadoEnFirestore(r, bloque){
+  if(typeof _db==='undefined'||!_db) return;
+  var docId=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
+  _db.collection('partes').doc(docId).set({
+    bloqueCertificado: bloque, fechaModificacion: Date.now(),
+    ultimaModificacionRazon: 'Certificado (bloque '+bloque+')'
+  }, {merge:true}).catch(function(){});
+}
+// Certifica TODOS los partes sin certificar de una orden ya guardados (usado desde el
+// resumen de la orden, sin relación a guardar un parte nuevo).
+function certificarOrden(pedido, centro, clienteId){
+  var cid = clienteId||'mercadona';
+  var nuevoBloque = _siguienteBloqueCertificado(pedido, centro, cid);
+  var h = getH();
+  var afectados=[];
+  h.forEach(function(r){
+    if(r.pedido===pedido && r.centro===centro && (r.clienteId||'mercadona')===cid && !r.bloqueCertificado){
+      r.bloqueCertificado = nuevoBloque; afectados.push(r);
+    }
+  });
+  setH(h);
+  afectados.forEach(function(r){ _marcarCertificadoEnFirestore(r, nuevoBloque); });
+  return nuevoBloque;
+}
+function certificarOrdenActual(){
+  if(!_esAdminOCreador()) return;
+  var o=window._ordenActual; if(!o) return;
+  certificarOrden(o.pedido, o.centro, o.clienteId);
+  verOrden(encodeURIComponent(o.pedido)+'||'+encodeURIComponent(o.centro));
+}
+// Certifica desde el diálogo "¿La incidencia sigue abierta?": el parte que se está guardando
+// AHORA entra también en el bloque nuevo (se le asigna antes de guardar, para que quede en
+// el mismo guardado), y de paso se certifican los partes anteriores de la misma orden que
+// aún estuvieran sin certificar.
+function certificarDesdeDialogo(){
+  if(!_esAdminOCreador()) return;
+  if(!window.recTmp) return;
+  var r=window.recTmp;
+  var cid=r.clienteId||'mercadona';
+  var nuevoBloque=_siguienteBloqueCertificado(r.pedido, r.centro, cid);
+  r.bloqueCertificado=nuevoBloque;
+  // Marcar los demás partes sin certificar de la orden ANTES de guardarConEstado(): si el
+  // parte actual resulta duplicado (misma fecha/pedido/centro que uno ya existente),
+  // guardarConEstado() abre un diálogo de confirmación y guarda sobre un snapshot de h
+  // capturado en ese momento — haciéndolo después pisaría este cambio al confirmar.
+  var h=getH();
+  // Índice real de edición: _editIdx puede haberse perdido (ver _finalizarGuardado, mismo
+  // caso), por eso se cae a window._editIdxBackup igual que hace el guardado real.
+  var _idxEdicion=(_editIdx!==null&&_editIdx!==undefined)?_editIdx:window._editIdxBackup;
+  h.forEach(function(x,i){
+    // Excluir el idx de edición: si se está editando, esa entrada es la versión vieja del
+    // propio parte que se está guardando ahora (r), no otro parte distinto de la orden.
+    if(i!==_idxEdicion && x!==r && x.pedido===r.pedido && x.centro===r.centro && (x.clienteId||'mercadona')===cid && !x.bloqueCertificado){
+      x.bloqueCertificado=nuevoBloque; _marcarCertificadoEnFirestore(x, nuevoBloque);
+    }
+  });
+  setH(h);
+  guardarConEstado('en-ejecucion');
+}
+
 function cerrarIncidenciaActual(){
   var o=window._ordenActual;if(!o)return;
   var h=getH();
@@ -5721,11 +5799,14 @@ function verOrden(enc){
   var h=getH();
   var esTecnico=window._sesion && window._sesion.rol==='tecnico';
   var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
-  var partes=h.map(function(r,i){ return {r:r,idx:i}; }).filter(function(x){
-    if(x.r.pedido!==pedido||x.r.centro!==centro) return false;
-    if(esTecnico && !(x.r.tecnicos && x.r.tecnicos[0] && x.r.tecnicos[0].toLowerCase()===miNombre)) return false;
-    return true;
+  // Lista completa de la orden (todos los técnicos) — necesaria para calcular bloques de
+  // certificación correctamente aunque el técnico que mira solo vea su propio subconjunto.
+  var partesTodas=h.map(function(r,i){ return {r:r,idx:i}; }).filter(function(x){
+    return x.r.pedido===pedido && x.r.centro===centro;
   }).sort(function(a,b){ return (a.r.fecha||'').localeCompare(b.r.fecha||''); });
+  var partes=esTecnico
+    ?partesTodas.filter(function(x){ return x.r.tecnicos && x.r.tecnicos[0] && x.r.tecnicos[0].toLowerCase()===miNombre; })
+    :partesTodas;
   if(!partes.length) return;
   $('secView').style.display='none'; $('ordenView').style.display='block'; $('parteView').style.display='none';
   var g=partes[0].r;
@@ -5752,11 +5833,45 @@ function verOrden(enc){
     (p.r.materiales||[]).forEach(function(m){ if(m.cantidad&&+m.cantidad>0) matAcum[m.nombre]=(matAcum[m.nombre]||0)+(+m.cantidad); });
   });
 
+  // Bloques certificados presentes, en orden cronológico de certificación (ascendente).
+  // Color alternado verde/blanco contando HACIA ATRÁS desde el último bloque certificado
+  // (que siempre es verde) — la cola sin certificar nunca entra en esta alternancia.
+  // Calculado sobre partesTodas (la orden completa), no sobre `partes` (que puede estar
+  // filtrada a un solo técnico) — si no, un técnico que solo ve parte de una orden con
+  // varios técnicos vería colores/etiquetas mal calculados contra el vecino equivocado.
+  var _bloques=[];
+  partesTodas.forEach(function(p){ var b=p.r.bloqueCertificado; if(b && _bloques.indexOf(b)===-1) _bloques.push(b); });
+  var _colorPorBloque={};
+  _bloques.forEach(function(b,_bi){
+    var _desdeElFinal=_bloques.length-1-_bi;
+    _colorPorBloque[b]=(_desdeElFinal%2===0)?'#4ade80':'';
+  });
+  var _esUltimoDelBloquePorIdx={};
+  var _idxUltimoParteOrden=partesTodas.length?partesTodas[partesTodas.length-1].idx:null;
+  partesTodas.forEach(function(p,pi){
+    var b=p.r.bloqueCertificado;
+    if(b){
+      var esUltimo=(pi===partesTodas.length-1)||partesTodas[pi+1].r.bloqueCertificado!==b;
+      _esUltimoDelBloquePorIdx[p.idx]=esUltimo;
+    }
+  });
+
   var partesHTML=partes.map(function(p,pi){
     var fF=p.r.fecha.split('-').reverse().join('/');
     var _arrM=p.r.arr?tm(p.r.arr):0, _leaM=p.r.lea?tm(p.r.lea):p.r.fin;
     var dur=fmtH((_leaM<_arrM?1440-_arrM+_leaM:_leaM-_arrM)/60);
-    return '<div class="orden-parte-item" onclick="verParte('+p.idx+')"><div><div style="font-size:.85rem;font-weight:600;">Parte '+(pi+1)+(p.r.numParte?' ('+p.r.numParte+')':'')+' &middot; '+fF+'</div><div style="font-size:.76rem;color:var(--text2);">'+(p.r.arr||'--')+' – '+(p.r.lea||'--')+' &middot; '+dur+'</div></div><span style="color:var(--text3);">&#8250;</span></div>';
+    var _bloque=p.r.bloqueCertificado;
+    var _color=_bloque?_colorPorBloque[_bloque]:'';
+    var _esUltimoParteOrden=(p.idx===_idxUltimoParteOrden);
+    var _esUltimoDelBloque=!!_esUltimoDelBloquePorIdx[p.idx];
+    var _etiqueta='';
+    if(_esUltimoParteOrden && lastEstado==='terminado' && _bloques.length){
+      _etiqueta=' <span style="font-size:.68rem;font-weight:700;color:var(--text3);">&middot; Cerrada</span>';
+    } else if(_esUltimoDelBloque){
+      _etiqueta=' <span style="font-size:.68rem;font-weight:700;color:#4ade80;">&middot; Certificados</span>';
+    }
+    var _tituloStyle='font-size:.85rem;font-weight:600;'+(_color?('color:'+_color+';'):'');
+    return '<div class="orden-parte-item" onclick="verParte('+p.idx+')"><div><div style="'+_tituloStyle+'">Parte '+(pi+1)+(p.r.numParte?' ('+p.r.numParte+')':'')+' &middot; '+fF+_etiqueta+'</div><div style="font-size:.76rem;color:var(--text2);">'+(p.r.arr||'--')+' – '+(p.r.lea||'--')+' &middot; '+dur+'</div></div><span style="color:var(--text3);">&#8250;</span></div>';
   }).join('');
 
   var codHTML=Object.values(codAcum).length
@@ -5781,9 +5896,12 @@ function verOrden(enc){
     ?Object.keys(matAcum).map(function(n){ return '<div class="acum-row"><span>'+n+'</span><span style="font-weight:600;">'+matAcum[n]+'</span></div>'; }).join('')
     :'<div style="font-size:.82rem;color:var(--text3);padding:6px 0;">Sin materiales registrados.</div>';
 
-  window._ordenActual={ tienda:g.tienda, pedido:pedido, job:g.job, centro:g.centro, actObras:g.actObras||null,
+  window._ordenActual={ tienda:g.tienda, pedido:pedido, job:g.job, centro:g.centro, clienteId:g.clienteId||'mercadona', actObras:g.actObras||null,
     fechas:partes.map(function(p){ return p.r.fecha.split('-').reverse().join('/'); }),
     estado:lastEstado, codAcum:codAcum, matAcum:matAcum, partes:partes };
+
+  var _sinCertOrden=partesTodas.filter(function(p){ return !p.r.bloqueCertificado; }).length;
+  var _mostrarCertBtn=_esAdminOCreador() && lastEstado==='en-ejecucion' && _sinCertOrden>=4;
 
   var ordenTitle=g.actObras?g.actObras+' &middot; '+g.job:'Orden '+pedido+' &middot; '+g.job;
 
@@ -5802,13 +5920,15 @@ function verOrden(enc){
     '<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:14px 0 7px;">Materiales acumulados</div>'+
     '<div class="acum-block">'+matHTML+'</div>'+
     '<div class="brow" style="margin-top:10px;">'+
-    (lastEstado==='terminado'?'<button class="btn btn-p btn-sm" onclick="pdfOrden()">&#128196; PDF resumen</button><button class="btn btn-s btn-sm" id="btnReabrirOrden">&#128275; Reabrir incidencia</button>':'<button class="btn btn-p btn-sm" id="btnCerrarOrden" style="background:var(--green);">&#9989; Cerrar incidencia</button>')+
+    (lastEstado==='terminado'?'<button class="btn btn-p btn-sm" onclick="pdfOrden()">&#128196; PDF resumen</button><button class="btn btn-s btn-sm" id="btnReabrirOrden">&#128275; Reabrir incidencia</button>':((_mostrarCertBtn?'<button class="btn btn-p btn-sm" id="btnCertificarOrden" style="background:var(--green);">&#9989; Certificar</button>':'')+'<button class="btn btn-p btn-sm" id="btnCerrarOrden" style="background:var(--green);">&#9989; Cerrar incidencia</button>'))+
     '<button class="btn btn-s btn-sm" onclick="compartirOrden()">&#128203; Compartir resumen</button>'+
     '</div>';
   var btnC=document.getElementById('btnCerrarOrden');
   if(btnC) btnC.addEventListener('click', cerrarIncidenciaActual);
   var btnR=document.getElementById('btnReabrirOrden');
   if(btnR) btnR.addEventListener('click', reabrirIncidenciaActual);
+  var btnCert=document.getElementById('btnCertificarOrden');
+  if(btnCert) btnCert.addEventListener('click', certificarOrdenActual);
 }
 
 // ===== PDF ORDEN (con desglose por partes) =====
@@ -6398,6 +6518,21 @@ function limpiarFiltros(){ $('busca').value=''; $('buscaF').value=''; refreshCou
 function mostrarDialogoEstado(){
   if(!window.recTmp){ showMsg('msgRes','Genera el parte primero.','warn'); return; }
   $('dlgEstadoSub').textContent='Orden '+window.recTmp.pedido+' — '+window.recTmp.tienda;
+  var btnCert=$('btnCertificarDialogo');
+  if(btnCert){
+    var r=window.recTmp;
+    var cid=r.clienteId||'mercadona';
+    // Índice real de edición: _editIdx puede haberse perdido (ver _finalizarGuardado, mismo
+    // caso), por eso se cae a window._editIdxBackup igual que hace el guardado real.
+    var _idxEdicion=(_editIdx!==null&&_editIdx!==undefined)?_editIdx:window._editIdxBackup;
+    // Contar sin certificar de la misma orden, excluyendo el propio idx si se está editando
+    // (ese ya está en el historial con sus datos viejos) y sumando 1 por el parte actual
+    // que se va a guardar ahora mismo.
+    var sinCert=getH().filter(function(x,i){
+      return i!==_idxEdicion && x.pedido===r.pedido && x.centro===r.centro && (x.clienteId||'mercadona')===cid && !x.bloqueCertificado;
+    }).length+1;
+    btnCert.style.display=(_esAdminOCreador() && sinCert>=4)?'flex':'none';
+  }
   $('dlgEstado').classList.add('show');
 }
 function _mostrarAvisoKmAdicObligatoria(){
