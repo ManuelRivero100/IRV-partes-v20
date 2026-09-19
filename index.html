@@ -811,7 +811,7 @@ textarea{resize:vertical;min-height:72px}
     <div style="margin-top:14px">
       <div class="card"><div class="card-title">&#128269; Buscar</div>
         <div class="g2">
-          <div class="field"><label>Centro / tienda / pedido</label><input id="busca" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);" placeholder="Filtrar&hellip;"></div>
+          <div class="field"><label>Centro / tienda / pedido / nº parte</label><input id="busca" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);" placeholder="Filtrar&hellip;"></div>
           <div class="field"><label>Fecha</label><input id="buscaF" type="date" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);"></div>
         </div>
         <div id="histAdminTools">
@@ -1175,7 +1175,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-10-certificacion-fecha';
+var APP_BUILD_ID = 'build-2026-09-19-autorelleno-averia';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -5644,7 +5644,7 @@ function getOrdenes(filtro){
   var qf=$('buscaF')?($('buscaF').value||''):'';
   var grupos={};
   h.forEach(function(r,idx){
-    var okQ=!q||(r.centro||'').toLowerCase().includes(q)||(r.tienda||'').toLowerCase().includes(q)||(r.pedido||'').includes(q);
+    var okQ=!q||(r.centro||'').toLowerCase().includes(q)||(r.tienda||'').toLowerCase().includes(q)||(r.pedido||'').includes(q)||(r.numParte||'').toLowerCase().includes(q);
     var okF=!qf||(r.fecha===qf);
     if(!okQ||!okF) return;
     var k=getGrupKey(r);
@@ -6271,6 +6271,11 @@ function leer(){
   var tel=cap(/TEL[EÉ]FONO[^:]*[:\s]+(\+?\d[\d\s\-]{6,})/i,t);
   var dir=cap(/DIRECCI[OÓ]N[:\s]+([\s\S]+?)(?=\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ° ]+:|\n|$)/i,t);
   if(dir) dir = dir.replace(/\s+Persona\s+de\s*$/i,'').trim();
+  // Si el texto trae un bloque "Información del centro" con su propia Dirección (más completa,
+  // con número y localidad — los pedidos de Mercadona solo traen el nombre de la calle arriba,
+  // sin número), se prefiere esa sobre la de arriba.
+  var dirCompleta=cap(/Informaci[oó]n del centro:[\s\S]*?Direcci[oó]n:\s*([^\n]+(?:\n(?!\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ° ]*:)[^\n]+)*)/i,t);
+  if(dirCompleta) dir = dirCompleta.replace(/\s*\n\s*/g,' ').trim();
   var jobKeysParte=(curCliente&&curCliente.jobs&&curCliente.jobs.length)?curCliente.jobs:['Climatización','Conductos','Obras'];
   var job=null;
   var clasifParte=cap(/Clasificaci[oó]n[:\s]+([^\n]+)/i,t);
@@ -6326,9 +6331,17 @@ function leer(){
   var obsM=t.match(/OBS\.?\n([\s\S]+?)(?=\nMATERIALES|\nPartes IRV|$)/i);
   var obsVal=obsM?obsM[1].replace(/^\s+|\s+$/g,''):'';
 
-  // Extraer avería reportada (bloque DESCRIPCIÓN del pedido original, ej. pedidos de Mercadona)
-  var averiaM=t.match(/DESCRIPCI[OÓ]N\s*\n?([\s\S]+?)(?=\nMATERIALES|\nPartes IRV|$)/i);
-  var averiaVal=averiaM?averiaM[1].trim():'';
+  // Extraer avería reportada (bloque DESCRIPCIÓN del pedido original, ej. pedidos de Mercadona) —
+  // se detiene en la primera línea en blanco o encabezado en mayúsculas (mismo criterio que ya
+  // usa leerAsg() para este mismo dato), para no arrastrar bloques posteriores como
+  // "COMENTARIOS Y OBSERVACIONES" cuando el texto pegado no trae "MATERIALES"/"Partes IRV".
+  var averiaTop=cap(/DESCRIPCI[OÓ]N\s*\n?([^\n]+(?:\n(?!\s*[A-ZÁÉÍÓÚÑ ]{4,}[:\n])[^\n]+)*)/,t);
+  var causaVal=cap(/Causa:\s*([^\n]+)/i,t);
+  // Se completa con Clasificación (ya extraída más arriba para detectar el tipo de trabajo) y
+  // Causa, en el mismo orden en que aparecen en el PDF de Mercadona, para que la avería
+  // guardada en la incidencia quede completa sin importar si el parte lo crea un técnico
+  // directo o viene de Asignación — ambos caminos leen el mismo texto pegado.
+  var averiaVal=[averiaTop&&averiaTop.trim(), clasifParte&&('Clasificación: '+clasifParte.trim()), causaVal&&('Causa: '+causaVal.trim())].filter(function(s){return s;}).join('\n');
 
   // Rellenar campos
   var n=0;
