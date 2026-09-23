@@ -939,6 +939,17 @@ textarea{resize:vertical;min-height:72px}
     </div>
   </div>
 </div>
+<div class="dialogo" id="dlgTerminarGuardado">
+  <div class="dialogo-box">
+    <div class="dialogo-titulo">&#128203; &iquest;C&oacute;mo queda la incidencia?</div>
+    <div class="dialogo-sub" id="dlgTerminarGuardadoSub"></div>
+    <div class="brow" style="margin-bottom:10px;">
+      <button class="btn btn-amber" style="flex:1;justify-content:center" onclick="_confirmarTerminarGuardado('en-ejecucion')">&#9203; Sigue abierta</button>
+      <button class="btn btn-p" style="flex:1;justify-content:center" onclick="_confirmarTerminarGuardado('terminado')">&#9989; Cerrar incidencia</button>
+    </div>
+    <button class="btn btn-s btn-sm btn-full" onclick="$('dlgTerminarGuardado').classList.remove('show');">&#8592; Regresar</button>
+  </div>
+</div>
 <div class="dialogo" id="dlgSinConexionAdmin">
   <div class="dialogo-box">
     <div class="dialogo-titulo">&#128225; Sin conexi&oacute;n</div>
@@ -1175,7 +1186,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-19-autorelleno-averia';
+var APP_BUILD_ID = 'build-2026-09-20-parte-sin-guardar';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3939,9 +3950,36 @@ function generarCore(){
       });
     })()
   };
+  _guardarBorradorParte();
   document.querySelectorAll('.win').forEach(function(win){ win.classList.remove('active'); });
   $('w-result').classList.add('active');
   window.scrollTo(0,0);
+}
+// Guarda de inmediato en Firestore una copia del parte recién generado, identificada igual
+// que tendría el parte real (fecha+pedido+centro+cliente) — así, si el técnico nunca llega a
+// guardarlo de verdad (olvido, pérdida de conexión, cierre de la app), el dato no se pierde:
+// pasados 15 minutos sin guardarse, el panel de avisos del administrador lo muestra (ver
+// renderAsgAdmin()). Se sobrescribe cada vez que se regenera el mismo parte — no crea uno
+// nuevo por cada regeneración mientras el técnico sigue ajustando datos antes de guardar.
+function _guardarBorradorParte(){
+  if(typeof _db==='undefined' || !_db || !window.recTmp) return;
+  var r=window.recTmp;
+  if(!r.pedido || !r.fecha || !r.centro) return;
+  var docId=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
+  var datos=Object.assign({}, r, {
+    obs: ($('obs')&&$('obs').value.trim())||'',
+    tecnicoGenerador: (window._sesion&&window._sesion.nombre)||'',
+    generadoEn: Date.now()
+  });
+  _db.collection('partesSinGuardar').doc(docId).set(datos).catch(function(){});
+}
+// Borra el borrador correspondiente cuando el parte sí se termina guardando de verdad —
+// llamada desde los 3 caminos de _finalizarGuardado() que sí resultan en un guardado real
+// (nunca en el camino de "cancelar reemplazo", donde de verdad no se guardó nada).
+function _borrarBorradorParte(r){
+  if(typeof _db==='undefined' || !_db || !r || !r.pedido) return;
+  var docId=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
+  _db.collection('partesSinGuardar').doc(docId).delete().catch(function(){});
 }
 
 function copiar(){
@@ -4775,12 +4813,23 @@ function renderAsgAdmin() {
   Promise.all([
     _db.collection('incidencias').where('vistaAdmin','==',false).get(),
     _db.collection('notificacionesTecnico').get(),
-    _db.collection('materialesFlotantes').get()
+    _db.collection('materialesFlotantes').get(),
+    _db.collection('partesSinGuardar').get()
   ]).then(function(resultados){
     var snap = resultados[0];
     var snapNotif = resultados[1];
     var snapMatFlotante = resultados[2];
-    if (snap.empty && snapNotif.empty && snapMatFlotante.empty) { sec.style.display = 'none'; el.innerHTML=''; return; }
+    // Solo se muestran los que ya llevan 15 min o más sin guardarse de verdad — comparado
+    // contra la hora actual de quien mira, no depende de nada "corriendo" en segundo plano
+    // (ver _guardarBorradorParte()/_borrarBorradorParte()).
+    var LIMITE_SIN_GUARDAR_MS = 15*60*1000;
+    var ahoraMs = Date.now();
+    var partesSinGuardarPendientes=[];
+    resultados[3].forEach(function(doc){
+      var d=doc.data();
+      if(ahoraMs-(d.generadoEn||0) >= LIMITE_SIN_GUARDAR_MS) partesSinGuardarPendientes.push(Object.assign({id:doc.id}, d));
+    });
+    if (snap.empty && snapNotif.empty && snapMatFlotante.empty && !partesSinGuardarPendientes.length) { sec.style.display = 'none'; el.innerHTML=''; return; }
     var html = '';
     snap.forEach(function(doc){
       var d = doc.data();
@@ -4829,6 +4878,16 @@ function renderAsgAdmin() {
           + '</div>';
       }
     }
+    partesSinGuardarPendientes.forEach(function(p){
+      var refs=[]; if(p.pedido) refs.push('Orden '+escHtml(p.pedido)); if(p.centro) refs.push('Centro '+escHtml(p.centro));
+      html += '<div class="act-list-item" onclick="verParteSinGuardarAviso(\''+p.id+'\')">'
+        + '<span class="act-num" style="color:var(--red);">&#128203;</span>'
+        + '<div><div class="act-info">'+escHtml(p.tienda||'')+'</div>'
+        + '<div class="act-sub">'+(refs.length?refs.join(' · ')+' · ':'')+escHtml(p.tecnicoGenerador||'')+' generó un parte y no lo guardó</div>'
+        + '<div class="act-sub" style="color:var(--amber);font-weight:600;">&#9888;&#65039; Generado el '+_fmtFechaHora(p.generadoEn)+'</div>'
+        + '</div>'
+        + '</div>';
+    });
     el.innerHTML = html;
     sec.style.display = 'block';
   }).catch(function(){ sec.style.display = 'none'; });
@@ -4842,6 +4901,72 @@ function verMaterialFlotanteAviso(nombreGrupo){
 }
 function verNotificacionTecnico(id){
   _db.collection('notificacionesTecnico').doc(id).delete().then(renderAsgAdmin).catch(function(){});
+}
+function verParteSinGuardarAviso(id){
+  _db.collection('partesSinGuardar').doc(id).get().then(function(doc){
+    if(!doc.exists){ showMsg('msgRes','Este parte ya no está pendiente.','warn'); return; }
+    var d=doc.data();
+    var refs=[]; if(d.pedido) refs.push('Orden '+escHtml(d.pedido)); if(d.centro) refs.push('Centro '+escHtml(d.centro));
+    var fF=d.fecha?d.fecha.split('-').reverse().join('/'):'';
+    var html = '<div class="card"><div class="card-title">&#128203; '+escHtml(d.tienda||'')+'</div>'
+      + '<div class="rrow info-row" style="color:var(--amber);font-weight:600;"><span class="rc">&#9888;&#65039; Aviso</span><span class="rl">Generado el '+_fmtFechaHora(d.generadoEn)+', sin guardar</span><span class="rv"></span></div>'
+      + (refs.length?'<div class="rrow info-row"><span class="rc">Datos</span><span class="rl">'+refs.join(' · ')+'</span><span class="rv"></span></div>':'')
+      + '<div class="rrow info-row"><span class="rc">Técnico</span><span class="rl">'+escHtml(d.tecnicoGenerador||'')+'</span><span class="rv"></span></div>'
+      + '<div class="rrow info-row"><span class="rc">Fecha del parte</span><span class="rl">'+fF+'</span><span class="rv"></span></div>'
+      + (d.obs?'<div class="rrow obs-row"><span class="rc">Descripción</span><span class="rl">'+escHtml(d.obs).replace(/\n/g,'<br>')+'</span><span class="rv"></span></div>':'')
+      + '</div>'
+      + '<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:14px 0 7px;">Contenido generado</div>'
+      + (d.detalle||'')
+      + '<button class="btn btn-p btn-full" style="margin-top:12px;" onclick="_terminarDeGuardarParte(\''+id+'\')">&#9989; Terminar de guardar</button>'
+      + '<button class="btn btn-d btn-full" style="margin-top:8px;" onclick="_descartarParteSinGuardar(\''+id+'\')">&#128465;&#65039; Descartar</button>'
+      + '<button class="btn btn-s btn-full" style="margin-top:8px;" onclick="goTo(\'w-clientes\')">&#8592; Volver</button>';
+    $('consultaAsgBody').innerHTML = html;
+    document.querySelectorAll('.win').forEach(function(w){w.classList.remove('active');});
+    $('w-consultaAsg').classList.add('active');
+  });
+}
+function _descartarParteSinGuardar(id){
+  _confirmarApp('¿Descartar este parte sin guardar? No podrá recuperarse.', function(){
+    _db.collection('partesSinGuardar').doc(id).delete().then(function(){
+      showMsg('msgRes','Descartado.','success');
+      goTo('w-clientes');
+      renderAsgAdmin();
+    }).catch(function(){ showMsg('msgRes','No se pudo descartar. Comprueba tu conexión.','error'); });
+  });
+}
+var _parteSinGuardarActual=null;
+function _terminarDeGuardarParte(id){
+  _db.collection('partesSinGuardar').doc(id).get().then(function(doc){
+    if(!doc.exists){ showMsg('msgRes','Este parte ya no está pendiente.','warn'); return; }
+    _parteSinGuardarActual={id:id, datos:doc.data()};
+    var d=_parteSinGuardarActual.datos;
+    $('dlgTerminarGuardadoSub').textContent='Orden '+(d.pedido||'')+' — '+(d.tienda||'');
+    $('dlgTerminarGuardado').classList.add('show');
+  });
+}
+// El admin elige aquí lo que el técnico nunca llegó a elegir (Sigue abierta / Cerrar) y el
+// parte se guarda como real, con el técnico que lo generó como creadoPor — no el admin que
+// lo termina de guardar (ver el ajuste de creadoPor en _subirParteAFirestore()).
+function _confirmarTerminarGuardado(estado){
+  $('dlgTerminarGuardado').classList.remove('show');
+  if(!_parteSinGuardarActual) return;
+  var d=_parteSinGuardarActual.datos;
+  var id=_parteSinGuardarActual.id;
+  var r=Object.assign({}, d);
+  delete r.generadoEn;
+  r.estado=estado;
+  r.creadoPor=d.tecnicoGenerador||'';
+  delete r.tecnicoGenerador;
+  var h=getH();
+  var _idxDup=h.findIndex(function(x){ return x.fecha===r.fecha&&x.pedido===r.pedido&&x.centro===r.centro; });
+  if(_idxDup>=0){ h[_idxDup]=r; } else { h.push(r); }
+  setH(h);
+  _subirParteAFirestore(r, 'Terminado de guardar por '+((window._sesion&&window._sesion.nombre)||'admin')+' — generado por '+(d.tecnicoGenerador||'?'));
+  _db.collection('partesSinGuardar').doc(id).delete().catch(function(){});
+  _parteSinGuardarActual=null;
+  showMsg('msgRes','Parte guardado correctamente.','success');
+  goTo('w-clientes');
+  renderAsgAdmin();
 }
 function verAsgAdminAviso(id, clienteId) {
   _db.collection('incidencias').doc(id).get().then(function(doc){
@@ -7150,7 +7275,11 @@ function _subirParteAFirestore(parte, razon){
     docId = docId.replace(/[\/\s]/g,'-');
     var datos = Object.assign({}, parte, {
       tecnicoPrincipal: (parte.tecnicos&&parte.tecnicos[0])||window._sesion.nombre,
-      creadoPor: window._sesion.nombre,
+      // Respeta un creadoPor ya presente en el propio parte (caso "Terminar de guardar" desde
+      // el aviso de parte sin guardar, donde el autor real es el técnico que lo generó, no el
+      // administrador que lo termina de guardar) — en el resto de casos parte.creadoPor nunca
+      // viene seteado de antemano, así que cae igual que siempre a la sesión actual.
+      creadoPor: parte.creadoPor||window._sesion.nombre,
       fechaModificacion: Date.now(),
       ultimaModificacionRazon: razon||'Parte nuevo'
     });
@@ -7224,6 +7353,7 @@ function _finalizarGuardado(estado){
       }
     }
     _editIdx=null; window._editIdxBackup=null;
+    _borrarBorradorParte(r);
     _subirParteAFirestore(r,'Parte editado');
     showMsg('msgRes','Parte actualizado.','success');
     $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
@@ -7235,6 +7365,7 @@ function _finalizarGuardado(estado){
   if(_idxDup>=0){
     _confirmarApp('Ya existe un parte con la misma fecha, centro y orden.\n¿Reemplazar el parte existente?\n(Cancela para descartar el nuevo)', function(){
       h[_idxDup]=r; setH(h);
+      _borrarBorradorParte(r);
       _subirParteAFirestore(r,'Parte reemplazado (mismo pedido/fecha/centro)');
       showMsg('msgRes','Parte reemplazado.','success');
       $('gbtn').textContent='\u2713 Guardado'; $('gbtn').disabled=true; $('gbtn').style.opacity='.6';
@@ -7245,6 +7376,7 @@ function _finalizarGuardado(estado){
     return;
   }
   h.push(r); setH(h);
+  _borrarBorradorParte(r);
   _subirParteAFirestore(r);
   if (_asgTecActual && _asgTecActual.id) {
     // El estado real ya lo deja correcto _actualizarIncidenciaPorOrden() (llamado dentro de
