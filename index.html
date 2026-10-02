@@ -1186,7 +1186,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-09-20-parte-sin-guardar';
+var APP_BUILD_ID = 'build-2026-10-02-dieta-edicion-y-numparte-0000';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3446,6 +3446,10 @@ function generar(){
   // sido usado hace poco por otro técnico offline y aún no sincronizado; ese caso límite
   // se resuelve manualmente si llega a ocurrir.
   var numParteVal=($('numParte').value||'').trim();
+  // Excepción "0000": control interno, nunca aplica a Mercadona — se deja repetir sin
+  // comprobar duplicados.
+  var _esMercadonaActual=curCliente&&curCliente.tipo==='mercadona';
+  if(numParteVal==='0000' && !_esMercadonaActual){ _generarPaso2(); return; }
   // Editando un parte existente sin cambiar su número: es el mismo documento reemplazándose
   // a sí mismo, así que no tiene sentido (ni es seguro) comprobar si "ya está usado" — lo
   // encontraría a él mismo en Firestore y bloquearía guardar el propio parte.
@@ -3598,8 +3602,13 @@ function generarCore(){
   var _tecsCat=getTecnicos();
   var _matchTecPrincipal=_tecsCat.find(function(t){ return t.nombre.toLowerCase()===_tecPrincipalActual.toLowerCase(); });
   if(_matchTecPrincipal) _tecPrincipalActual=_matchTecPrincipal.nombre;
-  var same=hist.filter(function(x){
-    return x.fecha===fecha && x.tecnicos && x.tecnicos[0] && x.tecnicos[0].toLowerCase()===_tecPrincipalActual.toLowerCase();
+  // Índice real de edición: _editIdx puede haberse perdido (ver _finalizarGuardado, mismo
+  // caso), por eso se cae a window._editIdxBackup igual que hace el guardado real. Se excluye
+  // de "same" para no contar la versión vieja del propio parte que se está editando como si
+  // fuera "otro parte anterior" (duplicaba minutos hacia la media dieta y el auto-enlace).
+  var _idxEdicionActual=(_editIdx!==null&&_editIdx!==undefined)?_editIdx:window._editIdxBackup;
+  var same=hist.filter(function(x,i){
+    return i!==_idxEdicionActual && x.fecha===fecha && x.tecnicos && x.tecnicos[0] && x.tecnicos[0].toLowerCase()===_tecPrincipalActual.toLowerCase();
   });
 
   // Pedido: Mercadona usa campo manual, no-Mercadona genera IRV, Obras Mercadona usa actObras
