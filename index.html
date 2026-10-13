@@ -1186,7 +1186,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-10-02-dieta-edicion-y-numparte-0000';
+var APP_BUILD_ID = 'build-2026-10-13-agenda-borra-local';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1319,10 +1319,18 @@ function _sincronizarAgendaDesdeFirestore(){
   _db.collection('agenda').get().then(function(snap){
     var a=getAgenda();
     var cambiado=false;
+    var clavesReales={};
     snap.forEach(function(doc){
       var d=doc.data();
       var k=agendaKey(d.clienteId,d.centro);
+      clavesReales[k]=true;
       if(JSON.stringify(a[k])!==JSON.stringify(d)){ a[k]=d; cambiado=true; }
+    });
+    // La respuesta trae SIEMPRE la colección completa, así que cualquier clave local que ya
+    // no esté ahí fue borrada de verdad en Firestore (no una tienda real que falló al leer) —
+    // se borra también en local para que un borrado se refleje en todos los dispositivos.
+    Object.keys(a).forEach(function(k){
+      if(!clavesReales[k]){ delete a[k]; cambiado=true; }
     });
     if(cambiado) setAgenda(a);
     // Actualizar el badge también aquí, por si esta sincronización termina después de que
