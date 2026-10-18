@@ -123,6 +123,7 @@ textarea{resize:vertical;min-height:72px}
 .btn-sm{padding:5px 11px;font-size:.8rem}
 .btn-full{width:100%;justify-content:center}
 .brow{display:flex;gap:8px;flex-wrap:wrap;margin-top:5px}
+#histAdminTools{display:contents}
 .msg{padding:9px 13px;border-radius:var(--r-sm);font-size:.85rem;font-weight:500;margin-bottom:11px;display:none;border-left:3px solid;align-items:flex-start;gap:7px}
 .msg.show{display:flex}
 .msg.error{background:var(--red-light);color:var(--red);border-color:var(--red)}
@@ -814,11 +815,9 @@ textarea{resize:vertical;min-height:72px}
           <div class="field"><label>Centro / tienda / pedido / nº parte</label><input id="busca" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);" placeholder="Filtrar&hellip;"></div>
           <div class="field"><label>Fecha</label><input id="buscaF" type="date" oninput="refreshCounts();renderSearchResults();if($(&apos;secView&apos;).style.display!==&apos;none&apos;)verSec(_secActual);"></div>
         </div>
-        <div id="histAdminTools">
         <div class="brow">
-          <button class="btn btn-d btn-sm" id="btnBorrarHist" onclick="pedirBorrarHist()">&#128465;&#65039; Borrar historial</button>
+          <div id="histAdminTools"><button class="btn btn-d btn-sm" id="btnBorrarHist" onclick="pedirBorrarHist()">&#128465;&#65039; Borrar historial</button></div>
           <button class="btn btn-s btn-sm" onclick="limpiarFiltros()">&#10005; Limpiar filtros</button>
-        </div>
         </div>
         <div id="searchResults" style="display:none;margin-top:10px;"></div>
         <div id="confirmBorrar" style="display:none;margin-top:10px;padding:12px;background:var(--red-light);border:1px solid rgba(192,57,43,.2);border-radius:var(--r-sm)">
@@ -1186,7 +1185,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-10-13-agenda-borra-local';
+var APP_BUILD_ID = 'build-2026-10-18-limpiar-filtros-tecnico';
 
 var $ = function(id){ return document.getElementById(id); };
 
