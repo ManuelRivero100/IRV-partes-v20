@@ -1185,7 +1185,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-10-18-limpiar-filtros-tecnico';
+var APP_BUILD_ID = 'build-2026-10-19-numparte-0000-autorrelleno';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -5135,7 +5135,7 @@ function ejecutarAsgTec() {
       $('pedido').value = d.pedido;
       if (d.job === 'Obras') _actObrasSeleccionada = d.pedido;
     }
-    else { _pedidoNoMerc = d.pedido; $('pedidoGenDisplay').textContent = d.pedido; }
+    else { _pedidoNoMerc = d.pedido; $('pedidoGenDisplay').textContent = d.pedido; _autoNumParte0000(d.pedido, d.centro); }
   }
   // Si la asignación no traía km/tr/dir/tel/tienda, completar desde la agenda compartida
   var datos = { centro:d.centro, tienda:d.tienda, dir:d.dir, tel:d.tel, km:d.km, tr:d.tr, job:d.job, descripcion:d.descripcion };
@@ -6188,6 +6188,7 @@ function seleccionarRefNoMerc(idx){
   // Si la orden sigue en ejecución, rellenar el número de pedido
   if((r.estado||'terminado')==='en-ejecucion' && r.pedido){
     if(_pedidoNoMerc!==r.pedido){ _pedidoNoMerc=r.pedido; $('pedidoGenDisplay').textContent=r.pedido; }
+    _autoNumParte0000(r.pedido, r.centro);
   }
   // Guardar el código del centro para no crear uno nuevo
   window._centroSeleccionado=r.centro;
@@ -6943,6 +6944,7 @@ function seleccionarOrdenInicioFormPedido(pedido, centro){
   if(!esMerc){
     _pedidoNoMerc=pedido;
     $('pedidoGenDisplay').textContent=pedido;
+    _autoNumParte0000(pedido, centro);
   }
   if(pedido) ocultarLectura();
   // Descripción de la incidencia: no hay parte local (por eso se llegó por este camino),
@@ -7836,6 +7838,29 @@ function _rellenarFormulario(datos){
   var acC=$('acCentro'); if(acC) acC.classList.remove('show');
   _bloquearCamposAutorrellenados();
 }
+// Incidencia de un cliente NO Mercadona abierta con el nº de parte "0000" (la misma excepción de generar()):
+// cada parte nuevo de esa incidencia sale con "0000" ya escrito. El técnico puede cambiarlo; si pone otro
+// número, generar() comprueba que no esté repetido como siempre. Mira los partes guardados en este equipo y,
+// con conexión, también los de Firestore (por si el primero lo hizo otro técnico). Nunca pisa lo ya escrito.
+function _autoNumParte0000(pedido, centro){
+  var campo=$('numParte');
+  if(!pedido || !campo || _editIdx!==null || !curCliente || curCliente.tipo==='mercadona') return;
+  var cid=curCliente.id;
+  function aplicar(partes){
+    if(campo.value.trim()) return;
+    var orden=partes.filter(function(p){ return (p.clienteId||'mercadona')===cid && p.numParte; });
+    if(!orden.length) return;
+    orden.sort(function(a,b){ return (a.fecha||'').localeCompare(b.fecha||'') || ((tm(a.arr)||0)-(tm(b.arr)||0)); });
+    if(orden[0].numParte==='0000') campo.value='0000';
+  }
+  var locales=getH().filter(function(p){ return p.pedido===pedido && (p.centro||'')===(centro||''); });
+  aplicar(locales);
+  if(typeof _db!=='undefined' && _db){
+    _db.collection('partes').where('pedido','==',pedido).where('centro','==',centro||'').get().then(function(snap){
+      aplicar(locales.concat(snap.docs.map(function(d){ return d.data(); })));
+    }).catch(function(e){ console.warn('Nº parte 0000: no se pudo consultar Firestore', e); });
+  }
+}
 function rellenarDatos(idx, soloOrdenActiva){
   var h=getH(); var r=h[idx]; if(!r) return;
   // Descripción de la incidencia: tomar la del último parte de esta misma orden
@@ -7849,6 +7874,7 @@ function rellenarDatos(idx, soloOrdenActiva){
     catJob: soloOrdenActiva?r.catJob:null,
     descripcion: ultimo.descIncidencia||ultimo.averiaReportada||''
   });
+  if(soloOrdenActiva) _autoNumParte0000(r.pedido, r.centro);
 }
 function rellenarDesdeAgenda(clienteId,centro){
   var ag=agendaBuscar(clienteId,centro); if(!ag) return;
