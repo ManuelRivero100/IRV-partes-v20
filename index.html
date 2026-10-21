@@ -578,6 +578,10 @@ textarea{resize:vertical;min-height:72px}
       </div>
       <input type="hidden" id="nc-tipo" value="fijo">
     </div>
+    <div class="field"><label>Asignación</label>
+      <button type="button" id="nc-asig" class="btn btn-p btn-full" onclick="ncToggleAsig()">Con asignación</button>
+      <div id="nc-asig-info" style="font-size:.78rem;color:var(--text2);margin-top:5px;">Solo el técnico asignado a la incidencia puede continuarla.</div>
+    </div>
     <div class="field"><label>Tipos de trabajo (separados por coma)</label><input id="nc-jobs" placeholder="Climatización, Instalación eléctrica, Reformas"></div>
     <div class="msg" id="msgNc"></div>
     <div class="brow"><button class="btn btn-p btn-full" onclick="guardarNuevoCliente()">&#128190; Crear cliente</button></div>
@@ -1185,7 +1189,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-10-19-numparte-0000-autorrelleno';
+var APP_BUILD_ID = 'build-2026-10-21-numparte-0000-sin-asignacion';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1308,7 +1312,11 @@ function _sincronizarClientesDesdeFirestore(){
     snap.forEach(function(doc){
       var d=doc.data();
       var idx=extra.findIndex(function(c){ return c.id===d.id; });
-      if(idx>=0) extra[idx]=d; else { extra.push(d); cambiado=true; }
+      if(idx>=0){
+        var loc=extra[idx];
+        if(Object.keys(d).some(function(k){ return JSON.stringify(d[k])!==JSON.stringify(loc[k]); }) || Object.keys(loc).some(function(k){ return !(k in d); })) cambiado=true;
+        extra[idx]=d;
+      } else { extra.push(d); cambiado=true; }
     });
     if(cambiado){ localStorage.setItem('pm_clientes',JSON.stringify(extra)); renderClientes(); }
   }).catch(function(){});
@@ -1492,16 +1500,25 @@ function setNcTipo(v,btn){
   btn.classList.add('active');
   $('nc-tipo').value=v;
 }
+var _ncAsig=true;
+function ncPonerAsig(v){
+  _ncAsig=v;
+  $('nc-asig').className='btn btn-full '+(v?'btn-p':'btn-s');
+  $('nc-asig-info').textContent=v
+    ? 'Solo el técnico asignado a la incidencia puede continuarla.'
+    : 'Sin asignación: cualquier técnico principal puede continuar la orden y solo el administrador la cierra o reabre.';
+}
+function ncToggleAsig(){ ncPonerAsig(!_ncAsig); }
 function guardarNuevoCliente(){
   var n=$('nc-nombre').value.trim(); if(!n){ showMsg('msgNc','Introduce el nombre del cliente.','error'); return; }
   var jobs=$('nc-jobs').value.split(',').map(function(j){ return j.trim(); }).filter(Boolean);
   if(!jobs.length) jobs=['Trabajos'];
   var id='c_'+Date.now();
-  var c={id:id,nombre:n,tipo:_ncTipo,jobs:jobs,codigos:false,precios:_ncTipo==='particular'};
+  var c={id:id,nombre:n,tipo:_ncTipo,jobs:jobs,codigos:false,precios:_ncTipo==='particular',conAsignacion:_ncAsig};
   var extra=JSON.parse(localStorage.getItem('pm_clientes')||'[]');
   extra.push(c); localStorage.setItem('pm_clientes',JSON.stringify(extra));
   _subirClienteAFirestore(c);
-  $('nc-nombre').value=''; $('nc-jobs').value='';
+  $('nc-nombre').value=''; $('nc-jobs').value=''; ncPonerAsig(true);
   renderClientes(); goTo('w-clientes');
 }
 
@@ -3589,7 +3606,7 @@ function generarCore(){
     var _pedidoCheck=($('pedido').value||'').trim();
     if(_pedidoCheck){
       var _regCheck=_registroGlobal(_pedidoCheck, curCliente?curCliente.id:'mercadona');
-      if(_regCheck && _regCheck.tecnicoPrincipal && _regCheck.tecnicoPrincipal.toLowerCase()!==window._sesion.nombre.toLowerCase()){
+      if(_regCheck && !_clienteSinAsignacion(curCliente?curCliente.id:'mercadona') && _regCheck.tecnicoPrincipal && _regCheck.tecnicoPrincipal.toLowerCase()!==window._sesion.nombre.toLowerCase()){
         _mostrarBloqueoIncidenciaDeOtro();
         return;
       }
@@ -5468,11 +5485,8 @@ function _getEstadoIncidencia(pedido, centro) {
 function renderClientes(){
   var lista=getClientes();
   var h=getHVisible();
-  // Técnico: mostrar solo clientes donde tiene partes
-  if(window._sesion && window._sesion.rol==='tecnico'){
-    var clientesConPartes=new Set(h.map(function(r){ return r.clienteId||'mercadona'; }));
-    lista=lista.filter(function(c){ return clientesConPartes.has(c.id); });
-  }
+  // Todos los clientes salen al técnico principal, tenga o no partes en ellos (sin partes, su historial sale vacío
+  // y puede generar una incidencia con parte nuevo).
   var stats={};
   lista.forEach(function(c){stats[c.id]={activas:0,ultimaFin:''};});
   var ordenes={};
@@ -5495,6 +5509,20 @@ function renderClientes(){
       }
     }
   });
+  // Clientes sin asignación: cuentan todas sus órdenes activas, porque cualquier técnico principal puede continuarlas
+  if(_esTec){
+    var _sinAsigIds={};
+    lista.forEach(function(c){ if(c.conAsignacion===false) _sinAsigIds[c.id]=true; });
+    var _regG={};
+    try { _regG=JSON.parse(localStorage.getItem('pm_registro_global')||'{}'); } catch(e) { console.warn('IRV: no se pudo leer pm_registro_global', e); }
+    Object.keys(_regG).forEach(function(kg){
+      var g=_regG[kg];
+      if(!_sinAsigIds[g.clienteId]) return;
+      var k=g.clienteId+'||'+g.pedido+'||'+(g.centro||'');
+      if(!ordenes[k]) ordenes[k]={cid:g.clienteId,estado:g.estado,fecha:'',esPrincipal:true};
+    });
+    Object.values(ordenes).forEach(function(o){ if(_sinAsigIds[o.cid]) o.esPrincipal=true; });
+  }
   Object.values(ordenes).forEach(function(o){
     if(!stats[o.cid]) return;
     if(o.estado==='en-ejecucion' && (!_esTec || o.esPrincipal)){stats[o.cid].activas++;}
@@ -5820,6 +5848,7 @@ function getTD(fecha){
 
 function mostrarDlgInicioOrden(){
   var clienteId=curCliente?curCliente.id:'mercadona';
+  var sinAsig=_clienteSinAsignacion(clienteId);
   var h=getH();
   var esTecnico=window._sesion && window._sesion.rol==='tecnico';
   var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
@@ -5830,7 +5859,7 @@ function mostrarDlgInicioOrden(){
     if((r.clienteId||'mercadona')!==clienteId) continue;
     var estadoReal=_getEstadoIncidencia(r.pedido, r.centro) || r.estado || 'terminado';
     if(estadoReal!=='en-ejecucion') continue;
-    if(esTecnico){
+    if(esTecnico && !sinAsig){
       var reg=_registroGlobal(r.pedido, r.clienteId||'mercadona');
       var esMio = reg ? (reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()===miNombre)
                        : (r.tecnicos && r.tecnicos[0] && r.tecnicos[0].toLowerCase()===miNombre);
@@ -5848,7 +5877,7 @@ function mostrarDlgInicioOrden(){
       Object.keys(regGlobal).forEach(function(key){
         var g=regGlobal[key];
         var pedido=g.pedido; if(!pedido) return;
-        if(!g.tecnicoPrincipal || g.tecnicoPrincipal.toLowerCase()!==miNombre) return;
+        if(!sinAsig && (!g.tecnicoPrincipal || g.tecnicoPrincipal.toLowerCase()!==miNombre)) return;
         if(g.estado!=='en-ejecucion') return;
         if((g.clienteId||'mercadona')!==clienteId) return;
         var k=pedido+'||'+g.centro;
@@ -6052,6 +6081,8 @@ function verOrden(enc){
 
   var _sinCertOrden=partesTodas.filter(function(p){ return !p.r.bloqueCertificado; }).length;
   var _mostrarCertBtn=_esAdminOCreador() && lastEstado==='en-ejecucion' && _sinCertOrden>=4;
+  // En un cliente sin asignación solo el administrador cierra y reabre
+  var _soloAdmin=_clienteSinAsignacion(g.clienteId||'mercadona') && !_esAdminOCreador();
 
   var ordenTitle=g.actObras?g.actObras+' &middot; '+g.job:'Orden '+pedido+' &middot; '+g.job;
 
@@ -6070,7 +6101,7 @@ function verOrden(enc){
     '<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:14px 0 7px;">Materiales acumulados</div>'+
     '<div class="acum-block">'+matHTML+'</div>'+
     '<div class="brow" style="margin-top:10px;">'+
-    (lastEstado==='terminado'?'<button class="btn btn-p btn-sm" onclick="pdfOrden()">&#128196; PDF resumen</button><button class="btn btn-s btn-sm" id="btnReabrirOrden">&#128275; Reabrir incidencia</button>':((_mostrarCertBtn?'<button class="btn btn-p btn-sm" id="btnCertificarOrden" style="background:var(--green);">&#9989; Certificar</button>':'')+'<button class="btn btn-p btn-sm" id="btnCerrarOrden" style="background:var(--green);">&#9989; Cerrar incidencia</button>'))+
+    (lastEstado==='terminado'?'<button class="btn btn-p btn-sm" onclick="pdfOrden()">&#128196; PDF resumen</button>'+(_soloAdmin?'':'<button class="btn btn-s btn-sm" id="btnReabrirOrden">&#128275; Reabrir incidencia</button>'):((_mostrarCertBtn?'<button class="btn btn-p btn-sm" id="btnCertificarOrden" style="background:var(--green);">&#9989; Certificar</button>':'')+(_soloAdmin?'':'<button class="btn btn-p btn-sm" id="btnCerrarOrden" style="background:var(--green);">&#9989; Cerrar incidencia</button>')))+
     '<button class="btn btn-s btn-sm" onclick="compartirOrden()">&#128203; Compartir resumen</button>'+
     '</div>';
   var btnC=document.getElementById('btnCerrarOrden');
@@ -6282,13 +6313,19 @@ function buscarPorOrden(val){
   var esTecnico=window._sesion && window._sesion.rol==='tecnico';
   var esTecnicoPuro=esTecnico && !window._sesion.multiRol;
   var miNombre=esTecnico?window._sesion.nombre.toLowerCase():null;
+  var sinAsig=_clienteSinAsignacion(curCliente?curCliente.id:'mercadona');
   // Bloqueo por registro global (funciona offline): solo en coincidencia EXACTA y solo para técnico
   if(esTecnico){
     var reg=_registroGlobal(val.trim(), curCliente && curCliente.id);
     if(reg){
-      var esDeOtro = reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()!==miNombre;
+      var esDeOtro = !sinAsig && reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()!==miNombre;
       if(esDeOtro){
         _mostrarBloqueoIncidenciaDeOtro();
+        return;
+      }
+      if(reg.estado==='terminado' && sinAsig){
+        box.innerHTML='<div class="ac-item" style="color:var(--text2)"><span style="margin-right:6px;">&#128274;</span>Orden '+val.trim()+' &mdash; cerrada. Solo el administrador puede reabrirla.</div>';
+        box.classList.add('show');
         return;
       }
       if(reg.estado==='terminado'){
@@ -6319,7 +6356,10 @@ function buscarPorOrden(val){
     seleccionarOrdenActiva(exactaIdx);
     return;
   }
-  if(esTecnicoPuro){
+  if(esTecnico && sinAsig){
+    box.innerHTML='<div class="ac-item" style="color:var(--text2)"><span style="margin-right:6px;">&#128274;</span>'+exacta.pedido+' &mdash; '+(exacta.tienda||exacta.centro)+
+      ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada &middot; Solo el administrador puede reabrirla</span></div>';
+  } else if(esTecnicoPuro){
     box.innerHTML='<div class="ac-item" style="color:var(--text2)" onclick="solicitarReabrirPorPedido(\''+exacta.pedido.replace(/'/g,"\\'")+'\')">'+
       '<span style="margin-right:6px;">&#128274;</span>'+exacta.pedido+' &mdash; '+(exacta.tienda||exacta.centro)+
       ' <span class="badge badge-g" style="font-size:.66rem;">Cerrada &middot; Solicitar reabrir</span></div>';
@@ -6679,8 +6719,18 @@ function verOrdenDesdeSearch(enc){
 
 function limpiarFiltros(){ $('busca').value=''; $('buscaF').value=''; refreshCounts(); renderSearchResults(); }
 
+// Cliente sin asignación (conAsignacion:false en su ficha): cualquier técnico principal continúa sus órdenes.
+function _clienteSinAsignacion(id){
+  var c=getClientes().find(function(x){ return x.id===id; });
+  return !!(c && c.conAsignacion===false);
+}
 function mostrarDialogoEstado(){
   if(!window.recTmp){ showMsg('msgRes','Genera el parte primero.','warn'); return; }
+  // En un cliente sin asignación no se pregunta: la orden sigue abierta y solo el administrador la cierra o reabre.
+  if(_clienteSinAsignacion(window.recTmp.clienteId||'mercadona')){
+    guardarConEstado(_getEstadoIncidencia(window.recTmp.pedido, window.recTmp.centro) || 'en-ejecucion');
+    return;
+  }
   $('dlgEstadoSub').textContent='Orden '+window.recTmp.pedido+' — '+window.recTmp.tienda;
   var btnCert=$('btnCertificarDialogo');
   if(btnCert){
@@ -7130,6 +7180,7 @@ function renderHistTecBtns(){
   var rol = window._sesion && window._sesion.rol;
   var h = getHVisible();
   var cliId = curCliente && curCliente.id;
+  var sinAsig = _clienteSinAsignacion(cliId);
   var badgeStyle='position:absolute;top:-6px;right:-8px;background:var(--green);color:#06210f;font-size:.6rem;font-weight:800;min-width:15px;height:15px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;border:2px solid var(--surface);';
 
   if(rol === 'tecnico'){
@@ -7139,7 +7190,7 @@ function renderHistTecBtns(){
     h.forEach(function(r){
       if((r.clienteId||'mercadona') !== cliId) return;
       var reg=_registroGlobal(r.pedido, r.clienteId||'mercadona');
-      var tecReal = reg ? reg.tecnicoPrincipal : (r.tecnicos && r.tecnicos[0]);
+      var tecReal = (reg && !sinAsig) ? reg.tecnicoPrincipal : (r.tecnicos && r.tecnicos[0]);
       if(!(tecReal && tecReal.toLowerCase() === miNombre)) return;
       var estadoReal = reg ? reg.estado : (r.estado||'terminado');
       var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
@@ -7161,7 +7212,7 @@ function renderHistTecBtns(){
     h.forEach(function(r){
       if((r.clienteId||'mercadona') !== cliId) return;
       var reg=_registroGlobal(r.pedido, r.clienteId||'mercadona');
-      var t = reg ? reg.tecnicoPrincipal : (r.tecnicos && r.tecnicos[0]);
+      var t = (reg && !sinAsig) ? reg.tecnicoPrincipal : (r.tecnicos && r.tecnicos[0]);
       if(!t) return;
       var estadoReal = reg ? reg.estado : (r.estado||'terminado');
       var k = (r.clienteId||'mercadona')+'||'+r.pedido+'||'+(r.centro||'');
@@ -7200,12 +7251,13 @@ function verSecTecnico(nomTecnico){
   $('centrosView').style.display='none'; $('incidenciasView').style.display='none';
   var h = getHVisible();
   var cliId = curCliente && curCliente.id;
+  var sinAsig = _clienteSinAsignacion(cliId);
   var ords = getOrdenes().filter(function(g){ return (g.partes[0] && (g.partes[0].r.clienteId||'mercadona')) === cliId; });
   // Filtrar incidencias donde este técnico es/fue el principal real
   var nomL = nomTecnico.toLowerCase();
   ords = ords.filter(function(g){
     var reg=_registroGlobal(g.pedido, g.partes[0] && (g.partes[0].r.clienteId||'mercadona'));
-    if(reg) return reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()===nomL;
+    if(reg && !sinAsig) return reg.tecnicoPrincipal && reg.tecnicoPrincipal.toLowerCase()===nomL;
     return g.partes.some(function(p){ return p.r.tecnicos && p.r.tecnicos[0] && p.r.tecnicos[0].toLowerCase()===nomL; });
   });
   var hdr = $('secHdr');
