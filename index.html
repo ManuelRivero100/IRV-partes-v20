@@ -1414,7 +1414,7 @@ function _tarAvisosHtml(snap){
 function tarVerAviso(id){
   _tarCol().doc(id).get().then(function(doc){
     if(!doc.exists) return;
-    var d=doc.data(); _tarAbiertos[(d.tecnico||'(sin asignar)').replace(/[^a-z0-9]/gi,'_')]=true;
+    var d=doc.data(); _tarAbiertos={}; _tarAbiertos[(d.tecnico||'(sin asignar)').replace(/[^a-z0-9]/gi,'_')]=true;
     return _tarCol().doc(id).update({vistaAdmin:true}).then(function(){ return abrirTareas(d.estado==='realizada'); }).then(function(){ tarEnfocar(id); });
   }).catch(function(){ _toast('No se pudo abrir la tarea. Comprueba tu conexión.','var(--red)'); });
 }
@@ -1426,7 +1426,15 @@ function tarEnfocar(id){
   var fila=det.parentNode; fila.style.borderColor='var(--green)';
   fila.scrollIntoView({behavior:'smooth',block:'center'});
 }
-function tarToggleGrupo(k){ var el=$('tarGrupo_'+k); if(!el) return; var abrir=el.style.display==='none'; el.style.display=abrir?'block':'none'; _tarAbiertos[k]=abrir; }
+// Solo un técnico desplegado a la vez: al abrir uno se cierra el que estuviera abierto.
+function tarToggleGrupo(k){
+  var el=$('tarGrupo_'+k); if(!el) return;
+  var abrir=el.style.display==='none';
+  document.querySelectorAll('[id^=tarGrupo_]').forEach(function(e){ e.style.display='none'; });
+  _tarCerrarOtras(null); // y las tareas que estuvieran desplegadas dentro
+  _tarAbiertos={}; _tarAbiertos[k]=abrir;
+  el.style.display=abrir?'block':'none';
+}
 function tarRender(){
   var el=$('tarLista'); el.innerHTML='<div style="color:var(--text2);font-size:.82rem;">Cargando…</div>';
   $('tarTitulo').innerHTML=_tarCerradas?'&#10003; Realizadas':'&#128221; Pendientes';
