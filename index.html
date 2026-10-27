@@ -1212,7 +1212,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-10-28b-tareas-aviso-abre-la-tarea';
+var APP_BUILD_ID = 'build-2026-10-28c-tareas-una-abierta-a-la-vez';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1421,6 +1421,7 @@ function tarVerAviso(id){
 // Deja esa tarea desplegada, resaltada y a la vista (para que el aviso lleve a la tarea y no solo a la lista).
 function tarEnfocar(id){
   var det=$('tarDet_'+id); if(!det) return;
+  _tarCerrarOtras(det);
   det.style.display='block';
   var fila=det.parentNode; fila.style.borderColor='var(--green)';
   fila.scrollIntoView({behavior:'smooth',block:'center'});
@@ -1442,9 +1443,15 @@ function tarRender(){
   }).catch(function(){ el.innerHTML='<div style="color:var(--red);font-size:.82rem;">No se pudieron cargar. Comprueba tu conexión.</div>'; });
 }
 function tarVerCerradas(){ _tarCerradas=!_tarCerradas; tarRender(); }
+// Solo una tarea desplegada a la vez: al abrir una se cierra la anterior.
+function _tarCerrarOtras(det){
+  document.querySelectorAll('[id^=tarDet_]').forEach(function(e){ if(e!==det){ e.style.display='none'; e.parentNode.style.borderColor=''; } });
+}
 function tarAbrir(id){
   var det=$('tarDet_'+id); if(!det) return;
-  det.style.display=det.style.display==='none'?'block':'none';
+  var abrir=det.style.display==='none';
+  _tarCerrarOtras(det);
+  det.style.display=abrir?'block':'none';
   var d=_tarCache[id], campo=_tarAdmin()?'vistaAdmin':'vistaTecnico';
   if(d && d[campo]===false){
     d[campo]=true; var u={}; u[campo]=true;
