@@ -1212,7 +1212,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-10-28g-avisos-tecnico-sin-conexion';
+var APP_BUILD_ID = 'build-2026-10-28h-arreglo-sin-conexion-salir-y-boton-admin';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -9215,6 +9215,9 @@ function _iniciarActualizacionPeriodica(){
 }
 
 function _comprobarVersionNueva(){
+  // Sin conexión no hay nada que comprobar. Antes se seguía adelante, la petición la contestaba la copia guardada (que puede ser de otra
+  // versión), se creía que había una versión nueva, se borraba la copia de la app y se recargaba sin red: pantalla de error del navegador.
+  if (navigator.onLine === false) return;
   var urlSinCache = location.href.split('#')[0].split('?')[0] + '?_cb=' + Date.now();
   fetch(urlSinCache, {cache:'no-store'}).then(function(r){ return r.text(); }).then(function(t){
     var m = t.match(/APP_BUILD_ID\s*=\s*'([^']+)'/);
@@ -9638,6 +9641,18 @@ function eliminarIncidencia(id) {
 // ejecutarAsgTec y _asgTecActual movidos arriba, al bloque de script correcto, antes de su primer uso)
 
 function cerrarSesion() {
+  // Sin conexión, recargar solo funciona si la copia de la app guardada en el móvil está disponible; si no lo está, se avisa y la
+  // sesión se mantiene, en vez de dejar al usuario en la pantalla de error del navegador.
+  if (navigator.onLine === false && window.caches) {
+    caches.match('./index.html').then(function(r){
+      if (r) _cerrarSesionYRecargar();
+      else _toast('Sin conexión: la sesión se cerrará cuando vuelvas a tener internet.', 'var(--red)');
+    }).catch(_cerrarSesionYRecargar);
+    return;
+  }
+  _cerrarSesionYRecargar();
+}
+function _cerrarSesionYRecargar() {
   try { localStorage.removeItem('irv_sesion'); } catch(e) {}
   location.reload();
 }
@@ -9718,8 +9733,20 @@ function _mostrarIconoUsuarios() {
   if (window._sesion && window._sesion.multiRol) {
     var btn = document.getElementById('btnCambiarRol');
     if (btn) { btn.style.display = ''; btn.textContent = rol === 'admin' ? '🔧 Técnico' : '⚙️ Admin'; }
+    _ajustarBotonRolPorConexion();
   }
 }
+// Pasar a administrador necesita internet: el botón se oculta al instante cuando el móvil se queda sin conexión y se vuelve a mostrar
+// cuando la recupera (antes solo se ocultaba en la siguiente comprobación periódica, que puede tardar minutos). Quien ya está como
+// administrador conserva su botón de pasar a técnico.
+function _ajustarBotonRolPorConexion(){
+  var s = window._sesion, btn = document.getElementById('btnCambiarRol');
+  if (!s || !s.multiRol || !btn || s.rol === 'admin' || s.rol === 'creador') return;
+  if (navigator.onLine === false) btn.style.display = 'none';
+  else { btn.style.display = ''; btn.textContent = '⚙️ Admin'; }
+}
+window.addEventListener('offline', _ajustarBotonRolPorConexion);
+window.addEventListener('online', _ajustarBotonRolPorConexion);
 
 function pedirPinCambioRol() {
   var sesion = window._sesion;
