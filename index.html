@@ -103,6 +103,10 @@ textarea{resize:vertical;min-height:72px}
 .tgl button:last-child{border-right:none}
 .tgl button.active{background:var(--green);color:#fff}
 .tgl button:not(.active):hover{background:var(--green-light);color:var(--green)}
+.tgl-tipos{display:flex;flex-wrap:wrap;gap:6px}
+.tgl-tipos button{flex:1 1 auto;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--surface2);font-family:inherit;font-size:.82rem;font-weight:600;color:var(--text2);cursor:pointer;transition:all .14s}
+.tgl-tipos button.active{background:var(--green);color:#fff;border-color:var(--green)}
+.tgl-tipos button:not(.active):hover{background:var(--green-light);color:var(--green)}
 .tgl-festivo button.active{background:var(--purple);color:#fff}
 .tgl-festivo button:not(.active):hover{background:var(--purple-light);color:var(--purple)}
 .worker-row{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r-sm);margin-bottom:6px}
@@ -587,7 +591,13 @@ textarea{resize:vertical;min-height:72px}
       <button type="button" id="nc-asig" class="btn btn-p btn-full" onclick="ncToggleAsig()">Con asignación</button>
       <div id="nc-asig-info" style="font-size:.78rem;color:var(--text2);margin-top:5px;">Solo el técnico asignado a la incidencia puede continuarla.</div>
     </div>
-    <div class="field"><label>Tipos de trabajo (separados por coma)</label><input id="nc-jobs" placeholder="Climatización, Instalación eléctrica, Reformas"></div>
+    <div class="field"><label>Tipos de trabajo <span class="req">*</span></label>
+      <div class="tgl-tipos" id="nc-jobs-tgl"></div>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <input id="nc-job-otro" placeholder="+ Otro tipo (uno solo)" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();ncJobOtro();}">
+        <button type="button" class="btn btn-s btn-sm" onclick="ncJobOtro()">A&ntilde;adir</button>
+      </div>
+    </div>
     <div class="msg" id="msgNc"></div>
     <div class="brow"><button class="btn btn-p btn-full" onclick="guardarNuevoCliente()">&#128190; Crear cliente</button></div>
   </div>
@@ -1212,7 +1222,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-10-28i-fecha-del-texto-pegado-ya-no-se-lee';
+var APP_BUILD_ID = 'build-2026-10-29b-tipos-de-trabajo-con-botones';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1857,16 +1867,44 @@ function ncPonerAsig(v){
     : 'Sin asignación: cualquier técnico principal puede continuar la orden y solo el administrador la cierra o reabre.';
 }
 function ncToggleAsig(){ ncPonerAsig(!_ncAsig); }
+// Tipos de trabajo del cliente nuevo: botones que se activan y se desactivan (antes se escribían separados por coma y un punto y coma o una
+// "y" los juntaba en un solo tipo). Los tres de siempre vienen activados; "Otro" añade un tipo más, escrito de uno en uno.
+var _NC_JOBS_BASE=['Climatización','Conductos','Electricidad'];
+var _ncJobs={};
+function ncJobsReset(){
+  _ncJobs={};
+  _NC_JOBS_BASE.forEach(function(j){ _ncJobs[j]=true; });
+  var o=$('nc-job-otro'); if(o) o.value='';
+  ncJobsRender();
+}
+function ncJobsRender(){
+  var el=$('nc-jobs-tgl'); if(!el) return;
+  el.innerHTML=Object.keys(_ncJobs).map(function(j){
+    return '<button type="button" class="'+(_ncJobs[j]?'active':'')+'" data-j="'+escHtml(j)+'" onclick="ncJobToggle(this.getAttribute(\'data-j\'))">'+escHtml(j)+'</button>';
+  }).join('');
+}
+function ncJobToggle(j){ if(j in _ncJobs){ _ncJobs[j]=!_ncJobs[j]; ncJobsRender(); } }
+function ncJobOtro(){
+  var inp=$('nc-job-otro'); if(!inp) return;
+  var v=inp.value.trim(); if(!v) return;
+  if(/[,;]/.test(v)){ showMsg('msgNc','Escribe un solo tipo de trabajo por vez, sin comas ni punto y coma.','error'); return; }
+  v=v.charAt(0).toUpperCase()+v.slice(1);
+  var igual=Object.keys(_ncJobs).find(function(k){ return k.toLowerCase()===v.toLowerCase(); });
+  _ncJobs[igual||v]=true;
+  inp.value=''; $('msgNc').className='msg'; $('msgNc').textContent='';
+  ncJobsRender();
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',ncJobsReset); else ncJobsReset();
 function guardarNuevoCliente(){
   var n=$('nc-nombre').value.trim(); if(!n){ showMsg('msgNc','Introduce el nombre del cliente.','error'); return; }
-  var jobs=$('nc-jobs').value.split(',').map(function(j){ return j.trim(); }).filter(Boolean);
-  if(!jobs.length) jobs=['Trabajos'];
+  var jobs=Object.keys(_ncJobs).filter(function(j){ return _ncJobs[j]; });
+  if(!jobs.length){ showMsg('msgNc','Activa al menos un tipo de trabajo.','error'); return; }
   var id='c_'+Date.now();
   var c={id:id,nombre:n,tipo:_ncTipo,jobs:jobs,codigos:false,precios:_ncTipo==='particular',conAsignacion:_ncAsig};
   var extra=JSON.parse(localStorage.getItem('pm_clientes')||'[]');
   extra.push(c); localStorage.setItem('pm_clientes',JSON.stringify(extra));
   _subirClienteAFirestore(c);
-  $('nc-nombre').value=''; $('nc-jobs').value=''; ncPonerAsig(true);
+  $('nc-nombre').value=''; ncJobsReset(); ncPonerAsig(true);
   renderClientes(); goTo('w-clientes');
 }
 
