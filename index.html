@@ -1222,7 +1222,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-10-29b-tipos-de-trabajo-con-botones';
+var APP_BUILD_ID = 'build-2026-10-31a-historial-filtro-limpio-y-volver';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1282,7 +1282,9 @@ function goTo(id){
   goToRaw(id);
   if(id==='w-form'&&!_keepForm){ mostrarDlgInicioOrden(); } if(id==='w-form') setTimeout(function(){ if($('pedido')&&$('pedido').value.length>2) ocultarLectura(); },100);
   _keepForm=false;
-  if(id==='w-hist'){ refreshCounts(); renderHistTecBtns(); }
+  // El Historial se abre siempre con el buscador y la fecha vacíos: antes se quedaba puesto el filtro de la última vez (incluso al cambiar de cliente)
+  // y enseñaba resultados que no eran del cliente actual. Solo al entrar; moverse dentro del Historial (abrir una orden, volver) no lo borra.
+  if(id==='w-hist'){ $('busca').value=''; $('buscaF').value=''; refreshCounts(); renderHistTecBtns(); renderSearchResults(); }
   if(id==='w-stats') statsInit();
   if(id==='w-catalogo'){$('catTabMat').style.display='block';$('catTabConc').style.display='none';$('catFamiliaView').style.display='none';renderCatGrupos();catActualizarBadge();}
   if(id==='w-clientes'){
@@ -6373,14 +6375,20 @@ function verOrden(enc){
     ?partesTodas.filter(function(x){ return x.r.tecnicos && x.r.tecnicos[0] && x.r.tecnicos[0].toLowerCase()===miNombre; })
     :partesTodas;
   if(!partes.length) return;
-  $('secView').style.display='none'; $('ordenView').style.display='block'; $('parteView').style.display='none';
+  // Se recuerda desde qué pantalla se abrió la orden para que "volver" regrese a ella (antes siempre abría la lista de En ejecución/Finalizados, que
+  // desde el buscador o desde Centros → Incidencias está vacía y dejaba la pantalla en blanco). Si la orden ya estaba abierta (al cerrarla o reabrirla) no cambia.
+  if($('ordenView').style.display!=='block'){
+    window._ordenOrigen = $('secView').style.display==='block' ? 'sec' : ($('incidenciasView').style.display==='block' ? 'incidencias' : 'busqueda');
+  }
+  histShow(['ordenView']);
   var g=partes[0].r;
   var lastEstado=_getEstadoIncidencia(pedido,centro) || (partes[partes.length-1].r.estado||'terminado');
   var badge=lastEstado==='en-ejecucion'?'<span class="badge badge-a">En ejecuci&oacute;n</span>':'<span class="badge badge-g">Finalizado</span>';
   var f1=partes[0].r.fecha.split('-').reverse().join('/');
   var fN=partes[partes.length-1].r.fecha.split('-').reverse().join('/');
   var fr=f1===fN?f1:f1+' → '+fN;
-  $('ordenBackLbl').textContent=lastEstado==='en-ejecucion'?'En ejecución':'Finalizados';
+  var _oo=window._ordenOrigen;
+  $('ordenBackLbl').textContent=_oo==='busqueda'?'Historial':(_oo==='incidencias'?'Incidencias':(lastEstado==='en-ejecucion'?'En ejecución':'Finalizados'));
 
   var codAcum={};
   // Agrupar por código+etiqueta, no solo por código — así Oficial y Peón (mismo código en
@@ -7702,7 +7710,15 @@ function volverIncidencias(){histShow(['incidenciasView']);}
 
 function volverOrden(){ $('parteView').style.display='none'; $('ordenView').style.display='block'; }
 
-function volverSec(){ $('secView').style.display='block'; $('ordenView').style.display='none'; $('parteView').style.display='none'; }
+// Vuelve a la pantalla desde la que se abrió la orden (ver _ordenOrigen en verOrden): la lista de una sección, la de incidencias de un centro, o el
+// Historial con el buscador y sus resultados tal como estaban.
+function volverSec(){
+  $('ordenView').style.display='none'; $('parteView').style.display='none';
+  var o=window._ordenOrigen;
+  if(o==='incidencias'){ histShow(['incidenciasView']); }
+  else if(o==='busqueda'){ histShow(['histOpts']); refreshCounts(); renderHistTecBtns(); renderSearchResults(); }
+  else { $('secView').style.display='block'; }
+}
 
 function volverSecFin(){histShow(['histOpts']);refreshCounts();}
 
