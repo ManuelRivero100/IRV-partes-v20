@@ -1234,7 +1234,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-09a-cambiar-num-orden';
+var APP_BUILD_ID = 'build-2026-11-09b-cambiar-num-orden-borrado-copia';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -10283,9 +10283,13 @@ function _renombrarOrden(cid, centro, viejo, nuevo, alTerminar){
     if(total>450){ fin(false,'La orden tiene demasiados documentos ('+total+') para cambiarla de una vez. No se ha cambiado nada.'); return; }
 
     var batch=_db.batch();
-    // 1) copia de lo que se va a cambiar o borrar
+    // 1) copia de lo que se va a cambiar o borrar. Los documentos que se BORRAN se guardan con el nombre normal de la papelera
+    //    (coleccion__id), igual que _moverAPapelera: así la copia instantánea a la app nueva sabe que fue un borrado explícito y
+    //    borra también allí el documento viejo (si no, en la nueva quedaría el número viejo junto al nuevo).
+    var _borrados={}; op.forEach(function(o){ if(o.tipo==='delete') _borrados[o.ref.path]=1; });
     copias.forEach(function(c){
-      batch.set(_db.collection('papelera').doc('renombre-'+ahora+'__'+c[0]+'__'+c[1].id), {
+      var _idPap=_borrados[c[1].ref.path] ? (c[0]+'__'+c[1].id) : ('renombre-'+ahora+'__'+c[0]+'__'+c[1].id);
+      batch.set(_db.collection('papelera').doc(_idPap), {
         coleccionOriginal:c[0], docIdOriginal:c[1].id, datos:c[1].data(), eliminadoPor:quien, eliminadoFecha:ahora, eliminadoRazon:razon
       });
     });

@@ -26,13 +26,13 @@ function paginaGuardada(){
 self.addEventListener('fetch', function(e){
   if(e.request.mode === 'navigate'){
     var bustedUrl = e.request.url + (e.request.url.indexOf('?') >= 0 ? '&' : '?') + '_sw=' + Date.now();
-    // Primero la red (así siempre se tiene la versión más reciente). Si la red falla, o no responde en 6 s (por ejemplo Wi-Fi sin internet
+    // Primero la red (así siempre se tiene la versión más reciente). Si la red falla, o no responde en 4 s (por ejemplo Wi-Fi sin internet
     // real), se usa la copia guardada. Si la petición llega más tarde, deja guardada la versión nueva para la próxima vez.
     e.respondWith(new Promise(function(resolve){
       var resuelto = false;
       var temporizador = setTimeout(function(){
         paginaGuardada().then(function(r){ if(r && !resuelto){ resuelto = true; resolve(r); } });
-      }, 6000);
+      }, 4000);
       fetch(bustedUrl, {cache: 'no-store'}).then(function(r){
         // Se renuevan las dos copias de la página ('./index.html' y './'), no solo la de la dirección con la que se abrió: si una se queda
         // atrás, sin conexión la app puede cargar una versión y creer que hay otra distinta.
