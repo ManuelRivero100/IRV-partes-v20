@@ -26,26 +26,21 @@ function paginaGuardada(){
 self.addEventListener('fetch', function(e){
   if(e.request.mode === 'navigate'){
     var bustedUrl = e.request.url + (e.request.url.indexOf('?') >= 0 ? '&' : '?') + '_sw=' + Date.now();
-    // Primero la red (así siempre se tiene la versión más reciente). Si la red falla, o no responde en 4 s (por ejemplo Wi-Fi sin internet
-    // real), se usa la copia guardada. Si la petición llega más tarde, deja guardada la versión nueva para la próxima vez.
-    e.respondWith(new Promise(function(resolve){
-      var resuelto = false;
-      var temporizador = setTimeout(function(){
-        paginaGuardada().then(function(r){ if(r && !resuelto){ resuelto = true; resolve(r); } });
-      }, 4000);
-      fetch(bustedUrl, {cache: 'no-store'}).then(function(r){
-        // Se renuevan las dos copias de la página ('./index.html' y './'), no solo la de la dirección con la que se abrió: si una se queda
-        // atrás, sin conexión la app puede cargar una versión y creer que hay otra distinta.
-        if(r.ok){
-          var c1 = r.clone(), c2 = r.clone(), c3 = r.clone();
-          caches.open(CACHE).then(function(c){ c.put(e.request, c1); c.put('./index.html', c2); c.put('./', c3); });
-        }
-        if(!resuelto){ resuelto = true; clearTimeout(temporizador); resolve(r); }
-      }).catch(function(){
-        clearTimeout(temporizador);
-        if(resuelto) return;
-        paginaGuardada().then(function(r){ resuelto = true; resolve(r || Response.error()); });
-      });
+    // Abre SIEMPRE la copia guardada en el movil, sin esperar a la red (asi abre al instante aunque haya datos o Wi-Fi sin internet real).
+    // Por detras, si hay internet, se baja la version mas reciente y se renuevan las copias guardadas ('./index.html' y './', las dos a la
+    // vez para que no queden de versiones distintas): la proxima vez que se abra la app se usa la nueva, sin que el tecnico lo note.
+    // Si no hay copia guardada (la primera vez), se espera a la red como siempre.
+    var refrescar = fetch(bustedUrl, {cache: 'no-store'}).then(function(r){
+      if(!r.ok) return r;
+      var c1 = r.clone(), c2 = r.clone(), c3 = r.clone();
+      return caches.open(CACHE).then(function(c){
+        return Promise.all([c.put(e.request, c1), c.put('./index.html', c2), c.put('./', c3)]);
+      }).then(function(){ return r; });
+    });
+    e.waitUntil(refrescar.catch(function(){}));
+    e.respondWith(paginaGuardada().then(function(g){
+      if(g){ refrescar.catch(function(){}); return g; }
+      return refrescar.catch(function(){ return Response.error(); });
     }));
     return;
   }

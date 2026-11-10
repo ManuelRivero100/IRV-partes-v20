@@ -1234,7 +1234,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-09b-cambiar-num-orden-borrado-copia';
+var APP_BUILD_ID = 'build-2026-11-10b-sincronizacion-por-novedades';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -9128,10 +9128,62 @@ _authReady.then(function(){
       try { localStorage.removeItem('irv_sesion'); } catch(e){ _fallo('animateStep')(e); }
       return;
     }
-    _iniciarPresentacionLogin(_sesionGuardada.nombre);
+    // La presentación y la limpieza + sincronización completa solo se hacen la primera vez del día o si entra otro usuario en este móvil.
+    // Si el móvil solo descartó la app de memoria al salir a otra app y se vuelve a ella, se entra directo: sin presentación, sin cartel y
+    // sin borrar nada; los datos se actualizan por detrás.
+    var _nombreKeyRest = (_sesionGuardada.nombre || '').toLowerCase();
+    var _usuarioDispRest = localStorage.getItem(DISPOSITIVO_USUARIO_KEY);
+    var _hayQueRefrescar = (_usuarioDispRest && _usuarioDispRest !== _nombreKeyRest) || localStorage.getItem(ULTIMA_VERIFICACION_KEY) !== hoy;
+    if (_hayQueRefrescar) {
+      _iniciarPresentacionLogin(_sesionGuardada.nombre);
+    } else {
+      _loginSplashListo = true;
+      _sincronizarAlEntrar();
+    }
     _aplicarSesion(_sesionGuardada.nombre, _sesionGuardada.rol, !!_sesionGuardada.multiRol);
+    if (!_hayQueRefrescar) {
+      var _splashRest = document.getElementById('splash');
+      if (_splashRest) _splashRest.style.display = 'none';
+      document.body.style.overflow = '';
+    }
   } catch(e){ _fallo('animateStep')(e); }
 });
+
+// Sincronizaciones que no dependen del rol final; se lanzan al recuperar una sesión guardada sin presentación (las mismas que
+// _iniciarPresentacionLogin lanza al entrar con PIN).
+function _sincronizarAlEntrar(){
+  // Antes de bajar nada se anota qué hora de la pizarra de novedades tiene este móvil (ver más abajo): lo que cambie mientras baja
+  // volverá a pedirse en el siguiente ciclo.
+  _guardarBaseNovedades(function(){
+    _sincronizarClientesDesdeFirestore();
+    _sincronizarTecnicosDesdeFirestore();
+    _sincronizarCatalogoDesdeFirestore();
+    _sincronizarAgendaDesdeFirestore();
+    _sincronizarEnlacesDesdeFirestore();
+    _sincronizarMaterialesFlotantesDesdeFirestore();
+    _sincronizarRegistroGlobal();
+    _sincronizarContadorIRV();
+    _reintentarPartesPendientes();
+  });
+}
+
+// ----- Pizarra de novedades -----
+// config/novedades la mantiene la función "novedades" del servidor: guarda la hora del último cambio (crear, modificar o borrar) de cada
+// cosa (clientes, agenda, catálogo, materiales, enlaces, técnicos, órdenes, partes, tareas, avisos del administrador). Cada móvil recuerda la
+// hora que vio de cada una; durante el día pregunta solo por esa pizarra y baja únicamente lo que cambió. La sincronización completa queda
+// para la primera entrada del día, un técnico distinto en el móvil, o un móvil sin datos.
+var NOVEDADES_VISTAS_KEY = 'pm_novedades_vistas';
+function _guardarBaseNovedades(cb){
+  var hecho = false;
+  var t = setTimeout(function(){ if(!hecho){ hecho = true; cb(); } }, 3000); // red que no contesta: no se espera
+  if(typeof _db === 'undefined' || !_db){ hecho = true; clearTimeout(t); cb(); return; }
+  _db.collection('config').doc('novedades').get().then(function(doc){
+    if(hecho) return; // llegó tarde: la bajada de datos ya empezó, esa hora ya no es una base fiable
+    if(doc.exists){
+      try { localStorage.setItem(NOVEDADES_VISTAS_KEY, JSON.stringify(doc.data())); } catch(e){ _fallo('_guardarBaseNovedades')(e); }
+    }
+  }).catch(_fallo('_guardarBaseNovedades')).then(function(){ if(!hecho){ hecho = true; clearTimeout(t); cb(); } });
+}
 
 // ===== MÓDULO VERIFICACIÓN CONEXIÓN =====
 // Función autocontenida — no depende de nada externo
@@ -9182,6 +9234,7 @@ function _limpiarDatosLocalesCompartidos(){
   localStorage.removeItem(CAT_KEY);
   localStorage.removeItem(CAT_V_KEY);
   localStorage.removeItem('pm_agenda');
+  localStorage.removeItem('pm_novedades_vistas'); // sin datos locales no hay "lo ya visto": la próxima sincronización será completa
 }
 
 // Aviso de técnico desactivado (intento fallido, o entrada lograda estando desactivado).
@@ -9229,15 +9282,7 @@ function _iniciarPresentacionLogin(nombre){
   localStorage.setItem(ULTIMA_VERIFICACION_KEY, hoy);
   _loginSplashListo = false;
   iniciarSplash(function(){ _loginSplashListo = true; });
-  _sincronizarClientesDesdeFirestore();
-  _sincronizarTecnicosDesdeFirestore();
-  _sincronizarCatalogoDesdeFirestore();
-  _sincronizarAgendaDesdeFirestore();
-  _sincronizarEnlacesDesdeFirestore();
-  _sincronizarMaterialesFlotantesDesdeFirestore();
-  _sincronizarRegistroGlobal();
-  _sincronizarContadorIRV();
-  _reintentarPartesPendientes();
+  _sincronizarAlEntrar();
 }
 
 function _loginSinConexionContinuar() {
@@ -9661,6 +9706,92 @@ function _iniciarActualizacionPeriodica(){
     }
   }
 
+  // Ciclo del día: en vez de bajarlo todo cada vez (_sincronizacionCompleta), lee la pizarra de novedades (una lectura) y baja SOLO lo que
+  // cambió desde la última vez; si no cambió nada, no baja nada. Sin pizarra (la función del servidor aún no está puesta) o sin "lo ya
+  // visto" en este móvil, hace una sincronización completa, como antes. Conserva las dos comprobaciones de siempre: que el usuario siga
+  // activo y que haya conexión (administrador / técnico con más de un rol).
+  var _novedadesEnCurso = false;
+  function _aplicarNovedades(claves, s){
+    var hay = function(k){ return claves.indexOf(k) >= 0; };
+    var esAdminS = s.rol === 'admin' || s.rol === 'creador';
+    if (hay('clientes')) _sincronizarClientesDesdeFirestore();
+    if (hay('usuario')) _sincronizarTecnicosDesdeFirestore();
+    if (hay('catalogo')) _sincronizarCatalogoDesdeFirestore(); // ya se autolimita a admin/creador por dentro
+    if (hay('agenda')) _sincronizarAgendaDesdeFirestore();
+    if (hay('enlacesTiendas')) _sincronizarEnlacesDesdeFirestore();
+    if (hay('materialesFlotantes')) _sincronizarMaterialesFlotantesDesdeFirestore();
+    if (hay('incidencias')) {
+      _sincronizarRegistroGlobal();
+      if (esAdminS) _sincronizarEstadosIncidencias(); else if (s.rol === 'tecnico') _sincronizarEstadosIncidencias(s.nombre);
+    }
+    if (hay('partes')) {
+      if (esAdminS) _sincronizarPartesDesdeFirestore(null); else if (s.rol === 'tecnico') _sincronizarPartesDesdeFirestore(s.nombre);
+    }
+    // Pantallas con avisos y contadores: solo si cambió algo que les afecta
+    if (hay('incidencias') || hay('tareasPendientes') || hay('materialesFlotantes') || hay('notificacionesTecnico') || hay('partesSinGuardar') || hay('catalogo')) {
+      renderAsgTecnico();
+      renderAsgAdmin();
+      catActualizarBadge();
+      actualizarBadgeTareas();
+    }
+  }
+  function _comprobarConexionSegunRol(_s2){
+    if (_s2.multiRol || _s2.rol === 'admin' || _s2.rol === 'creador') {
+      _verificarConexionFirestore(function(hayConexion){
+        if (!hayConexion) {
+          if (_s2.rol === 'admin' || _s2.rol === 'creador') {
+            var dlg = document.getElementById('dlgSinConexionAdmin');
+            if (dlg) dlg.classList.add('show');
+          }
+          var btnRol = document.getElementById('btnCambiarRol');
+          if (btnRol && _s2.rol !== 'admin' && _s2.rol !== 'creador') btnRol.style.display = 'none';
+        } else {
+          if (_s2.multiRol && _s2.rol !== 'admin' && _s2.rol !== 'creador') {
+            var btnRol2 = document.getElementById('btnCambiarRol');
+            if (btnRol2) { btnRol2.style.display = ''; btnRol2.textContent = '⚙️ Admin'; }
+          }
+        }
+      });
+    }
+  }
+  function _sincronizacionPorNovedades(){
+    var s = window._sesion;
+    if (!s || _novedadesEnCurso || typeof _db === 'undefined' || !_db) return;
+    _novedadesEnCurso = true;
+    if (s.rol !== 'creador') {
+      var _docIdActivo = s.nombre.toLowerCase().replace(/ /g,'_');
+      _db.collection('usuario').doc(_docIdActivo).get().then(function(doc){
+        if (doc.exists && doc.data().activo === false) {
+          _limpiarDatosLocalesCompartidos();
+          _crearNotificacionTecnico(s.nombre, 'entrada_desactivado');
+          cerrarSesion();
+        }
+      }).catch(_fallo('_sincronizacionPorNovedades usuario'));
+    }
+    _sincronizarContadorIRV(); // una lectura; evita proponer un número IRV que otro móvil ya usó
+    _db.collection('config').doc('novedades').get().then(function(doc){
+      var vistas = null;
+      try { vistas = JSON.parse(localStorage.getItem(NOVEDADES_VISTAS_KEY) || 'null'); } catch(e){ _fallo('_sincronizacionPorNovedades leer')(e); }
+      if (!doc.exists || !vistas) {
+        _sincronizacionCompleta();
+        if (doc.exists) { try { localStorage.setItem(NOVEDADES_VISTAS_KEY, JSON.stringify(doc.data())); } catch(e){ _fallo('_sincronizacionPorNovedades guardar')(e); } }
+        return;
+      }
+      var act = doc.data();
+      var cambiadas = Object.keys(act).filter(function(k){ return Number(act[k]) > Number(vistas[k] || 0); });
+      if (cambiadas.length) {
+        _aplicarNovedades(cambiadas, s);
+        var nuevas = Object.assign({}, vistas);
+        cambiadas.forEach(function(k){ nuevas[k] = act[k]; });
+        try { localStorage.setItem(NOVEDADES_VISTAS_KEY, JSON.stringify(nuevas)); } catch(e){ _fallo('_sincronizacionPorNovedades guardar')(e); }
+      }
+      _comprobarConexionSegunRol(s);
+    }).catch(function(e){
+      _fallo('_sincronizacionPorNovedades')(e); // sin conexión o error: no se hace nada, se reintenta en el siguiente ciclo
+      _comprobarConexionSegunRol(s);
+    }).then(function(){ _novedadesEnCurso = false; });
+  }
+
   // El ciclo solo cuenta tiempo mientras la app está realmente visible en uso — no un
   // setTimeout ciego que sigue corriendo en segundo plano. Respeta el tiempo por rol:
   // 1 minuto para admin/creador conectado (lo necesitan más, detección rápida), 4 minutos
@@ -9674,7 +9805,7 @@ function _iniciarActualizacionPeriodica(){
     var espera = _esAdminAhora ? 60000 : 240000;
     _timerSincronizacion = setTimeout(function(){
       if(document.visibilityState === 'visible' && window._sesion){
-        _sincronizacionCompleta();
+        _sincronizacionPorNovedades();
       }
       _programarSiguienteSincronizacion(); // reprogramar con la espera correspondiente al rol de ese momento
     }, espera);
@@ -9686,7 +9817,7 @@ function _iniciarActualizacionPeriodica(){
   // pendiente, así no cuenta tiempo mientras no se está usando la app.
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'visible') {
-      if (window._sesion) _sincronizacionCompleta();
+      if (window._sesion) _sincronizacionPorNovedades();
       _programarSiguienteSincronizacion();
     } else {
       if (_timerSincronizacion) { clearTimeout(_timerSincronizacion); _timerSincronizacion = null; }
