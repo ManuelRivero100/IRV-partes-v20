@@ -30,6 +30,9 @@ self.addEventListener('fetch', function(e){
     // Por detras, si hay internet, se baja la version mas reciente y se renuevan las copias guardadas ('./index.html' y './', las dos a la
     // vez para que no queden de versiones distintas): la proxima vez que se abra la app se usa la nueva, sin que el tecnico lo note.
     // Si no hay copia guardada (la primera vez), se espera a la red como siempre.
+    // Una RECARGA (la del cierre diario de las 6:00, que es donde llega el codigo nuevo, o actualizar a mano) pide primero la ultima version a la red,
+    // con limite de 4 s; abrir la app de forma normal usa siempre la copia guardada, sin esperar.
+    var esRecarga = (e.request.cache === 'reload' || e.request.cache === 'no-cache');
     var refrescar = fetch(bustedUrl, {cache: 'no-store'}).then(function(r){
       if(!r.ok) return r;
       var c1 = r.clone(), c2 = r.clone(), c3 = r.clone();
@@ -39,8 +42,14 @@ self.addEventListener('fetch', function(e){
     });
     e.waitUntil(refrescar.catch(function(){}));
     e.respondWith(paginaGuardada().then(function(g){
-      if(g){ refrescar.catch(function(){}); return g; }
-      return refrescar.catch(function(){ return Response.error(); });
+      if(g && !esRecarga){ refrescar.catch(function(){}); return g; }
+      if(!g) return refrescar.catch(function(){ return Response.error(); });
+      return new Promise(function(resolve){
+        var resuelto = false;
+        var temporizador = setTimeout(function(){ if(!resuelto){ resuelto = true; resolve(g); } }, 4000);
+        refrescar.then(function(r){ if(!resuelto){ resuelto = true; clearTimeout(temporizador); resolve(r); } })
+          .catch(function(){ clearTimeout(temporizador); if(!resuelto){ resuelto = true; resolve(g); } });
+      });
     }));
     return;
   }

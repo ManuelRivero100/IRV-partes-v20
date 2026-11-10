@@ -522,6 +522,7 @@ textarea{resize:vertical;min-height:72px}
       <span class="app-icon-label">Papelera</span>
     </div>
   </div>
+  <div id="pendientesEnvio" style="display:none;margin-top:14px;"></div>
   <div id="asgTecSection" style="display:none;margin-top:14px;">
     <div class="section-label">&#128229; Incidencias asignadas</div>
     <div id="asgTecLista"></div>
@@ -1234,7 +1235,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-10b-sincronizacion-por-novedades';
+var APP_BUILD_ID = 'build-2026-11-10c-bloque-1-uso';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -8040,6 +8041,7 @@ function _marcarPendienteSync(parte, pendiente){
   if(idx<0) return;
   if(pendiente) h[idx]._pendienteSync=true; else delete h[idx]._pendienteSync;
   setH(h);
+  if(typeof _pintarPendientesEnvio==='function') _pintarPendientesEnvio();
 }
 function _marcarIncidenciaPendientePorPedido(pedido, centro){
   var h=getH();
@@ -8119,6 +8121,32 @@ function _marcarParteBorrarPendiente(docId, razon){
   var lista=JSON.parse(localStorage.getItem('pm_partes_borrar_pendiente')||'[]');
   if(!lista.some(function(x){ return (typeof x==='string'?x:x.docId)===docId; })) lista.push({docId:docId, razon:razon||'Borrado pendiente'});
   localStorage.setItem('pm_partes_borrar_pendiente', JSON.stringify(lista));
+}
+
+// ===== Partes pendientes de enviar =====
+// Un parte guardado sin conexión queda en el móvil con la marca _pendienteSync hasta que el servidor lo recibe. Se muestra en la pantalla de
+// inicio para que el técnico sepa que aún no ha llegado, con un botón para enviarlo ya. Además se reintenta solo en cada ciclo del día
+// (también con "wifi sin internet real", donde el móvil no avisa de que vuelve la conexión).
+function _hayPendientesDeEnvio(){
+  try {
+    if(getH().some(function(r){ return r._pendienteSync || r._pendienteIncidencia; })) return true;
+    return JSON.parse(localStorage.getItem('pm_partes_borrar_pendiente')||'[]').length>0;
+  } catch(e){ _fallo('_hayPendientesDeEnvio')(e); return false; }
+}
+function _pintarPendientesEnvio(){
+  var el=document.getElementById('pendientesEnvio'); if(!el) return;
+  var n=0;
+  try { n=getH().filter(function(r){ return r._pendienteSync; }).length; } catch(e){ _fallo('_pintarPendientesEnvio')(e); }
+  if(!n){ el.style.display='none'; el.innerHTML=''; return; }
+  el.innerHTML='<div class="card" style="border-left:4px solid var(--amber);"><div class="card-title">&#9203; Pendiente de enviar</div>'
+    +'<div style="font-size:.85rem;color:var(--text2);margin-bottom:10px;">'+(n===1?'Tienes 1 parte guardado en este m&oacute;vil que a&uacute;n no ha llegado al servidor.':'Tienes '+n+' partes guardados en este m&oacute;vil que a&uacute;n no han llegado al servidor.')+' Se enviar&aacute;n solos en cuanto haya conexi&oacute;n.</div>'
+    +'<button class="btn btn-p btn-full" onclick="_enviarPendientesAhora()">&#128228; Enviar ahora</button></div>';
+  el.style.display='block';
+}
+function _enviarPendientesAhora(){
+  if(typeof _toast==='function') _toast(navigator.onLine===false ? 'Sin conexión: se enviarán al volver el internet.' : 'Enviando…', navigator.onLine===false ? 'var(--red)' : undefined);
+  _reintentarPartesPendientes();
+  setTimeout(_pintarPendientesEnvio, 5000);
 }
 
 function _finalizarGuardado(estado){
@@ -9567,6 +9595,7 @@ function _aplicarSesion(nombre, rol, multiRol) {
     renderHistTecBtns();
     catActualizarBadge();
     actualizarBadgeTareas();
+    _pintarPendientesEnvio();
   }
   var _syncPartesYaResuelto = false;
   function _ocultarOverlay() {
@@ -9609,12 +9638,8 @@ var _actualizacionPeriodicaIniciada = false;
 function _iniciarActualizacionPeriodica(){
   if(_actualizacionPeriodicaIniciada) return; // solo un ciclo activo, aunque se cambie de rol o se recargue varias veces
   _actualizacionPeriodicaIniciada = true;
-  // Chequeo de versión del código: gratis (solo lee el index.html estático de GitHub Pages,
-  // no consulta Firestore), así que puede ir mucho más seguido sin coste real.
-  setInterval(function(){
-    if(document.visibilityState !== 'visible') return;
-    _comprobarVersionNueva();
-  }, 15000); // cada 15 segundos
+  // Ya NO se comprueba la versión del código cada 15 s (descargaba la página entera, unos 700 KB cada vez). El código nuevo llega solo: el
+  // service worker refresca la copia guardada por detrás en cada apertura, y el reinicio diario de las 6:00 la recarga con la red primero.
 
   // Aviso de "Sin conexión" del administrador/creador sin esperar al ciclo de 1 minuto. Dos vigilantes, cero lecturas de Firestore:
   //  1) al instante, si el móvil avisa de que perdió la red ('offline');
@@ -9758,6 +9783,9 @@ function _iniciarActualizacionPeriodica(){
     var s = window._sesion;
     if (!s || _novedadesEnCurso || typeof _db === 'undefined' || !_db) return;
     _novedadesEnCurso = true;
+    // Partes pendientes de enviar: se reintentan en cada ciclo (solo si hay alguno, así no cuesta nada) y se actualiza el aviso de pantalla
+    if (_hayPendientesDeEnvio()) _reintentarPartesPendientes();
+    _pintarPendientesEnvio();
     if (s.rol !== 'creador') {
       var _docIdActivo = s.nombre.toLowerCase().replace(/ /g,'_');
       _db.collection('usuario').doc(_docIdActivo).get().then(function(doc){
