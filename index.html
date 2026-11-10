@@ -1235,7 +1235,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-10c-bloque-1-uso';
+var APP_BUILD_ID = 'build-2026-11-10d-formulario-recuperable';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -4504,6 +4504,7 @@ function _guardarBorradorParte(){
 // llamada desde los 3 caminos de _finalizarGuardado() que sí resultan en un guardado real
 // (nunca en el camino de "cancelar reemplazo", donde de verdad no se guardó nada).
 function _borrarBorradorParte(r){
+  if(typeof _borrarFormularioGuardado==='function') _borrarFormularioGuardado(); // parte guardado de verdad: ya no hace falta la foto del formulario
   if(typeof _db==='undefined' || !_db || !r || !r.pedido) return;
   var docId=((r.clienteId||'mercadona')+'_'+r.fecha+'_'+r.centro+'_'+r.pedido).replace(/[\/\s]/g,'-');
   _db.collection('partesSinGuardar').doc(docId).delete().catch(_fallo('_borrarBorradorParte'));
@@ -9136,6 +9137,145 @@ var _authReady = firebase.auth().signInAnonymously().catch(function(e){ console.
 var CREADOR = { nombre: 'manuel rivero', pin: '1030' };
 var MANUEL_ADMIN_PIN = '1212';
 
+// ===== RECUPERAR EL FORMULARIO DEL PARTE TRAS UNA RECARGA =====
+// Cuando el móvil descarta la app de memoria (al salir a otra app) y la vuelve a cargar, lo que el técnico había escrito en el formulario del
+// parte se perdía. Mientras el formulario (o la pantalla del parte ya generado) está abierto, se guarda una "foto" en el móvil cada pocos
+// segundos y al salir de la app; si la app se recarga, al volver se monta el formulario tal como estaba. La foto se borra al guardar el parte,
+// al salir del formulario a propósito, en el cierre diario de las 6:00 y al cerrar sesión. Nunca sale del móvil.
+var FORMULARIO_KEY = 'irv_formulario';
+var _restaurandoFormulario = false, _guardadoFormularioActivo = false;
+var _GLOBALES_FORM = ['curJob', 'curLink', 'curOrigen', 'wRoles', 'wNames', 'esFestivo', '_nocturnoConfirmado', '_actObrasSeleccionada',
+  '_pedidoNoMerc', '_averiaReportada', 'aeData', '_editIdx', '_cAC', '_oAC', '_asgTecActual',
+  '_editNumParteOriginal', '_notaKmAdicionalOriginal', '_origenAutoLectura', '_centroSeleccionado', '_editEsPrimero'];
+var _GRUPOS_BOTONES_FORM = ['jobTgl', 'lnkTgl', 'origTgl', 'festivoTgl', 'todosEnlazanTgl'];
+// Avisos y listas que se abren solos: no se recuperan
+var _IGNORAR_FORM = /^(msg|abn$|acOrden$|acCentro$|out$)/;
+
+// Instante del último cierre diario de las 6:00; lo guardado antes de ese momento ya no vale
+function _ultimoCierreDiarioForm(){
+  var ahora = new Date();
+  var corte = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate(), 6, 0, 0, 0);
+  if (ahora < corte) corte.setDate(corte.getDate() - 1);
+  return corte.getTime();
+}
+function _borrarFormularioGuardado(){
+  try { localStorage.removeItem(FORMULARIO_KEY); } catch(e){ _fallo('_borrarFormularioGuardado')(e); }
+}
+function _capturarFormulario(){
+  var c = { campos: {}, vis: {}, g: {}, botones: {}, ms: { sel: _MS.sel, extras: _MS.extras, secAbierta: _MS.secAbierta, subAbierta: _MS.subAbierta, catJob: _MS.catJob } };
+  [].slice.call(document.querySelectorAll('#w-form [id]')).forEach(function(el){
+    if (_IGNORAR_FORM.test(el.id)) return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) && el.type !== 'file' && el.type !== 'button') {
+      c.campos[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+      c.vis[el.id] = { d: el.style.display, c: el.className, ro: el.readOnly, dis: el.disabled };
+    } else {
+      c.vis[el.id] = { d: el.style.display, c: el.className };
+      if (/Display$/.test(el.id)) c.vis[el.id].t = el.textContent;
+    }
+  });
+  _GLOBALES_FORM.forEach(function(n){ if (typeof window[n] !== 'undefined') c.g[n] = window[n]; });
+  _GRUPOS_BOTONES_FORM.forEach(function(g){
+    c.botones[g] = [].slice.call(document.querySelectorAll('#' + g + ' button')).map(function(b){ return { a: b.classList.contains('active'), dis: b.disabled }; });
+  });
+  var dlg = $('dlgInicioOrden');
+  c.inicio = !!(dlg && dlg.classList.contains('show'));
+  var res = $('w-result');
+  if (res && res.classList.contains('active')) c.resultado = { out: $('out').innerHTML, rec: window.recTmp };
+  return c;
+}
+// ¿Hay algo escrito que merezca la pena guardar? (un formulario recién abierto y vacío no se guarda)
+function _formularioTieneAlgo(){
+  var w = $('w-result');
+  if (w && w.classList.contains('active')) return true;
+  var tieneTexto = ['arr', 'lea', 'obs', 'pedido', 'centro', 'numParte', 'tienda', 'km', 'tr'].some(function(id){ var e = $(id); return !!(e && String(e.value || '').trim()); });
+  var tieneMat = !!(window._MS && ((_MS.sel && Object.keys(_MS.sel).some(function(k){ return _MS.sel[k]; })) || (_MS.extras && Object.keys(_MS.extras).length > 0)));
+  return tieneTexto || tieneMat;
+}
+function _guardarFormulario(){
+  try {
+    if (_restaurandoFormulario || !_guardadoFormularioActivo || !window._sesion || !localStorage.getItem('irv_sesion')) return;
+    var w = document.querySelector('.win.active');
+    var enParte = !!(w && (w.id === 'w-form' || w.id === 'w-result'));
+    if (!enParte || !_formularioTieneAlgo()) { _borrarFormularioGuardado(); return; } // salió del formulario o no hay nada escrito
+    var est = { nombre: window._sesion.nombre, rol: window._sesion.rol, ts: Date.now(), win: w.id, cli: curCliente ? curCliente.id : null, ctx: _capturarFormulario() };
+    localStorage.setItem(FORMULARIO_KEY, JSON.stringify(est));
+  } catch(e){ _fallo('_guardarFormulario')(e); }
+}
+// Devuelve la foto guardada si es de este mismo usuario y rol y es posterior al último cierre diario de las 6:00
+function _formularioGuardado(sesion){
+  try {
+    var p = JSON.parse(localStorage.getItem(FORMULARIO_KEY) || 'null');
+    if (!p || !p.ctx || p.nombre !== sesion.nombre || p.rol !== sesion.rol || !(p.ts >= _ultimoCierreDiarioForm())) return null;
+    return p;
+  } catch(e){ _fallo('_formularioGuardado')(e); return null; }
+}
+function _ponerCamposForm(campos){
+  Object.keys(campos || {}).forEach(function(id){
+    var el = $(id); if (!el) return;
+    if (el.type === 'checkbox') el.checked = !!campos[id]; else el.value = campos[id];
+  });
+}
+function _restaurarFormulario(p){
+  _restaurandoFormulario = true;
+  try {
+    var c = p.ctx;
+    if (p.cli) { seleccionarCliente(p.cli); if (!curCliente) return; } // el cliente ya no existe: se queda en el inicio
+    // Se abre el formulario sin la pregunta inicial de "orden nueva / continuar orden"
+    volverAlForm();
+    _keepForm = false;
+    Object.keys(c.g || {}).forEach(function(n){ window[n] = c.g[n]; });
+    _MS.sel = c.ms.sel || {}; _MS.extras = c.ms.extras || {}; _MS.secAbierta = c.ms.secAbierta; _MS.subAbierta = c.ms.subAbierta; _MS.catJob = c.ms.catJob;
+    // Piezas que se montan a partir de las variables y de algunos campos (p. ej. nº de técnicos): primero esos campos, luego las piezas, y
+    // después todos los campos otra vez (así también los que crean las propias piezas)
+    _ponerCamposForm(c.campos);
+    if (curCliente) { adaptarFormularioACliente(); renderJobTgl(); }
+    renderWorkers();
+    _ponerCamposForm(c.campos);
+    Object.keys(c.vis).forEach(function(id){
+      var el = $(id), v = c.vis[id];
+      if (!el) return;
+      el.style.display = v.d;
+      if (typeof v.c === 'string') el.className = v.c;
+      if (typeof v.ro === 'boolean') el.readOnly = v.ro;
+      if (typeof v.dis === 'boolean') el.disabled = v.dis;
+      if (typeof v.t === 'string') el.textContent = v.t;
+    });
+    Object.keys(c.botones).forEach(function(g){
+      [].slice.call(document.querySelectorAll('#' + g + ' button')).forEach(function(b, i){
+        var s = c.botones[g][i]; if (!s) return;
+        b.classList.toggle('active', s.a); b.disabled = s.dis;
+      });
+    });
+    if (typeof msRender === 'function' && $('parteMatCard')) msRender('parteMatCard');
+    if (c.resultado) { $('out').innerHTML = c.resultado.out; window.recTmp = c.resultado.rec; goToRaw('w-result'); }
+    else if (c.inicio) mostrarDlgInicioOrden();
+    if (typeof _toast === 'function') _toast('Se ha recuperado tu parte tal como estaba.');
+  } catch(e){
+    _fallo('_restaurarFormulario')(e);
+    _borrarFormularioGuardado(); // si no se pudo montar, no se insiste con una foto que da error
+    goToRaw('w-clientes');
+  } finally {
+    _restaurandoFormulario = false;
+  }
+}
+// Se llama al recuperar la sesión guardada tras una recarga (y solo entonces)
+function _recuperarFormularioGuardado(){
+  var s = window._sesion; if (!s) return false;
+  var p = _formularioGuardado(s);
+  if (!p) return false;
+  _restaurarFormulario(p);
+  return true;
+}
+// El guardado empieza DESPUÉS de intentar recuperar: si no, borraría la foto antes de usarla
+function _iniciarGuardadoFormulario(){
+  if (_guardadoFormularioActivo) return;
+  _guardadoFormularioActivo = true;
+  setInterval(_guardarFormulario, 3000);
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') _guardarFormulario(); });
+  window.addEventListener('pagehide', _guardarFormulario);
+}
+
+
 // Si hay una sesión guardada de una vez anterior, entrar directamente sin pedir PIN otra
 // vez — así la app sobrevive a que el móvil descargue la pestaña de memoria al salir a
 // otra app. Se mantiene indefinidamente hasta el reinicio diario de las 6am o un cierre
@@ -9173,9 +9313,13 @@ _authReady.then(function(){
       var _splashRest = document.getElementById('splash');
       if (_splashRest) _splashRest.style.display = 'none';
       document.body.style.overflow = '';
+      // Si el técnico estaba rellenando un parte cuando el móvil descartó la app, se monta de nuevo tal como estaba (ver más arriba)
+      setTimeout(_recuperarFormularioGuardado, 700);
     }
   } catch(e){ _fallo('animateStep')(e); }
 });
+// El guardado del formulario empieza después de intentar recuperarlo (arriba); si no, borraría la foto antes de usarla
+_authReady.then(function(){ setTimeout(_iniciarGuardadoFormulario, 1500); });
 
 // Sincronizaciones que no dependen del rol final; se lanzan al recuperar una sesión guardada sin presentación (las mismas que
 // _iniciarPresentacionLogin lanza al entrar con PIN).
