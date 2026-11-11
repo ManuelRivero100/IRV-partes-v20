@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="lib/jspdf-2.5.1.umd.min.js"></script>
 <meta charset="utf-8">
   <link rel="manifest" href="manifest.json">
 <script>
@@ -442,6 +442,7 @@ textarea{resize:vertical;min-height:72px}
       <div style="font-size:2.5rem;margin-bottom:8px;">🔧</div>
       <div style="font-size:1.3rem;font-weight:700;color:var(--text);">Partes IRV-10</div>
       <div style="font-size:.82rem;color:var(--text2);margin-top:4px;">Soluciones a tu Medida</div>
+      <div id="verApp" style="font-size:.7rem;color:var(--text3);margin-top:10px;opacity:.75;"></div>
     </div>
     <div id="loginForm">
       <div class="field" style="margin-bottom:14px;">
@@ -1235,7 +1236,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-10d-formulario-recuperable';
+var APP_BUILD_ID = 'build-2026-11-11a-pilares';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -9100,6 +9101,8 @@ renderWorkers();
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
+    // Versión de la app en pequeño en la pantalla de entrada: así se ve qué versión tiene cada móvil
+    var _verApp = document.getElementById('verApp'); if(_verApp) _verApp.textContent = 'Versión ' + String(APP_BUILD_ID).replace(/^build-/, '');
     navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).then(function(reg){
       console.log('SW registered');
     }).catch(function(err){
@@ -9115,9 +9118,9 @@ if('serviceWorker' in navigator){
 }
 </script>
 <!-- Firebase compat — al final para garantizar carga -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="lib/firebase-app-compat-10.12.0.js"></script>
+<script src="lib/firebase-firestore-compat-10.12.0.js"></script>
+<script src="lib/firebase-auth-compat-10.12.0.js"></script>
 <script>
 try {
   firebase.initializeApp({
