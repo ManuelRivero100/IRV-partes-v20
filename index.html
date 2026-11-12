@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<script>// Si hay una sesión guardada, se oculta la entrada y el logo mientras se recupera: así al volver a la app (Android la recarga al estar en segundo plano) no pasa por el logo
+try { if (localStorage.getItem('irv_sesion')) document.documentElement.classList.add('recuperando'); } catch(e) {}</script>
 <script src="lib/jspdf-2.5.1.umd.min.js"></script>
 <meta charset="utf-8">
   <link rel="manifest" href="manifest.json">
@@ -382,6 +384,7 @@ textarea{resize:vertical;min-height:72px}
   z-index: 99999;
   gap: 36px;
 }
+html.recuperando #w-login, html.recuperando #splash { display: none !important; }
 #coin-wrap { width:150px; height:150px; }
 #coin {
   width: 150px;
@@ -1236,7 +1239,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-12a-registro-cargas';
+var APP_BUILD_ID = 'build-2026-11-12b-sin-logo-al-recargar';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -9304,7 +9307,9 @@ _authReady.then(function(){
     // sin borrar nada; los datos se actualizan por detrás.
     var _nombreKeyRest = (_sesionGuardada.nombre || '').toLowerCase();
     var _usuarioDispRest = localStorage.getItem(DISPOSITIVO_USUARIO_KEY);
-    var _hayQueRefrescar = (_usuarioDispRest && _usuarioDispRest !== _nombreKeyRest) || localStorage.getItem(ULTIMA_VERIFICACION_KEY) !== hoy;
+    // El logo (presentación) solo sale al entrar por el login con PIN. Al recuperar una sesión guardada (por ejemplo, Android recargó la app al
+    // volver a ella) nunca sale por el cambio de día: antes de las 6:00 el día cambia a medianoche pero el cierre diario aún no ha pasado.
+    var _hayQueRefrescar = (_usuarioDispRest && _usuarioDispRest !== _nombreKeyRest) || (localStorage.getItem(ULTIMA_VERIFICACION_KEY) !== hoy && ahora.getHours() >= 6);
     if (_hayQueRefrescar) {
       _iniciarPresentacionLogin(_sesionGuardada.nombre);
     } else {
@@ -9320,7 +9325,11 @@ _authReady.then(function(){
       setTimeout(_recuperarFormularioGuardado, 700);
     }
   } catch(e){ _fallo('animateStep')(e); }
+  finally { _terminarRecuperacion(); } // se muestra lo que corresponda (la app, el login o la presentación): ya no se oculta nada
 });
+function _terminarRecuperacion(){ document.documentElement.classList.remove('recuperando'); }
+// Si algo tardara demasiado (por ejemplo Firebase sin red), no se deja la pantalla en blanco: se muestra la entrada de siempre
+setTimeout(_terminarRecuperacion, 8000);
 // El guardado del formulario empieza después de intentar recuperarlo (arriba); si no, borraría la foto antes de usarla
 _authReady.then(function(){ setTimeout(_iniciarGuardadoFormulario, 1500); });
 
