@@ -682,7 +682,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
     </div>
     <div class="field" id="fieldCentro">
       <label id="labelCentro">N&ordm; centro</label>
-      <input id="centro" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 2721" oninput="buscarPorCentroORef(this.value);if(this.value.length>2)ocultarLectura();checkAutoEnlace()">
+      <input id="centro" inputmode="numeric" pattern="[0-9]*" placeholder="Ej: 2721" oninput="buscarPorCentroORef(this.value);if(this.value.length>2)ocultarLectura();checkAutoEnlace();_actualizarVueltaTaller()">
       <div class="ac-box" id="acCentro"></div>
     </div>
     <div class="field"><label id="labelTienda">Tienda <span class="req">*</span></label><input id="tienda" placeholder="Mercadona SAN JAVIER 2721" oninput="buscarRefNoMerc(this.value)" autocomplete="off"><div class="ac-box" id="acRef"></div></div>
@@ -697,6 +697,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
       </div>
       <input type="hidden" id="origen" value="nave">
     </div>
+    <div id="otroDesdeBox" style="display:none"><div class="field"><label>Partida desde</label><input id="otroPartidaDesde" placeholder="Ej: Hotel en Almer&iacute;a"></div></div>
     <div id="modeNave">
     <div id="lnkToggleDiv" class="field"><label>Tipo</label>
       <div class="tgl" id="lnkTgl">
@@ -752,15 +753,20 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
     </div>
     </div>
     <div id="modeOtroPunto" style="display:none">
-      <div class="field"><label>Partida desde</label><input id="otroPartidaDesde" placeholder="Ej: Hotel en Almer&iacute;a"></div>
+      <div id="otroIdaBox" style="display:none">
       <div class="g2">
         <div class="field"><label>Km ida</label><input id="kmOtroIda" type="number" min="0" placeholder="km"></div>
         <div class="field"><label>Despl. ida (min)</label><input id="trOtroIda" type="number" min="0" placeholder="min"></div>
       </div>
-      <div class="field"><label>Llegada hacia</label><input id="otroLlegadaHacia" placeholder="Ej: Regreso a Almer&iacute;a"></div>
+      </div>
+      <div id="otroHaciaBox" style="display:none">
+      <div class="field"><label>Llegada hacia</label><input id="otroLlegadaHacia" placeholder="Ej: Regreso a Almer&iacute;a" oninput="_actualizarVueltaTaller()"></div>
+      </div>
+      <div id="otroVueltaBox" style="display:none">
       <div class="g2">
         <div class="field"><label>Km vuelta</label><input id="kmOtroVuelta" type="number" min="0" placeholder="km"></div>
         <div class="field"><label>Despl. vuelta (min)</label><input id="trOtroVuelta" type="number" min="0" placeholder="min"></div>
+      </div>
       </div>
     </div>
   </div>
@@ -1167,7 +1173,7 @@ PROTOCOLOS EXISTENTES
 3. TRAYECTORIA — setOrigen(), setLink(), checkAutoEnlace(), resetAE(), _activarEnlaceAuto()
    - Origen: Desde la nave (normal) / Otro punto (ida y vuelta manuales, no sale de la nave)
    - "Desde la nave" tiene 3 modos de enlace: No / Si / Auto (detecta parte anterior del mismo día)
-   - "Otro punto" NO usa enlace — checkAutoEnlace() se sale sin hacer nada si curOrigen==='otro'
+   - "Otro punto" ya admite enlace entre tiendas (ver _aplicarTrayecto); checkAutoEnlace() funciona igual con cualquier origen
    - Auto-enlace se activa de 2 formas (checkAutoEnlace()): (1) por tienda destino ya anunciada
      — si el parte anterior declaró "Con enlace" hacia el Nº de centro que se acaba de escribir,
      enlaza al instante sin mirar la hora (más fiable en trayectos largos); (2) si no hay destino
@@ -1239,7 +1245,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-16a-asignacion-con-datos-de-agenda';
+var APP_BUILD_ID = 'build-2026-11-17a-otro-punto-con-enlace-y-taller';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -4126,11 +4132,13 @@ function generarCore(){
   // generar. checkAutoEnlace() ya protege un enlace manual 'Sí' (early-return) y excluye
   // Servicios y Reparaciones, así que es seguro llamarla aquí sin distinguir cliente/flujo.
   checkAutoEnlace();
+  _actualizarVueltaTaller();
 
   var kmT=0,trI=0,trO=0,kmDG=0,trDG=0,heG=0,kmG=0,trG=0;
   var _notaEnlace='';
+  var _otroDesde='', _otroHacia='';
   var _origenPedidoAuto=null, _origenCentroAuto=null;
-  if(curOrigen==='otro'){
+  if(curOrigen==='otro' && curLink==='No'){
     if(!$('kmOtroIda').value||!$('trOtroIda').value||!$('kmOtroVuelta').value||!$('trOtroVuelta').value){ showMsg('msgForm','Indica km y despl. de ida y vuelta.','error'); return; }
     var kOI=+$('kmOtroIda').value, tOI=rQ(+$('trOtroIda').value);
     var kOV=+$('kmOtroVuelta').value, tOV=rQ(+$('trOtroVuelta').value);
@@ -4166,6 +4174,12 @@ function generarCore(){
     if(same.length && same[same.length-1].tienda) _notaEnlace='Desplazamiento Desde '+same[same.length-1].tienda;
     if(same.length){ _origenPedidoAuto=same[same.length-1].pedido||null; _origenCentroAuto=same[same.length-1].centro||null; }
   }
+  if(curOrigen==='otro' && curLink!=='No'){
+    // "Otro punto" con enlace: se anota de donde sale (enlace manual) o hacia donde llega (enlace automatico) junto al texto del enlace
+    _otroDesde=(curLink==='Si' && $('otroPartidaDesde'))?$('otroPartidaDesde').value.trim():'';
+    _otroHacia=(curLink==='Auto' && $('otroLlegadaHacia'))?$('otroLlegadaHacia').value.trim():'';
+    _notaEnlace=[(_otroDesde?'Partida desde '+_otroDesde:''), _notaEnlace, (_otroHacia?'Llegada hacia '+_otroHacia:'')].filter(Boolean).join(' '+String.fromCharCode(183)+' ');
+  }
   var kmTBase=kmT;
   var _nCoches=Math.max(1,+$('ncoches').value||1);
   var _todosEnlazan = $('todosEnlazan') ? $('todosEnlazan').value!=='No' : true;
@@ -4193,7 +4207,7 @@ function generarCore(){
   kmT = kmT + kmAdic;
 
   var tlK='',tlT='',tlS='';
-  if(curOrigen==='otro'){ tlK=tl(arr-trI,arr)+' &middot; '+fmt(kOI)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(kOV)+' km'; }
+  if(curOrigen==='otro' && curLink==='No'){ tlK=tl(arr-trI,arr)+' &middot; '+fmt(kOI)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(kOV)+' km'; }
   else if(curLink==='No'){ var ku=(kmT-kmAdic)/2; tlK=tl(arr-trI,arr)+' &middot; '+fmt(ku)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ku)+' km'; }
   else if(curLink==='Si'){ var kev=+$('kmE').value,ksm=kmDG>0?kev:+$('kmS').value; tlK=tl(arr-trI,arr)+' &middot; '+fmt(kev)+' km'; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(ksm)+' km'; }
   else if(curLink==='Auto'){ var kAv=+$('kmA').value,kd=aeData?aeData.kmDif:0,td2=aeData?aeData.trDif:0; tlK=(td2>0)?tl(arr-trI,arr)+' &middot; '+fmt(kd)+' km':''; tlT=tl(arr,lea)+' Tienda'; tlS=tl(lea,lea+trO)+' &middot; '+fmt(kAv)+' km'; }
@@ -4559,6 +4573,7 @@ function resetearEstadoCompleto(){
   $('modeNave').style.display='block';
   $('modeOtroPunto').style.display='none';
   $('origen').value='nave';
+  _aplicarTrayecto();
   $('abn').classList.remove('show');
   $('acOrden').classList.remove('show');
   $('acCentro').classList.remove('show');
@@ -4610,7 +4625,7 @@ function nuevo(){
   $('workersRol').style.display='none'; $('workersList').innerHTML='';
   $('modeNo').style.display='block'; $('modeSi').style.display='none'; $('modeAuto').style.display='none';
   $('modeNave').style.display='block'; $('modeOtroPunto').style.display='none'; $('origen').value='nave';
-  $('lnkToggleDiv').style.display='block'; $('abn').classList.remove('show');
+  $('lnkToggleDiv').style.display='block'; $('abn').classList.remove('show'); _aplicarTrayecto();
   $('acOrden').classList.remove('show'); $('acCentro').classList.remove('show');
   $('msgForm').className='msg'; $('out').innerHTML=''; window.recTmp=null;
   $('gbtn').textContent='\u{1F4BE} Guardar parte'; $('gbtn').disabled=false; $('gbtn').style.opacity='1';
@@ -6442,7 +6457,6 @@ function fmtH(v){
 }
 
 function checkAutoEnlace(){
-  if(curOrigen==='otro') return; // trayecto libre, no sale de la nave — el enlace no aplica
   if(curLink==='Si') return; // nunca sobrescribir un enlace manual ya elegido por el técnico
   if(curLink==='Auto') return; // ya está en modo Auto — no repetir el autorrelleno de kmA/trA,
                                  // que sobrescribiría un valor que el técnico ya corrigió a mano
@@ -6491,6 +6505,7 @@ function _activarEnlaceAuto(last){
     if(!$('trA').value) $('trA').value=$('tr').value||'';
     _bloquearCamposAutorrellenados();
     aeData={kmDif:last.kmDif||0,trDif:last.trDif||0};
+    _aplicarTrayecto();
     // Con enlace, el km/despl. de salida del segundo parte es el trayecto REAL de regreso
     // — nunca debe sugerirse con un dato del parte anterior (eso sería aplicar la lógica
     // de "sin enlace" a un caso con enlace). El técnico introduce el valor real.
@@ -6824,6 +6839,7 @@ function resetAE(){
   var isSi=curLink==='Si';
   $('modeNo').style.display=isSi?'none':'block'; $('modeSi').style.display=isSi?'block':'none';
   if(curLink==='Auto'){ curLink='No'; $('link').value='No'; }
+  _aplicarTrayecto();
   aeData=null;
 }
 
@@ -7747,6 +7763,7 @@ function setLink(v,btn){
   $('modeNo').style.display=v==='Si'?'none':'block';
   $('modeSi').style.display=v==='No'?'none':'block';
   _actualizarTodosEnlazanVisibilidad();
+  _aplicarTrayecto();
 }
 
 var curOrigen='nave';
@@ -7754,9 +7771,51 @@ function setOrigen(v,btn){
   curOrigen=v; $('origen').value=v;
   document.querySelectorAll('#origTgl button').forEach(function(b){ b.classList.remove('active'); });
   if(btn) btn.classList.add('active');
-  $('modeNave').style.display=v==='otro'?'none':'block';
-  $('modeOtroPunto').style.display=v==='otro'?'block':'none';
+  _aplicarTrayecto();
+  if(v==='otro'){ var _hh=$('otroLlegadaHacia'); if(_hh && !_hh.value.trim() && _editIdx===null) _hh.value='Taller'; _actualizarVueltaTaller(); }
 }
+// ===== "Otro punto" con enlace entre tiendas y regreso al "Taller" =====
+// Con "Otro punto" ya NO desaparece el enlace entre tiendas: se puede elegir Sin enlace / Con enlace, y el enlace automatico (parte anterior del dia
+// enlazado con esta tienda) funciona igual que desde la nave, con las mismas reglas de cuenta. Solo cambia de donde sale la ida ("Partida desde").
+// "Llegada hacia" sale con "Taller". Mientras diga Taller (o Nave) y la tienda conocida tenga km y desplazamiento en la Agenda, los km y minutos de la
+// vuelta salen solos y BLOQUEADOS; si el texto cambia (el regreso es a otro sitio) se vacian, se desbloquean y se escriben a mano (no se guardan en la Agenda).
+function _normTextoTaller(s){ return String(s==null?'':s).toLowerCase().normalize('NFD').replace(new RegExp('['+String.fromCharCode(768)+'-'+String.fromCharCode(879)+']','g'),'').replace(/ +/g,' ').trim(); }
+function _otroHaciaEsTaller(txt){ var t=_normTextoTaller(txt); return t==='taller' || t==='nave'; }
+function _aplicarTrayecto(){
+  var otro=(curOrigen==='otro'), L=curLink;
+  var d=function(id,v){ var el=$(id); if(el) el.style.display=v?'block':'none'; };
+  d('modeNave',true);
+  d('lnkToggleDiv', L!=='Auto');
+  d('modeNo', !otro && L!=='Si' && L!=='Auto');
+  d('modeSi', L==='Si');
+  d('modeAuto', L==='Auto');
+  d('modeOtroPunto', otro);
+  d('otroDesdeBox', otro && L!=='Auto');
+  d('otroIdaBox', otro && L==='No');
+  d('otroHaciaBox', otro && (L==='No' || L==='Auto'));
+  d('otroVueltaBox', otro && L==='No');
+  _actualizarVueltaTaller();
+}
+function _actualizarVueltaTaller(){
+  var kmV=$('kmOtroVuelta'), trV=$('trOtroVuelta'), kmA=$('kmA'), trA=$('trA'), hacia=$('otroLlegadaHacia');
+  if(!kmV||!trV||!kmA||!trA||!hacia) return;
+  if(window._modoSimulacion) return; // el comparador de calculo (app nueva) recalcula con los datos guardados: no se autorrellena nada
+  var soltar=function(el){ if(el._taller){ el.value=''; el._taller=false; el.readOnly=false; el.style.background=''; el.style.color=''; } };
+  var aplica=(curOrigen==='otro' && (curLink==='No' || curLink==='Auto') && _editIdx===null);
+  if(!aplica){ [kmV,trV,kmA,trA].forEach(soltar); return; }
+  var par=(curLink==='Auto')?[kmA,trA]:[kmV,trV], otroPar=(curLink==='Auto')?[kmV,trV]:[kmA,trA];
+  soltar(otroPar[0]); soltar(otroPar[1]);
+  var centro=($('centro').value||'').trim();
+  var ag=centro?agendaBuscar(curCliente?curCliente.id:'mercadona',centro):null;
+  var conocida=!!(ag && ag.km!=null && ag.km!=='' && ag.tr!=null && ag.tr!=='');
+  if(_otroHaciaEsTaller(hacia.value) && conocida){
+    [[par[0],ag.km],[par[1],ag.tr]].forEach(function(p){
+      var el=p[0]; if(String(el.value)!==String(p[1])) el.value=p[1];
+      el._taller=true; el.readOnly=true; el.style.background='var(--surface2)'; el.style.color='var(--text2)';
+    });
+  } else { soltar(par[0]); soltar(par[1]); }
+}
+setInterval(function(){ try{ if(curOrigen==='otro') _actualizarVueltaTaller(); }catch(e){} }, 700);
 
 // Busca si ya existe una pareja de tiendas guardada (tienda actual + tienda destino) —
 // si existe, autorrellena y bloquea km/despl. de salida (exclusivos de esa pareja); si no,
@@ -8090,6 +8149,10 @@ function _subirParteAFirestore(parte, razon){
     if(parte.origen!=='otro'){
       _subirAgendaEntry(parte.clienteId, parte.centro, parte.tienda, parte.dir, parte.tel, parte.km, parte.tr);
       _completarAgendaFaltantes(parte.clienteId, parte.centro, parte.km, parte.tr);
+    } else if(parte.linkType!=='Si' && _otroHaciaEsTaller(parte.otroLlegadaHacia)){
+      // "Otro punto" con regreso a la nave/taller: ese regreso SI es la distancia de la tienda a la nave (el km de la partida desde otro sitio, nunca).
+      var _kvT=(parte.linkType==='Auto')?parte.km:parte.otroKmVuelta, _tvT=(parte.linkType==='Auto')?parte.tr:parte.otroTrVuelta;
+      if(_kvT){ _subirAgendaEntry(parte.clienteId, parte.centro, parte.tienda, parte.dir, parte.tel, _kvT, _tvT); _completarAgendaFaltantes(parte.clienteId, parte.centro, _kvT, _tvT); }
     }
   }catch(e){ _marcarPendienteSync(parte, true); }
 }
@@ -8606,9 +8669,9 @@ function _bloquearCamposAutorrellenados(){
   });
 }
 function _desbloquearCamposAutorrellenados(){
-  ['centro','tienda','dir','tel','km','tr','kmA','trA','kmS','trS','enlaceDestino'].forEach(function(id){
+  ['centro','tienda','dir','tel','km','tr','kmA','trA','kmS','trS','enlaceDestino','kmOtroVuelta','trOtroVuelta'].forEach(function(id){
     var el=$(id);
-    if(el){ el.readOnly=false; el.style.background=''; el.style.color=''; }
+    if(el){ el._taller=false; el.readOnly=false; el.style.background=''; el.style.color=''; }
   });
 }
 // Al editar un parte ya guardado, estos campos identifican DE QUÉ parte se trata (misma
@@ -8682,6 +8745,7 @@ function _rellenarFormulario(datos){
   var acO=$('acOrden'); if(acO) acO.classList.remove('show');
   var acC=$('acCentro'); if(acC) acC.classList.remove('show');
   _bloquearCamposAutorrellenados();
+  _actualizarVueltaTaller();
 }
 // Incidencia de un cliente NO Mercadona abierta con el nº de parte "0000" (la misma excepción de generar()):
 // cada parte nuevo de esa incidencia sale con "0000" ya escrito. El técnico puede cambiarlo; si pone otro
