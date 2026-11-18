@@ -1247,7 +1247,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-18a-atras-inicio';
+var APP_BUILD_ID = 'build-2026-11-18b-avisos-con-estilo';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1269,6 +1269,9 @@ function goToRaw(id){
 // también automáticamente al minuto 4 de inactividad (1 min antes de que la
 // pantalla se apague por el Wake Lock). No guarda ni restaura nada — solo avisa.
 function _parteTieneContenidoSinGuardar(){
+  // En la pantalla del parte generado, esta sin guardar mientras el boton "Guardar parte" siga activo
+  var res=$('w-result');
+  if(res && res.classList.contains('active')){ var g=$('gbtn'); return !!(g && !g.disabled); }
   var w=$('w-form');
   if(!w || !w.classList.contains('active')) return false;
   var obs=$('obs');
@@ -3013,7 +3016,7 @@ function dlgEditMatGuardar(){
   var gPrev=getCat().grupos.find(function(x){return x.id===_catState.grupoAb;});
   if(gPrev){ var secPrev=gPrev.secciones[siPrev]; if(secPrev){ var matsPrev=ssiPrev===-1?(secPrev.mats||[]):(secPrev.subsecs[ssiPrev]?secPrev.subsecs[ssiPrev].mats||[]:[]); if(matsPrev[miPrev]) viejoNomPrevio=matsPrev[miPrev].nom; } }
   if(viejoNomPrevio&&nuevoNom!==viejoNomPrevio&&todos.find(function(n){return n.toLowerCase()===nuevoNom.toLowerCase();})){
-    alert('"'+nuevoNom+'" ya existe.');return;
+    _toast('"'+nuevoNom+'" ya existe.', _AVISO_ROJO);return;
   }
   var viejoNomFinal='';
   _modificarCatalogoEnFirestore(function(cat){
@@ -3291,17 +3294,17 @@ function catGuardarNuevoSitioAgenda(clienteId){
   var id=_agDomId(clienteId);
   var nomEl=$('agNuevoNom_'+id);
   var nombre=nomEl?nomEl.value.trim():'';
-  if(!nombre){ alert('Introduce el nombre del centro.'); return; }
+  if(!nombre){ _toast('Introduce el nombre del centro.', _AVISO_ROJO); return; }
   var centro;
   if(esMerc){
     var centroEl=$('agNuevoCentro_'+id);
     centro=centroEl?centroEl.value.trim():'';
-    if(!centro){ alert('Introduce el número de centro.'); return; }
+    if(!centro){ _toast('Introduce el número de centro.', _AVISO_ROJO); return; }
   } else {
     centro=getNextCodLugar();
   }
   var key=agendaKey(clienteId,centro);
-  if(getAgenda()[key]){ alert('Ese centro ya existe en la agenda — edítalo desde su ficha en vez de crear uno nuevo.'); return; }
+  if(getAgenda()[key]){ _toast('Ese centro ya existe en la agenda — edítalo desde su ficha en vez de crear uno nuevo.', _AVISO_ROJO); return; }
   var data={
     clienteId:clienteId, centro:centro, tienda:nombre,
     dir:($('agNuevoDir_'+id)||{}).value ? $('agNuevoDir_'+id).value.trim() : '',
@@ -3822,7 +3825,7 @@ function statsVolverMain(){
 function statsExportarPDF(){
   var datos=statsFiltrar();
   if(!datos.length){ showMsg('msgRes','Sin datos para exportar.','warn'); return; }
-  if(!window.jspdf){ alert('PDF no disponible.'); return; }
+  if(!window.jspdf){ _toast('PDF no disponible.', _AVISO_ROJO); return; }
   var doc=pdfNuevo();
   var y=12;
 
@@ -3871,7 +3874,7 @@ function statsCompartir(){
     +'Centros: '+Object.keys(centros).length+'  |  Incidencias: '+Object.keys(incs).length+'  |  Partes: '+datos.length+'\n'
     +'Horas: '+statsFmtH(horas)+'  |  Km: '+Math.round(km)+'  |  Dietas: '+dietas;
   if(navigator.share){navigator.share({text:txt});}
-  else{navigator.clipboard.writeText(txt).then(function(){alert('Copiado al portapapeles');});}
+  else{navigator.clipboard.writeText(txt).then(function(){_toast('Copiado al portapapeles');});}
 }
 
 
@@ -4921,7 +4924,7 @@ function pdfTotalRowConPrecio(doc,y,horas,precio){
 }
 
 function pdfDesde(r){
-  if(!window.jspdf){ alert('PDF no disponible.'); return; }
+  if(!window.jspdf){ _toast('PDF no disponible.', _AVISO_ROJO); return; }
   var doc=pdfNuevo();
   var y=12;
   var conPrecios=curCliente&&curCliente.precios===true;
@@ -5092,7 +5095,7 @@ function compartirDesde(detalle,obsVal,matsText){
   if(obsVal){ lines.push(''); lines.push('Obs.: '+obsVal); }
   var texto=lines.join('\n').trim();
   if(navigator.share){ navigator.share({title:'Parte de Trabajo',text:texto}); }
-  else { navigator.clipboard.writeText(texto).then(function(){ alert('Texto copiado.'); }).catch(function(){ alert('No se pudo compartir.'); }); }
+  else { navigator.clipboard.writeText(texto).then(function(){ _toast('Texto copiado.'); }).catch(function(){ _toast('No se pudo compartir.', _AVISO_ROJO); }); }
 }
 
 // ===== INIT =====
@@ -6440,12 +6443,17 @@ function showMsg(id,txt,type){
   m.className='msg show '+type;
   setTimeout(function(){ m.className='msg'; },5000);
 }
+// Aviso con el estilo de la app (sustituye a las ventanas alert() del navegador). Verde por defecto; para errores y avisos, _AVISO_ROJO.
+// Dura mas cuanto mas largo es el mensaje, y un aviso nuevo sustituye al anterior.
+var _AVISO_ROJO='var(--red)';
 function _toast(msg, color){
+  var viejo=document.querySelector('.irv-toast'); if(viejo) viejo.remove();
   var t=document.createElement('div');
+  t.className='irv-toast';
   t.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);max-width:88%;background:'+(color||'var(--green)')+';color:#fff;padding:10px 18px;border-radius:20px;font-size:.85rem;font-weight:600;z-index:999;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.3);';
   t.textContent=msg;
   document.body.appendChild(t);
-  setTimeout(function(){ t.remove(); },3500);
+  setTimeout(function(){ t.remove(); }, Math.max(3500, Math.min(9000, String(msg).length*65)));
 }
 
 // ===== UTILS =====
@@ -7122,17 +7130,17 @@ function compartirOrden(){
   }
   var texto=lines.join('\n');
   if(navigator.share){ try{ navigator.share({title:'Resumen '+ordenTitle,text:texto}); return; }catch(e){ if(e.name==='AbortError') return; } }
-  try{ navigator.clipboard.writeText(texto).then(function(){ alert("Copiado"); }); alert('Resumen copiado.'); }catch(e){ alert('No se pudo compartir.'); }
+  try{ navigator.clipboard.writeText(texto).then(function(){ _toast('Resumen copiado.'); }).catch(function(){ _toast('No se pudo compartir.', _AVISO_ROJO); }); }catch(e){ _toast('No se pudo compartir.', _AVISO_ROJO); }
 }
 
 function compartirResumenCentro(){
   var tit=$('resumenCentroTitle').innerText,txt=$('resumenCentroContent').innerText;
-  navigator.clipboard.writeText(tit+' - '+txt).then(function(){alert('Copiado.');}).catch(function(){alert('No se pudo copiar.');});
+  navigator.clipboard.writeText(tit+' - '+txt).then(function(){_toast('Copiado.');}).catch(function(){_toast('No se pudo copiar.', _AVISO_ROJO);});
 }
 
 function compartirResumenTotal(){
   var txt=$('resumenTotalContent').innerText;
-  navigator.clipboard.writeText('RESUMEN TOTAL - '+txt).then(function(){alert('Copiado.');}).catch(function(){alert('No se pudo copiar.');});
+  navigator.clipboard.writeText('RESUMEN TOTAL - '+txt).then(function(){_toast('Copiado.');}).catch(function(){_toast('No se pudo copiar.', _AVISO_ROJO);});
 }
 
 function guardarConEstado(estado){
@@ -7489,7 +7497,7 @@ function _cerrarAvisoKmAdicObligatoria(){
 
 function pdfOrden(){
   var o=window._ordenActual; if(!o) return;
-  if(!window.jspdf){ alert('PDF no disponible.'); return; }
+  if(!window.jspdf){ _toast('PDF no disponible.', _AVISO_ROJO); return; }
   var doc=pdfNuevo();
   var y=12;
 
@@ -10928,13 +10936,13 @@ function confirmarCambioRol() {
 function abrirCatalogo() {
   var rol = window._sesion && window._sesion.rol;
   if (rol !== 'admin' && rol !== 'creador') {
-    alert('Sin acceso. Solo administrador o creador.'); return;
+    _toast('Sin acceso. Solo administrador o creador.', _AVISO_ROJO); return;
   }
   // El catálogo se lee y se escribe directamente contra Firestore, sin copia local
   // intermedia — por eso hace falta conexión para entrar, igual que otras acciones de admin
   _verificarConexionFirestore(function(hayConexion){
     if (!hayConexion) {
-      alert('Necesitas conexión a internet para acceder al catálogo.');
+      _toast('Necesitas conexión a internet para acceder al catálogo.', _AVISO_ROJO);
       return;
     }
     goTo('w-catalogo');
@@ -11268,7 +11276,7 @@ function _generarBackupCompleto(hoy, callback, coleccionDestino){
 function abrirBackups(){
   if(!(window._sesion && window._sesion.rol==='creador')) return;
   _verificarConexionFirestore(function(hayConexion){
-    if(!hayConexion){ alert('Necesitas conexión a internet para acceder a las copias de seguridad.'); return; }
+    if(!hayConexion){ _toast('Necesitas conexión a internet para acceder a las copias de seguridad.', _AVISO_ROJO); return; }
     goTo('w-backups');
     _verEstadoBackups();
   });
@@ -11307,7 +11315,7 @@ function _generarBackupManual(){
 function abrirPapelera(){
   if(!(window._sesion && (window._sesion.rol==='admin'||window._sesion.rol==='creador'))) return;
   _verificarConexionFirestore(function(hayConexion){
-    if(!hayConexion){ alert('Necesitas conexión a internet para acceder a la papelera.'); return; }
+    if(!hayConexion){ _toast('Necesitas conexión a internet para acceder a la papelera.', _AVISO_ROJO); return; }
     goTo('w-papelera');
     _renderPapelera();
   });
@@ -11339,7 +11347,7 @@ function _renderPapelera(){
   }).catch(function(){ el.innerHTML='<p style="font-size:.85rem;color:var(--red);padding:10px 0;">Error al consultar la papelera.</p>'; });
 }
 function _restaurarDePapeleraUI(idPapelera){
-  _restaurarDePapelera(idPapelera).then(function(){ _renderPapelera(); }).catch(function(){ alert('No se pudo restaurar. Comprueba tu conexión e inténtalo de nuevo.'); });
+  _restaurarDePapelera(idPapelera).then(function(){ _renderPapelera(); }).catch(function(){ _toast('No se pudo restaurar. Comprueba tu conexión e inténtalo de nuevo.', _AVISO_ROJO); });
 }
 function _purgarDePapeleraUI(idPapelera){
   if(!(window._sesion && window._sesion.rol==='creador')) return;
