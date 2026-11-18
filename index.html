@@ -70,6 +70,8 @@ body{font-family:sans-serif;background:var(--bg);color:var(--text);min-height:10
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .back{display:flex;align-items:center;gap:6px;font-size:.85rem;font-weight:600;color:var(--green);background:none;border:none;cursor:pointer;padding:0;margin-bottom:14px;font-family:inherit}
 .back:hover{text-decoration:underline}
+.navrow{display:flex;align-items:center;gap:22px;margin-bottom:14px}
+.navrow .back{margin-bottom:0}
 .cliente-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
 .cliente-card{background:var(--surface);border:2px solid var(--border);border-radius:var(--r);padding:22px 16px;text-align:center;cursor:pointer;transition:all .18s;box-shadow:var(--sh);position:relative;backdrop-filter:blur(10px);}
 .cliente-card:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.1)}
@@ -537,7 +539,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
 </div>
 <div id="w-catalogo" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
   <div class="cat-tabs">
     <button class="cat-tab active" onclick="catTab('materiales',this)">&#128295; Materiales<span id="catMatFlotanteBadge" style="display:none;background:var(--amber);color:#fff;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:5px;">0</span></button>
     <button class="cat-tab" onclick="catTab('conceptos',this)">&#9201; Conceptos</button>
@@ -581,7 +583,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
 </div>
 </div>
 <div id="w-nuevo-cliente" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Clientes</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
   <div class="card">
     <div class="card-title">&#43; Nuevo cliente</div>
     <div class="field"><label>Nombre <span class="req">*</span></label><input id="nc-nombre" placeholder="Ej: Construcciones García"></div>
@@ -608,11 +610,11 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
 </div>
 <div id="w-menu" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Clientes</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
   <div id="menuGrid" class="app-grid"></div>
 </div>
 <div id="w-asignar" class="win">
-  <button class="back" onclick="goTo('w-menu')">&#8592; Men&uacute; principal</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-menu')">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
   <button class="btn btn-p btn-full" style="margin-bottom:10px;" onclick="toggleCard('cardCrearAsg',this)">&#10133; Crear asignaci&oacute;n</button>
   <div class="card" id="cardCrearAsg" style="display:none">
     <div class="card-title">&#128229; Asignar incidencia</div>
@@ -642,7 +644,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
 </div>
 <div id="w-form" class="win">
-  <button class="back" onclick="_asgTecActual?(_asgTecActual=null,goTo('w-clientes')):goTo('w-menu')">&#8592; Men&uacute; principal</button>
+  <div class="navrow"><button class="back" onclick="_asgTecActual?(_asgTecActual=null,goTo('w-clientes')):goTo('w-menu')">&#8592; Atr&aacute;s</button><button class="back" id="formInicio" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
   <button class="btn btn-s btn-full" style="margin-bottom:10px;" onclick="toggleCard('cardLectura',this)">&#128196; Auto-relleno</button>
   <div class="card" id="cardLectura" style="display:none"><div class="card-title">&#128196; Lectura de orden</div>
     <div class="field"><label>Pegar texto de la orden</label><textarea id="raw" rows="5" placeholder="Pega aqu&iacute; el texto de la orden&hellip;"></textarea></div>
@@ -801,7 +803,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
 </div>
 <div id="w-result" class="win">
-  <button class="back" onclick="volverAlForm()">&#8592; Volver al formulario</button>
+  <div class="navrow"><button class="back" onclick="volverAlForm()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
   <div class="card"><div class="card-title">&#9989; Parte generado</div><div id="out"></div></div>
   <div class="card">
     <div class="field" id="fieldDescIncidencia" style="display:none;">
@@ -824,7 +826,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
 </div>
 <div id="w-hist" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Clientes</button>
+  <div class="navrow"><button class="back" onclick="histAtras()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
   <div id="histOpts">
     <div class="hist-opts">
       <div class="hist-opt amber-opt" onclick="verSec('ej')">
@@ -861,24 +863,24 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
 
 </div>
 <div id="resumenTotalView" style="display:none;position:fixed;inset:0;z-index:100;background:var(--bg);overflow-y:auto;padding:16px;">
-    <button class="back" onclick="volverCentros()">&#8592; Centros</button>
+    <div class="navrow"><button class="back" onclick="volverCentros()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
     <div class="card"><div class="card-title">&#128202; Resumen total</div><div id="resumenTotalContent"></div></div>
     <div class="brow"><button class="btn btn-s btn-sm" onclick="compartirResumenTotal()">&#128203; Compartir</button></div>
   </div>
 <div id="centrosView" style="display:none;position:fixed;inset:0;z-index:100;background:var(--bg);overflow-y:auto;padding:16px;">
-    <button class="back" onclick="volverSecFin()">&#8592; Historial</button>
+    <div class="navrow"><button class="back" onclick="volverSecFin()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
     <div class="hist-sec-hdr fin">&#9989; Finalizados &mdash; por centro</div>
     <div id="centrosList"></div>
     <button onclick="verResumenTotal()" style="width:100%;padding:11px;background:var(--surface);border:1.5px solid var(--green);border-radius:var(--r-sm);color:var(--green);font-weight:700;font-size:.88rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;font-family:inherit;">&#128202; Resumen total de todos los centros</button>
   </div>
   <div id="secView" style="display:none">
-    <button class="back" onclick="volverHistOpts()">&#8592; Historial</button>
+    <div class="navrow"><button class="back" onclick="volverHistOpts()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
     <div id="secHdr" class="hist-sec-hdr"></div>
     <div id="secList"></div>
   </div>
   
   <div id="incidenciasView" style="display:none">
-    <button class="back" onclick="volverCentros()">&#8592; Centros</button>
+    <div class="navrow"><button class="back" onclick="volverCentros()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
     <div class="card" id="incCentroCard"></div>
     <div style="font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:7px;">Incidencias</div>
     <div id="incidenciasList"></div>
@@ -886,23 +888,23 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
   
   <div id="resumenCentroView" style="display:none">
-    <button class="back" onclick="volverIncidencias()">&#8592; Incidencias</button>
+    <div class="navrow"><button class="back" onclick="volverIncidencias()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
     <div class="card"><div class="card-title" id="resumenCentroTitle">&#128202; Resumen del centro</div><div id="resumenCentroContent"></div></div>
     <div class="brow"><button class="btn btn-s btn-sm" onclick="compartirResumenCentro()">&#128203; Compartir</button></div>
   </div>
   <div id="ordenView" style="display:none">
-    <button class="back" onclick="volverSec()">&#8592; <span id="ordenBackLbl">Historial</span></button>
+    <div class="navrow"><button class="back" onclick="volverSec()">&#8592; Atr&aacute;s<span id="ordenBackLbl" style="display:none"></span></button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
     <div id="ordenBody"></div>
   </div>
   <div id="parteView" style="display:none">
-    <button class="back" onclick="volverOrden()">&#8592; Orden de servicio</button>
+    <div class="navrow"><button class="back" onclick="volverOrden()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
     <div id="parteBody"></div>
   </div>
 </div>
 
 <!-- W-STATS -->
 <div id="w-stats" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
   <select class="select-c" id="statsCliente" onchange="statsActualizar()">
     <option value="todos">Todos los clientes</option>
   </select>
@@ -919,7 +921,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   <div class="kpi-grid" id="statsKpiGrid"></div>
   <!-- DETALLE KPI -->
   <div id="statsDetalle" style="display:none;">
-    <button class="back" onclick="statsVolverMain()">&#8592; Estad&#237;sticas</button>
+    <div class="navrow"><button class="back" onclick="statsVolverMain()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
     <div id="statsDetalleHdr" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;"></div>
     <div class="card"><div id="statsDetalleContent"></div></div>
   </div>
@@ -1054,11 +1056,11 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
 </div>
 <div id="w-consultaAsg" class="win">
-  <button class="back" id="consultaAsgBack" onclick="goTo('w-clientes')">&#8592; Volver</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
   <div id="consultaAsgBody"></div>
 </div>
 <div id="w-tareas" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
   <button class="btn btn-p btn-full" style="margin-bottom:10px;" onclick="toggleCard('cardNuevaTarea',this)">&#10133; Nueva tarea</button>
   <div class="card" id="cardNuevaTarea" style="display:none">
     <div class="card-title">&#128221; Nueva tarea pendiente</div>
@@ -1076,7 +1078,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
 </div>
 <div id="w-migracion" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
   <div class="card">
     <div class="card-title">&#128260; Migración IRV-10 v2</div>
     <p style="font-size:.85rem;color:var(--text2);margin-bottom:12px;">Sube todos los datos del backup limpio a la nueva estructura de Firestore v2.</p>
@@ -1094,7 +1096,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   <div style="margin-top:8px;background:var(--surface2);border-radius:var(--r-sm);height:6px;overflow:hidden;"><div id="migBar" style="height:100%;background:var(--green);width:0%;transition:width .3s;"></div></div>
 </div>
 <div id="w-backups" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
   <div class="card">
     <div class="card-title">&#128190; Copias de seguridad</div>
     <p style="font-size:.85rem;color:var(--text2);margin-bottom:12px;">Se genera sola, una vez al d&iacute;a, al entrar como admin o creador. Guarda partes, incidencias, cat&aacute;logo, agenda y t&eacute;cnicos.</p>
@@ -1112,7 +1114,7 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
 </div>
 <div id="w-papelera" class="win">
-  <button class="back" onclick="goTo('w-clientes')">&#8592; Inicio</button>
+  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
   <div class="card">
     <div class="card-title">&#128465; Papelera</div>
     <p style="font-size:.85rem;color:var(--text2);margin-bottom:0;">Partes e incidencias borrados. En vez de desaparecer, quedan aqu&iacute; guardados y se pueden restaurar en cualquier momento.</p>
@@ -1245,7 +1247,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-17a-otro-punto-con-enlace-y-taller';
+var APP_BUILD_ID = 'build-2026-11-18a-atras-inicio';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -2652,7 +2654,7 @@ function catNavRender(){
 }
 
 function catNavRenderSecciones(g, cat){
-  var html='<button class="back" onclick="catVolverFamilias()">&#8592; Grupos</button>';
+  var html='<div class="navrow"><button class="back" onclick="catVolverFamilias()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo(\'w-clientes\')">&#8962; Inicio</button></div>';
   html+='<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--green);margin-bottom:12px;">'+g.ico+' '+g.nombre+'</div>';
 
   // Materiales flotantes pendientes de clasificar en este grupo
@@ -2791,7 +2793,7 @@ function catNavEntrarSec(si){
 function catNavRenderMateriales(g, cat){
   var si=_catNav.secIdx;
   var sec=g.secciones[si]; if(!sec) return;
-  var html='<button class="back" onclick="catNavVolverSecs()">&#8592; '+g.nombre+'</button>';
+  var html='<div class="navrow"><button class="back" onclick="catNavVolverSecs()">&#8592; Atr&aacute;s</button><button class="back" onclick="goTo(\'w-clientes\')">&#8962; Inicio</button></div>';
   html+='<div style="font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--green);margin-bottom:12px;">'+sec.nombre+'</div>';
 
   // Subsecciones
@@ -8613,6 +8615,36 @@ function ordenActiva(pedido,centro,h){
 
 function ov(s,e,a,b){ return Math.max(0,Math.min(e,b)-Math.max(s,a)); }
 
+// ===== Botones "Atras" / "Inicio" (.navrow) =====
+// La barra de la pantalla se oculta cuando una vista interior (historial, estadisticas, catalogo) muestra la suya, y en el formulario "Inicio" sobra si "Atras"
+// ya lleva al inicio (incidencia asignada). Se vuelve a calcular cuando cambia el estilo o la clase de cualquier elemento, para no depender de cada funcion
+// que muestra u oculta vistas.
+function histAtras(){ goTo(curCliente ? 'w-menu' : 'w-clientes'); }
+function _navSincronizar(){
+  var w=document.querySelector('.win.active'); if(!w) return;
+  var barras=w.querySelectorAll('.navrow'); if(!barras.length) return;
+  var top=null;
+  for(var i=0;i<w.children.length;i++){ if(w.children[i].classList.contains('navrow')){ top=w.children[i]; break; } }
+  if(top){
+    var interiorVisible=false;
+    for(var j=0;j<barras.length;j++){ if(barras[j]!==top && barras[j].getClientRects().length) interiorVisible=true; }
+    var v=interiorVisible?'none':'';
+    if(top.style.display!==v) top.style.display=v;
+  }
+  var fi=$('formInicio');
+  if(fi){ var vf=window._asgTecActual?'none':''; if(fi.style.display!==vf) fi.style.display=vf; }
+}
+var _navPendiente=false;
+function _navProgramar(){
+  if(_navPendiente) return;
+  _navPendiente=true;
+  setTimeout(function(){ _navPendiente=false; _navSincronizar(); },30);   // un temporizador y no requestAnimationFrame: este se pausa con la pagina en segundo plano
+}
+function _navIniciar(){
+  _navSincronizar();
+  new MutationObserver(_navProgramar).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['style','class']});
+}
+if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',_navIniciar); else _navIniciar();
 function pedirBorrarParte(i){ $('confirmDel').style.display='block'; }
 
 function pedirReabrirOrden(idx){
