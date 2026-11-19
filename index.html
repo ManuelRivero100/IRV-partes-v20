@@ -1247,7 +1247,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-18b-avisos-con-estilo';
+var APP_BUILD_ID = 'build-2026-11-19d-irv-al-asignar-pdf-y-restaurar';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3829,32 +3829,46 @@ function statsExportarPDF(){
   var doc=pdfNuevo();
   var y=12;
 
+  // El PDF es la pantalla de Estad\u00edsticas sin los botones, en el mismo orden y con los mismos textos
+  var texto=function(el){ return pdfLimpiar(el.textContent.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim()); };
   var cli=$('statsCliente')?$('statsCliente').options[$('statsCliente').selectedIndex].text:'Todos';
-  var periodos={todo:'Todo el historial',mes:'Este mes',semana:'Esta semana'};
   y=pdfHdr(doc,y,'Estad\u00edsticas IRV-10 \u00b7 '+cli);
   y+=2;
 
-  y=pdfInfoRow(doc,y,'PER\u00cdODO',periodos[_statsPeriodo]||'Todo');
+  var btnPeriodo=document.querySelector('#statsTglP button.active');
+  y=pdfInfoRow(doc,y,'PER\u00cdODO',btnPeriodo?texto(btnPeriodo):'Todo');
+  y=pdfInfoRow(doc,y,'INCLUIR',texto($('statsInclActivas').parentNode.querySelector('label'))+': '+(statsInclActivas()?'S\u00ed':'No'));
+  var banner=$('statsActivasBanner');
+  if(banner&&banner.style.display!=='none') y=pdfFilaTexto(doc,y,texto(banner));
   y+=3;
 
-  var centros={},incs={},horas=0,km=0,dietas=0;
-  datos.forEach(function(r){
-    centros[r.centro||'?']=1;
-    incs[(r.pedido||'')+'||'+(r.centro||'')]=1;
-    (r.codigos||[]).forEach(function(c){
-      if(c.u==='h') horas+=c.v;
-      if(c.u==='km') km+=c.v;
-      if(c.u==='dieta') dietas+=c.v;
-    });
+  // Los seis totales (Centros, Incidencias, Partes, Horas, Km, Dietas)
+  document.querySelectorAll('#statsKpiGrid .kpi').forEach(function(k){
+    var lab=texto(k.querySelector('.kpi-label'));
+    y=pdfCodeRow(doc,y,{Horas:'h',Km:'km',Dietas:'½'}[lab]||'#',lab,texto(k.querySelector('.kpi-val')));
+  });
+  y+=3;
+
+  // Resumen, en la vista que est\u00e9 elegida (por concepto o por c\u00f3digo)
+  var vista=document.querySelector('#statsBtnCon.active,#statsBtnCod.active');
+  y=pdfGroupTitle(doc,y,'Resumen'+(vista?' \u00b7 '+texto(vista):''));
+  Array.from($('statsResumen').children).forEach(function(el){
+    if(el.classList.contains('rgroup-title')) y=pdfGroupTitle(doc,y,texto(el));
+    else if(el.classList.contains('rrow')){
+      if(el.classList.contains('total-row')) y=pdfTotalRow(doc,y,texto(el.querySelector('.rv')));
+      else if(el.querySelector('.rc')) y=pdfCodeRow(doc,y,texto(el.querySelector('.rc')),texto(el.querySelector('.rl')),texto(el.querySelector('.rv')));
+      else y=pdfFilaNombreCantidad(doc,y,texto(el.querySelector('.rl')),texto(el.querySelector('.rv')));
+    }
+    else y=pdfTextoVacio(doc,y,texto(el));
   });
 
-  y=pdfGroupTitle(doc,y,'Resumen');
-  y=pdfCodeRow(doc,y,'#','Centros',''+Object.keys(centros).length);
-  y=pdfCodeRow(doc,y,'#','Incidencias',''+Object.keys(incs).length);
-  y=pdfCodeRow(doc,y,'#','Partes',''+datos.length);
-  y=pdfCodeRow(doc,y,'h','Horas',statsFmtH(horas));
-  y=pdfCodeRow(doc,y,'km','Kilometraje',Math.round(km)+' km');
-  y=pdfCodeRow(doc,y,'\u00bd','Dietas',''+dietas);
+  // Por t\u00e9cnico: la tarjeta de resumen de cada uno (el desplegable "Ver partes trabajados" no se incluye: en la pantalla sale cerrado)
+  var sec=$('statsTecSection');
+  if(sec&&sec.style.display!=='none'){
+    y+=3;
+    y=pdfGroupTitle(doc,y,'Por t\u00e9cnico');
+    document.querySelectorAll('#statsTecList .tec-card-s').forEach(function(c){ y=pdfTecnicoStats(doc,y,c.querySelector('.tec-sum'),texto); });
+  }
 
   pdfFooter(doc,y+8);
   pdfGuardar(doc,'IRV_estadisticas_'+cli.replace(/\s/g,'_'));
@@ -4651,7 +4665,6 @@ function compartirParte(i){
   compartirDesde(r.detalle||'',observacionesCompletas(r),matsText);
 }
 
-
 // =====================================================
 // SISTEMA PDF UNIFICADO — todos los PDF usan estas funciones
 // Para cambiar diseño: editar solo aquí
@@ -4735,9 +4748,10 @@ function pdfGroupTitle(doc,y,txt){
   return y+6;
 }
 
-function pdfInfoRow(doc,y,label,val){
+// der: dato de la derecha de la fila (la cantidad de un material), tal como sale en la pantalla
+function pdfInfoRow(doc,y,label,val,der){
   if(!val) return y;
-  var lines=doc.splitTextToSize(val,_PDF.cW-_PDF.RC-4);
+  var lines=doc.splitTextToSize(val,_PDF.cW-_PDF.RC-4-(der?12:0));
   var h=Math.max(_PDF.RH, lines.length*4+4);
   y=pdfCheck(doc,y,h+1);
   doc.setFillColor(_PDF.bgSurf2[0],_PDF.bgSurf2[1],_PDF.bgSurf2[2]);
@@ -4752,6 +4766,7 @@ function pdfInfoRow(doc,y,label,val){
   doc.setFontSize(7.5); doc.setFont('helvetica','normal');
   doc.setTextColor(_PDF.textW[0],_PDF.textW[1],_PDF.textW[2]);
   doc.text(lines,_PDF.mg+_PDF.RC+3,y+5);
+  if(der){ doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.text(der,_PDF.mg+_PDF.cW-3,y+5,{align:'right'}); }
   return y+h+0.5;
 }
 
@@ -4791,64 +4806,95 @@ function pdfTotalRow(doc,y,val){
   return y+_PDF.RH+3;
 }
 
-function pdfMatRow(doc,y,nombre,cantidad){
-  var lines=doc.splitTextToSize(nombre,_PDF.cW-_PDF.RC-20);
+// Fila de la lista "Partes de esta orden" del resumen de orden (p sale de _ordenActual.resumen.partes):
+// título con su etiqueta (Cerrada / Certificados), horario y, si la hay, la fecha de certificación
+function pdfParteOrdenRow(doc,y,p){
+  var base='Parte '+p.n+(p.numParte?' ('+p.numParte+')':'')+' · '+p.fecha;
+  var h=(p.certificadoEl?13:9)+(p.tecnicos?3:0); // con los técnicos del parte, una línea más
+  y=pdfCheck(doc,y,h+1);
+  doc.setFillColor(_PDF.bgSurf[0],_PDF.bgSurf[1],_PDF.bgSurf[2]);
+  doc.rect(_PDF.mg,y,_PDF.cW,h,'F');
+  doc.setDrawColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+  doc.setLineWidth(0.5);
+  doc.line(_PDF.mg,y,_PDF.mg,y+h);
+  doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+  var col=p.color?_PDF.green:_PDF.textW;
+  doc.setTextColor(col[0],col[1],col[2]);
+  doc.text(base,_PDF.mg+3,y+5);
+  if(p.etiqueta){
+    var anchoBase=doc.getTextWidth(base); // se mide con el tamaño de letra del título, antes de cambiarlo
+    var colEt=p.etiqueta==='Certificados'?_PDF.green:_PDF.text2;
+    doc.setTextColor(colEt[0],colEt[1],colEt[2]);
+    doc.setFontSize(6);
+    doc.text('· '+p.etiqueta,_PDF.mg+3+anchoBase+2,y+5);
+  }
+  doc.setFont('helvetica','normal'); doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.setFontSize(6.5);
+  doc.text(p.horario,_PDF.mg+3,y+8.5);
+  var yl=y+8.5;
+  if(p.tecnicos){ yl+=3; doc.text(pdfLimpiar(p.tecnicos),_PDF.mg+3,yl); }
+  if(p.certificadoEl){
+    doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+    doc.text(p.certificadoEl,_PDF.mg+3,yl+3);
+  }
+  return y+h+1.5;
+}
+
+// La letra del PDF no tiene algunos símbolos que sí salen en la pantalla: las fracciones sueltas (⅛, ⅜…) se escriben
+// como 1/8, 3/8… ("1⅛" pasa a "1 1/8"), la flecha como "->", el símbolo de grados como "°" y los emojis se quitan
+function pdfLimpiar(txt){
+  var f={'⅛':'1/8','⅜':'3/8','⅝':'5/8','⅞':'7/8','⅓':'1/3','⅔':'2/3'};
+  return String(txt).replace(/(\d)([⅛-⅞⅓⅔])/g,function(m,d,c){ return d+' '+f[c]; })
+    .replace(/[⅛-⅞⅓⅔]/g,function(c){ return f[c]; })
+    .replace(/→/g,'->')
+    .replace(/⁰/g,'°')
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{23E9}-\u{23FF}\u{2B50}\u{FE0F}]/gu,'')
+    .replace(/\s+/g,' ').trim();
+}
+
+// Fila de material como se ve en la pantalla de la orden: nombre a la izquierda y cantidad a la derecha
+function pdfFilaNombreCantidad(doc,y,nombre,cantidad){
+  var lines=doc.splitTextToSize(pdfLimpiar(nombre),_PDF.cW-20);
   var h=Math.max(_PDF.RH, lines.length*4+4);
   y=pdfCheck(doc,y,h+1);
-  doc.setFillColor(_PDF.bgSurf2[0],_PDF.bgSurf2[1],_PDF.bgSurf2[2]);
-  doc.rect(_PDF.mg,y,_PDF.RC,h,'F');
   doc.setFillColor(_PDF.bgSurf[0],_PDF.bgSurf[1],_PDF.bgSurf[2]);
-  doc.rect(_PDF.mg+_PDF.RC,y,_PDF.cW-_PDF.RC,h,'F');
+  doc.rect(_PDF.mg,y,_PDF.cW,h,'F');
   doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
   doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,h);
-  doc.setFontSize(6); doc.setFont('helvetica','bold');
-  doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
-  doc.text('MAT.',_PDF.mg+_PDF.RC/2,y+h/2+2,{align:'center'});
   doc.setFontSize(7.5); doc.setFont('helvetica','normal');
   doc.setTextColor(_PDF.textW[0],_PDF.textW[1],_PDF.textW[2]);
-  doc.text(lines,_PDF.mg+_PDF.RC+3,y+5);
+  doc.text(lines,_PDF.mg+3,y+5);
   doc.setFont('helvetica','bold'); doc.setFontSize(8);
-  doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
-  doc.text('x'+cantidad,_PDF.mg+_PDF.cW-3,y+h/2+2,{align:'right'});
+  doc.text(String(cantidad),_PDF.mg+_PDF.cW-3,y+5,{align:'right'});
   return y+h+0.5;
 }
 
-function pdfObsRow(doc,y,txt){
-  if(!txt) return y;
-  var lines=doc.splitTextToSize(txt,_PDF.cW-_PDF.RC-4);
-  var h=Math.max(_PDF.RH+2, lines.length*4.5+5);
-  y=pdfCheck(doc,y,h+1);
-  doc.setFillColor(_PDF.amber[0],_PDF.amber[1],_PDF.amber[2]);
-  doc.rect(_PDF.mg,y,_PDF.RC,h,'F');
-  doc.setFillColor(_PDF.amberLt[0],_PDF.amberLt[1],_PDF.amberLt[2]);
-  doc.rect(_PDF.mg+_PDF.RC,y,_PDF.cW-_PDF.RC,h,'F');
-  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
-  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,h);
-  doc.setFontSize(6.5); doc.setFont('helvetica','bold');
-  doc.setTextColor(255,255,255);
-  doc.text('OBS.',_PDF.mg+_PDF.RC/2,y+h/2+2,{align:'center'});
-  doc.setFontSize(7.5); doc.setFont('helvetica','normal');
-  doc.setTextColor(_PDF.amber[0],_PDF.amber[1],_PDF.amber[2]);
-  doc.text(lines,_PDF.mg+_PDF.RC+3,y+5);
-  return y+h+1;
+// Texto suelto en gris, para los avisos de "sin datos" que también salen en la pantalla
+function pdfTextoVacio(doc,y,txt){
+  y=pdfCheck(doc,y,8);
+  doc.setFontSize(7); doc.setFont('helvetica','normal');
+  doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.text(txt,_PDF.mg,y+4);
+  return y+7;
 }
 
-function pdfNotaTrayectoriaRow(doc,y,txt){
+// Fila de nota a todo el ancho del PDF: la etiqueta va en la columna izquierda con el color base y el texto sobre el fondo indicado.
+function pdfNotaRow(doc,y,txt,etiqueta,color,fondo){
   if(!txt) return y;
   var lines=doc.splitTextToSize(txt,_PDF.cW-_PDF.RC-4);
   var h=Math.max(_PDF.RH+2, lines.length*4.5+5);
   y=pdfCheck(doc,y,h+1);
-  doc.setFillColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.setFillColor(color[0],color[1],color[2]);
   doc.rect(_PDF.mg,y,_PDF.RC,h,'F');
-  doc.setFillColor(_PDF.bgSurf2[0],_PDF.bgSurf2[1],_PDF.bgSurf2[2]);
+  doc.setFillColor(fondo[0],fondo[1],fondo[2]);
   doc.rect(_PDF.mg+_PDF.RC,y,_PDF.cW-_PDF.RC,h,'F');
   doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
   doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,h);
   doc.setFontSize(6.5); doc.setFont('helvetica','bold');
   doc.setTextColor(255,255,255);
-  doc.text('TRAYEC.',_PDF.mg+_PDF.RC/2,y+h/2+2,{align:'center'});
+  doc.text(etiqueta,_PDF.mg+_PDF.RC/2,y+h/2+2,{align:'center'});
   doc.setFontSize(7.5); doc.setFont('helvetica','normal');
-  doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  doc.setTextColor(color[0],color[1],color[2]);
   doc.text(lines,_PDF.mg+_PDF.RC+3,y+5);
   return y+h+1;
 }
@@ -4871,7 +4917,7 @@ function pdfGuardar(doc,nombre){
   doc.save(nombre+'.pdf');
 }
 
-function pdfSubtotalRow(doc,y,label,precio){
+function pdfSubtotalRow(doc,y,label,precio,tag){ // tag: la etiqueta de la columna izquierda ("Sub.")
   y=pdfCheck(doc,y,_PDF.RH+2);
   doc.setFillColor(15,42,26);
   doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+1,'F');
@@ -4879,7 +4925,8 @@ function pdfSubtotalRow(doc,y,label,precio){
   doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+1);
   doc.setFontSize(6.5); doc.setFont('helvetica','bold');
   doc.setTextColor(74,222,128);
-  doc.text((label||'Subtotal').toUpperCase(),_PDF.mg+4,y+5.5);
+  doc.text(tag||'',_PDF.mg+4,y+5.5);
+  doc.text((label||'Subtotal').toUpperCase(),_PDF.mg+4+_PDF.RC*0.55,y+5.5);
   if(precio){ doc.setFontSize(8); doc.text(precio,_PDF.mg+_PDF.cW-3,y+5.5,{align:'right'}); }
   return y+_PDF.RH+3;
 }
@@ -4923,126 +4970,129 @@ function pdfTotalRowConPrecio(doc,y,horas,precio){
   return y+_PDF.RH+3;
 }
 
+// Fila de texto a todo el ancho (lista de materiales, avisos…): el texto tal cual sale en la pantalla
+function pdfFilaTexto(doc,y,txt){
+  if(!txt) return y;
+  var lines=doc.splitTextToSize(txt,_PDF.cW-6);
+  var h=Math.max(_PDF.RH, lines.length*4+4);
+  y=pdfCheck(doc,y,h+1);
+  doc.setFillColor(_PDF.bgSurf[0],_PDF.bgSurf[1],_PDF.bgSurf[2]);
+  doc.rect(_PDF.mg,y,_PDF.cW,h,'F');
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,h);
+  doc.setFontSize(7.5); doc.setFont('helvetica','normal');
+  doc.setTextColor(_PDF.textW[0],_PDF.textW[1],_PDF.textW[2]);
+  doc.text(lines,_PDF.mg+3,y+5);
+  return y+h+0.5;
+}
+
+// Tarjeta de un técnico de la pantalla de Estadísticas: nombre y nº de partes, horas normal / extra / nocturna / festiva,
+// total de horas y, debajo, el nº de clientes y las fechas. `tarjeta` es el elemento .tec-card-s de la pantalla.
+function pdfTecnicoStats(doc,y,tarjeta,texto){
+  var t=function(sel){ var e=tarjeta.querySelector(sel); return e?texto(e):''; };
+  var celdas=[].slice.call(tarjeta.querySelectorAll('.tec-hcell')).map(function(c){
+    return { lbl:texto(c.querySelector('.tec-hlbl')), val:texto(c.querySelector('.tec-hval')) };
+  });
+  var meta=[].slice.call(tarjeta.querySelectorAll('.tec-mmeta span')).map(function(s){ return texto(s).replace(/\s*->\s*/g,' a '); });
+  y=pdfCheck(doc,y,36);
+  // Nombre y nº de partes
+  doc.setFillColor(_PDF.bgSurf2[0],_PDF.bgSurf2[1],_PDF.bgSurf2[2]);
+  doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+1,'F');
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.setLineWidth(0.2); doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH+1);
+  doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+  doc.setTextColor(_PDF.textW[0],_PDF.textW[1],_PDF.textW[2]);
+  doc.text(t('.tec-sum-name'),_PDF.mg+3,y+5.5);
+  doc.setFontSize(7); doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+  doc.text(t('.tec-sum-badge'),_PDF.mg+_PDF.cW-3,y+5.5,{align:'right'});
+  y+=_PDF.RH+1;
+  // Horas por tipo
+  var ancho=_PDF.cW/(celdas.length||1);
+  celdas.forEach(function(c,i){
+    var x=_PDF.mg+i*ancho;
+    doc.setFillColor(_PDF.bgSurf[0],_PDF.bgSurf[1],_PDF.bgSurf[2]);
+    doc.rect(x,y,ancho,_PDF.RH+2,'F');
+    doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+    doc.rect(x,y,ancho,_PDF.RH+2);
+    doc.setFont('helvetica','bold'); doc.setFontSize(5.5);
+    doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+    doc.text(c.lbl.toUpperCase(),x+ancho/2,y+3.2,{align:'center'});
+    doc.setFontSize(8);
+    doc.setTextColor(_PDF.textW[0],_PDF.textW[1],_PDF.textW[2]);
+    doc.text(c.val,x+ancho/2,y+7.6,{align:'center'});
+  });
+  y+=_PDF.RH+2;
+  // Total de horas
+  doc.setFillColor(_PDF.greenLt[0],_PDF.greenLt[1],_PDF.greenLt[2]);
+  doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH,'F');
+  doc.setDrawColor(_PDF.border[0],_PDF.border[1],_PDF.border[2]);
+  doc.rect(_PDF.mg,y,_PDF.cW,_PDF.RH);
+  doc.setFont('helvetica','normal'); doc.setFontSize(7);
+  doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
+  doc.text(t('.tec-htotal span:first-child'),_PDF.mg+3,y+4.8);
+  doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text(t('.tec-htval'),_PDF.mg+_PDF.cW-3,y+5,{align:'right'});
+  y+=_PDF.RH;
+  // Clientes y fechas
+  doc.setFont('helvetica','normal'); doc.setFontSize(6.5);
+  doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
+  if(meta[0]) doc.text(meta[0],_PDF.mg+1,y+4.5);
+  if(meta[1]) doc.text(meta[1],_PDF.mg+_PDF.cW-1,y+4.5,{align:'right'});
+  return y+8;
+}
+
+// Una fila del cuerpo del parte (clase rrow): según su tipo, la fila que le corresponde en el PDF
+function pdfFilaParte(doc,y,el,texto){
+  var sp=function(cls){ var s=el.querySelector('.'+cls); return s?texto(s):''; };
+  var rc=sp('rc'), rl=sp('rl'), rv=sp('rv');
+  // El precio, si lo hay, es el cuarto elemento: lleva clase "rp" o, en partes antiguos, solo un estilo verde
+  var spans=el.querySelectorAll('span');
+  var elPrecio=el.querySelector('.rp')||(spans.length>3?spans[3]:null);
+  var precio=elPrecio?texto(elPrecio):'';
+  if(el.classList.contains('tipo-row')) return pdfTipoRow(doc,y,rl);
+  if(el.classList.contains('info-row')) return pdfInfoRow(doc,y,rc.toUpperCase(),rl,rv);
+  if(el.classList.contains('obs-row')) return pdfNotaRow(doc,y,rl,rc.toUpperCase()||'OBS.',_PDF.amber,_PDF.amberLt);   // la etiqueta es la de la fila: "Obs." o "Auto"
+  if(el.classList.contains('total-row')){
+    y=precio?pdfTotalRowConPrecio(doc,y,rv,precio):pdfTotalRow(doc,y,rv);
+    return y+2;
+  }
+  if(el.classList.contains('subtotal-row')) return pdfSubtotalRow(doc,y,rl,rv,rc);
+  if(precio) return pdfCodeRowConPrecio(doc,y,rc,rl,rv,precio);
+  return pdfCodeRow(doc,y,rc,rl,rv);
+}
+
+// PDF del parte: es la pantalla del parte (parteCuerpoHTML) sin los botones, elemento a elemento y en el mismo orden
 function pdfDesde(r){
   if(!window.jspdf){ _toast('PDF no disponible.', _AVISO_ROJO); return; }
   var doc=pdfNuevo();
   var y=12;
-  var conPrecios=curCliente&&curCliente.precios===true;
+  var cuerpo=document.createElement('div');
+  cuerpo.innerHTML=parteCuerpoHTML(r);
+  var texto=function(el){ return pdfLimpiar(el.textContent.replace(/ /g,' ').replace(/\s+/g,' ').trim()); };
 
-  var titulo=(r.tienda||'')+(r.fecha?' \u00b7 '+r.fecha.split('-').reverse().join('/'):'');
-  y=pdfHdr(doc,y,titulo);
-  y+=2;
-
-  if(r.job) y=pdfTipoRow(doc,y,r.job);
-  y+=2;
-
-  y=pdfGroupTitle(doc,y,'Datos generales');
-  if(r.fecha)    y=pdfInfoRow(doc,y,'FECHA',   r.fecha.split('-').reverse().join('/'));
-  if(r.actObras) y=pdfInfoRow(doc,y,'ACTUACI\u00d3N',r.actObras);
-  else if(r.pedido) y=pdfInfoRow(doc,y,'N\u00ba ORDEN',r.pedido);
-  if(r.tienda)   y=pdfInfoRow(doc,y,'TIENDA',  r.tienda);
-  if(r.dir)      y=pdfInfoRow(doc,y,'DIRECCI\u00d3N',r.dir);
-  if(r.tel)      y=pdfInfoRow(doc,y,'TEL\u00c9FONO',r.tel);
-  y+=3;
-
-  // Parsear detalle HTML para mostrar rgroup-title (franjas horarias) en orden
-  if(r.detalle){
-    var _tmp=document.createElement('div'); _tmp.innerHTML=r.detalle;
-    var _nodos=Array.from(_tmp.childNodes).filter(function(n){
-      return n.nodeType===1&&(n.classList.contains('rgroup-title')||n.classList.contains('rrow')||n.classList.contains('nota-trayectoria'));
-    });
-    var hTotal=0;
-    _nodos.forEach(function(el){
-      if(el.classList.contains('nota-trayectoria')){
-        y=pdfNotaTrayectoriaRow(doc,y,el.textContent.replace(/^\s*🔗\s*/,'').trim());
-      } else if(el.classList.contains('rgroup-title')){
-        var txt=el.textContent.trim();
-        if(txt&&txt!=='Datos generales') y=pdfGroupTitle(doc,y,txt);
-      } else if(el.classList.contains('info-row')&&el.querySelector('.rc')&&el.querySelector('.rc').textContent.trim()==='Técnicos'){
-        var _rcT=el.querySelector('.rc').textContent.trim();
-        var _rlT=el.querySelector('.rl')?el.querySelector('.rl').textContent.trim():'';
-        y=pdfInfoRow(doc,y,_rcT.toUpperCase(),_rlT);
-      } else if(el.classList.contains('info-row')||el.classList.contains('tipo-row')){
-        // ya mostradas arriba
-      } else if(el.classList.contains('total-row')){
-        var _rv=el.querySelector('.rv')?el.querySelector('.rv').textContent.trim():'';
-        var _rp=el.querySelector('.rp')?el.querySelector('.rp').textContent.trim():'';
-        if(_rp) y=pdfTotalRowConPrecio(doc,y,_rv,_rp);
-        else y=pdfTotalRow(doc,y,_rv);
-        y+=2;
-      } else if(el.classList.contains('subtotal-row')){
-        var _rl=el.querySelector('.rl')?el.querySelector('.rl').textContent.trim():'';
-        var _rv2=el.querySelector('.rv')?el.querySelector('.rv').textContent.trim():'';
-        y=pdfSubtotalRow(doc,y,_rl,_rv2);
-      } else if(!el.classList.contains('obs-row')){
-        var _rc=el.querySelector('.rc')?el.querySelector('.rc').textContent.trim():'';
-        var _rl2=el.querySelector('.rl')?el.querySelector('.rl').textContent.trim():'';
-        var _rv3=el.querySelector('.rv')?el.querySelector('.rv').textContent.trim():'';
-        var _rp2=el.querySelector('.rp')?el.querySelector('.rp').textContent.trim():'';
-        if(_rc&&_rl2&&_rv3){
-          if(_rp2) y=pdfCodeRowConPrecio(doc,y,_rc,_rl2,_rv3,_rp2);
-          else y=pdfCodeRow(doc,y,_rc,_rl2,_rv3);
-        }
-      }
-    });
-    y+=2;
-  } else {
-    // Fallback: usar r.codigos[] sin franjas (partes antiguos)
-    var codigos=r.codigos||[];
-    if(codigos.length){
-      y=pdfGroupTitle(doc,y,'Códigos de facturación');
-      codigos.forEach(function(c){
-        var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?'× '+Math.round(c.v):fmtH(c.v);
-        var _pr=conPrecios?getPrecioPorCod(c.cod,c.lab,r.job||''):0;
-        if(_pr>0) y=pdfCodeRowConPrecio(doc,y,c.cod,c.lab,val,fmtPrecio(_pr*c.v));
-        else y=pdfCodeRow(doc,y,c.cod,c.lab,val);
-      });
-      y+=2;
-      var hTotal=0; var precioTotal=0;
-      codigos.forEach(function(c){
-        if(c.u==='h'&&(c.lab||'').indexOf('Dsp')===-1) hTotal+=c.v;
-        if(conPrecios) precioTotal+=getPrecioPorCod(c.cod,c.lab,r.job||'')*c.v;
-      });
-      if(hTotal>0){
-        if(conPrecios&&precioTotal>0) y=pdfTotalRowConPrecio(doc,y,fmtH(hTotal),fmtPrecio(precioTotal));
-        else y=pdfTotalRow(doc,y,fmtH(hTotal));
-        y+=2;
-      }
+  Array.from(cuerpo.children).forEach(function(el){
+    var estilo=el.getAttribute('style')||'';
+    if(el.classList.contains('card-title')){ y=pdfHdr(doc,y,texto(el)); y+=2; }
+    else if(el.classList.contains('divider')||estilo.indexOf('height:1px')>=0){ y+=2; }
+    else if(el.classList.contains('rgroup-title')){ y=pdfGroupTitle(doc,y,texto(el)); }
+    else if(el.classList.contains('nota-trayectoria')){ y=pdfNotaRow(doc,y,texto(el),'TRAYEC.',_PDF.text2,_PDF.bgSurf2); }
+    else if(el.classList.contains('rrow')){ y=pdfFilaParte(doc,y,el,texto); }
+    else if(estilo.indexOf('text-transform:uppercase')>=0){ y=pdfGroupTitle(doc,y,texto(el)); }   // título de sección ("Materiales")
+    else if(estilo.indexOf('padding:6px 0')>=0){                                                    // lista de materiales
+      Array.from(el.children).forEach(function(m){ y=pdfFilaTexto(doc,y,texto(m)); });
     }
-  }
-
-  // Materiales desde r.materiales (partes guardados antes del nuevo sistema)
-  // Los nuevos partes ya incluyen materiales en el detalle HTML
-  var _matsEnDetalle=r.detalle&&r.detalle.indexOf('Mat.')>=0;
-  if(!_matsEnDetalle){
-    var mats=(r.materiales||[]).filter(function(m){return m.cantidad&&+m.cantidad>0;});
-    if(mats.length){
-      y=pdfGroupTitle(doc,y,'Materiales');
-      mats.forEach(function(m){ y=pdfMatRow(doc,y,m.nombre,m.cantidad); });
-      y+=2;
-    }
-  }
-
-  // Trabajadores — extraer del detalle HTML
-  if(r.detalle){
-    var _tmpW=document.createElement('div'); _tmpW.innerHTML=r.detalle;
-    var _nomDiv=Array.from(_tmpW.querySelectorAll('div')).find(function(d){
-      return d.style&&d.style.textAlign==='center'&&d.textContent.indexOf('·')>=0;
-    });
-    if(_nomDiv){
-      var _nomTxt=_nomDiv.textContent.trim();
-      if(_nomTxt){
+    else if(estilo.indexOf('text-align:center')>=0){                                                // técnicos
+      var nombres=texto(el);
+      if(nombres){
         y=pdfCheck(doc,y,8);
         doc.setFontSize(7); doc.setFont('helvetica','normal');
         doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
-        doc.text(_nomTxt,_PDF.mg+_PDF.cW/2,y+4,{align:'center'});
+        doc.text(nombres,_PDF.mg+_PDF.cW/2,y+4,{align:'center'});
         y+=8;
       }
     }
-  }
-
-  var _obsPdf=observacionesCompletas(r);
-  if(_obsPdf) y=pdfObsRow(doc,y,_obsPdf);
+    else { y=pdfFilaTexto(doc,y,texto(el)); }                                                       // avisos, "Sin detalle."…
+  });
 
   pdfFooter(doc,y+4);
   pdfGuardar(doc,'IRV_'+(r.pedido||r.actObras||'parte')+'_'+(r.centro||'')+'_'+(r.fecha||'').replace(/-/g,''));
@@ -6760,6 +6810,8 @@ function verOrden(enc){
     }
   });
 
+  // Lista de datos del resumen: la pantalla y el PDF salen de aqui, asi que siempre dicen lo mismo
+  var modeloPartes=[];
   var partesHTML=partes.map(function(p,pi){
     var fF=p.r.fecha.split('-').reverse().join('/');
     var _arrM=p.r.arr?tm(p.r.arr):0, _leaM=p.r.lea?tm(p.r.lea):p.r.fin;
@@ -6768,16 +6820,23 @@ function verOrden(enc){
     var _color=_bloque?_colorPorBloque[_bloque]:'';
     var _esUltimoParteOrden=(p.idx===_idxUltimoParteOrden);
     var _esUltimoDelBloque=!!_esUltimoDelBloquePorIdx[p.idx];
-    var _etiqueta='', _fechaCertHTML='';
+    var _etiqueta='', _fechaCertHTML='', _etiquetaTxt='', _certTxt='';
     if(_esUltimoParteOrden && lastEstado==='terminado' && _bloques.length){
       _etiqueta=' <span style="font-size:.68rem;font-weight:700;color:var(--text3);">&middot; Cerrada</span>';
+      _etiquetaTxt='Cerrada';
     } else if(_esUltimoDelBloque){
       _etiqueta=' <span style="font-size:.68rem;font-weight:700;color:#4ade80;">&middot; Certificados</span>';
+      _etiquetaTxt='Certificados';
       // fechaCertificado es el campo propio de la certificación; en partes certificados antes
       // de que existiera ese campo, se cae a fechaModificacion (que en su momento coincidía).
       var _msCert=p.r.fechaCertificado||p.r.fechaModificacion;
-      if(_msCert) _fechaCertHTML='<div style="font-size:.72rem;color:#4ade80;margin-top:1px;">Certificado el '+_fmtFechaHora(_msCert)+'</div>';
+      if(_msCert){
+        _certTxt='Certificado el '+_fmtFechaHora(_msCert);
+        _fechaCertHTML='<div style="font-size:.72rem;color:#4ade80;margin-top:1px;">'+_certTxt+'</div>';
+      }
     }
+    modeloPartes.push({ n:pi+1, numParte:p.r.numParte||'', fecha:fF, etiqueta:_etiquetaTxt, certificadoEl:_certTxt, color:_color,
+      horario:(p.r.arr||'--')+' '+String.fromCharCode(8211)+' '+(p.r.lea||'--')+' '+String.fromCharCode(183)+' '+dur, tecnicos:(p.r.tecnicos||[]).join(' '+String.fromCharCode(183)+' ') });
     var _tituloStyle='font-size:.85rem;font-weight:600;'+(_color?('color:'+_color+';'):'');
     return '<div class="orden-parte-item" onclick="verParte('+p.idx+')"><div><div style="'+_tituloStyle+'">Parte '+(pi+1)+(p.r.numParte?' ('+p.r.numParte+')':'')+' &middot; '+fF+_etiqueta+'</div><div style="font-size:.76rem;color:var(--text2);">'+(p.r.arr||'--')+' – '+(p.r.lea||'--')+' &middot; '+dur+'</div>'+((p.r.tecnicos&&p.r.tecnicos.length)?'<div style="font-size:.76rem;color:var(--text2);">'+p.r.tecnicos.map(escHtml).join(' &middot; ')+'</div>':'')+_fechaCertHTML+'</div><span style="color:var(--text3);">&#8250;</span></div>';
   }).join('');
@@ -6785,6 +6844,8 @@ function verOrden(enc){
   var codHTML=Object.values(codAcum).length
     ?Object.values(codAcum).map(function(c){ return '<div class="acum-row"><span>'+c.rc+' &middot; '+c.rl+'</span><span style="font-weight:600;">'+fmtVal(c.v,c.u)+'</span></div>'; }).join('')
     :'<div style="font-size:.82rem;color:var(--text3);padding:6px 0;">Sin datos.</div>';
+  var modeloCodigos=Object.values(codAcum).map(function(c){ return {cod:c.rc, lab:c.rl, valor:fmtVal(c.v,c.u)}; });
+  var modeloTotal=null;
   // Añadir TOTAL con precio si cliente de cobro
   var _conPrecios=curCliente&&curCliente.precios===true;
   if(_conPrecios&&Object.values(codAcum).length){
@@ -6794,6 +6855,7 @@ function verOrden(enc){
       _precioTot+=getPrecioPorCod(c.rc,c.rl,g.job)*c.v;
     });
     if(_precioTot>0){
+      modeloTotal={horas:_hTot>0?fmtH(_hTot):'', precio:fmtPrecio(_precioTot)};
       codHTML+='<div class="acum-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-weight:700;color:#4ade80;">'+
         '<span>TOTAL</span>'+
         '<span>'+(_hTot>0?fmtH(_hTot)+'&nbsp;&nbsp;':'')+fmtPrecio(_precioTot)+'</span></div>';
@@ -6806,7 +6868,11 @@ function verOrden(enc){
 
   window._ordenActual={ tienda:g.tienda, pedido:pedido, job:g.job, centro:g.centro, clienteId:g.clienteId||'mercadona', actObras:g.actObras||null,
     fechas:partes.map(function(p){ return p.r.fecha.split('-').reverse().join('/'); }),
-    estado:lastEstado, codAcum:codAcum, matAcum:matAcum, partes:partes };
+    estado:lastEstado, codAcum:codAcum, matAcum:matAcum, partes:partes,
+    // Lo que dice la pantalla de la orden, en datos: el PDF resumen lo dibuja desde aqui (ver pdfOrden)
+    resumen:{ tienda:g.tienda, titulo:(g.actObras?g.actObras+' '+String.fromCharCode(183)+' '+g.job:'Orden '+pedido+' '+String.fromCharCode(183)+' '+g.job), estado:lastEstado, fechas:fr,
+      nPartes:partes.length, partes:modeloPartes, codigos:modeloCodigos, total:modeloTotal,
+      materiales:Object.keys(matAcum).map(function(n){ return {nombre:n, cantidad:matAcum[n]}; }) } };
 
   var _sinCertOrden=partesTodas.filter(function(p){ return !p.r.bloqueCertificado; }).length;
   var _mostrarCertBtn=_esAdminOCreador() && lastEstado==='en-ejecucion' && _sinCertOrden>=4;
@@ -7495,76 +7561,35 @@ function _cerrarAvisoKmAdicObligatoria(){
   var el=$('kmAdicionalesJust'); if(el) el.focus();
 }
 
+// PDF del resumen de la orden: es la pantalla de la orden (lista de datos _ordenActual.resumen) sin los botones
 function pdfOrden(){
   var o=window._ordenActual; if(!o) return;
   if(!window.jspdf){ _toast('PDF no disponible.', _AVISO_ROJO); return; }
+  var m=o.resumen;
   var doc=pdfNuevo();
   var y=12;
 
-  var ordenTitle=o.actObras?o.actObras+' \u00b7 '+o.job:'Orden '+o.pedido+' \u00b7 '+o.job;
-  y=pdfHdr(doc,y,o.tienda+' \u00b7 '+ordenTitle);
+  y=pdfHdr(doc,y,m.tienda+' · '+m.titulo);
   y+=2;
-
-  // Info orden
-  y=pdfGroupTitle(doc,y,'Datos generales');
-  y=pdfInfoRow(doc,y,'CENTRO',o.centro||'');
-  y=pdfInfoRow(doc,y,'FECHAS',o.fechas.join(' \u00b7 '));
-  y=pdfInfoRow(doc,y,'PARTES',o.partes.length+' parte'+(o.partes.length===1?'':'s'));
-  y=pdfInfoRow(doc,y,'ESTADO',o.estado==='en-ejecucion'?'En ejecuci\u00f3n':'Finalizado');
+  // La letra del PDF no tiene la flecha que usa la pantalla entre las dos fechas
+  y=pdfInfoRow(doc,y,'FECHAS',m.fechas.replace(' → ',' a '));
+  y=pdfInfoRow(doc,y,'PARTES',m.nPartes+' parte'+(m.nPartes===1?'':'s'));
+  y=pdfInfoRow(doc,y,'ESTADO',m.estado==='en-ejecucion'?'En ejecución':'Finalizado');
   y+=3;
 
-  // Partes individuales
-  o.partes.forEach(function(p,pi){
-    var r=p.r;
-    var fF=r.fecha.split('-').reverse().join('/');
-    var _arrM=r.arr?tm(r.arr):0, _leaM=r.lea?tm(r.lea):r.fin;
-    var dur=fmtH((_leaM<_arrM?1440-_arrM+_leaM:_leaM-_arrM)/60);
+  y=pdfGroupTitle(doc,y,'Partes de esta orden');
+  m.partes.forEach(function(p){ y=pdfParteOrdenRow(doc,y,p); });
+  y+=2;
 
-    y=pdfCheck(doc,y,(r.tecnicos&&r.tecnicos.length)?13:10);
-    // Mini cabecera parte
-    doc.setFillColor(_PDF.bgSurf[0],_PDF.bgSurf[1],_PDF.bgSurf[2]);
-    doc.rect(_PDF.mg,y,_PDF.cW,7,'F');
-    doc.setDrawColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
-    doc.setLineWidth(0.5);
-    doc.line(_PDF.mg,y,_PDF.mg,y+7);
-    doc.setFontSize(7.5); doc.setFont('helvetica','bold');
-    doc.setTextColor(_PDF.green[0],_PDF.green[1],_PDF.green[2]);
-    doc.text('Parte '+(pi+1)+(r.numParte?' ('+r.numParte+')':'')+' \u2014 '+fF,_PDF.mg+3,y+5);
-    doc.setFont('helvetica','normal'); doc.setTextColor(_PDF.text2[0],_PDF.text2[1],_PDF.text2[2]);
-    doc.setFontSize(6.5);
-    doc.text((r.arr||'--')+' \u2013 '+(r.lea||'--')+' \u00b7 '+dur,_PDF.mg+_PDF.cW-3,y+5,{align:'right'});
-    if(r.tecnicos&&r.tecnicos.length){ doc.text(r.tecnicos.join(' \u00b7 '),_PDF.mg+3,y+10); y+=12; } // t\u00e9cnicos del parte
-    else y+=9;
+  y=pdfGroupTitle(doc,y,'Códigos acumulados');
+  if(m.codigos.length) m.codigos.forEach(function(c){ y=pdfCodeRow(doc,y,c.cod,c.lab,c.valor); });
+  else y=pdfTextoVacio(doc,y,'Sin datos.');
+  if(m.total) y=pdfTotalRowConPrecio(doc,y,m.total.horas,m.total.precio);
+  y+=3;
 
-    var cods=r.codigos||[];
-    cods.forEach(function(c){
-      var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?'\u00d7 '+Math.round(c.v):fmtH(c.v);
-      y=pdfCodeRow(doc,y,c.cod,c.lab,val);
-    });
-
-    var usados=(r.materiales||[]).filter(function(m){return m.cantidad&&+m.cantidad>0;});
-    if(usados.length){
-      y=pdfGroupTitle(doc,y,'Materiales');
-      usados.forEach(function(m){ y=pdfMatRow(doc,y,m.nombre,m.cantidad); });
-    }
-    y+=4;
-  });
-
-  // Total acumulado
-  y=pdfDivider(doc,y);
-  y=pdfGroupTitle(doc,y,'Total acumulado');
-  Object.values(o.codAcum).forEach(function(c){
-    var val=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?'\u00d7 '+Math.round(c.v):fmtH(c.v);
-    y=pdfCodeRow(doc,y,c.rc,c.rl,val);
-  });
-
-  if(Object.keys(o.matAcum).length){
-    y+=3;
-    y=pdfGroupTitle(doc,y,'Materiales totales');
-    Object.keys(o.matAcum).forEach(function(n){
-      y=pdfMatRow(doc,y,n,o.matAcum[n]);
-    });
-  }
+  y=pdfGroupTitle(doc,y,'Materiales acumulados');
+  if(m.materiales.length) m.materiales.forEach(function(x){ y=pdfFilaNombreCantidad(doc,y,x.nombre,x.cantidad); });
+  else y=pdfTextoVacio(doc,y,'Sin materiales registrados.');
 
   pdfFooter(doc,y+4);
   pdfGuardar(doc,'IRV_resumen_'+(o.actObras||o.pedido)+'_'+o.centro);
@@ -7875,12 +7900,10 @@ function setTodosEnlazan(v,btn){
 // ===== TRABAJADORES =====
 var wRoles=[],wNames=[];
 
-function verParte(idx){
-  $('ordenView').style.display='none'; $('parteView').style.display='block';
-  var all=getH(); var r=all[idx]; if(!r) return;
+// Cuerpo del parte tal como lo ve el usuario: cabecera, detalle (con precios en clientes de cobro), total y
+// observaciones. Lo usan la pantalla del parte y su PDF (pdfDesde), asi que siempre dicen lo mismo.
+function parteCuerpoHTML(r){
   var fF=r.fecha?r.fecha.split('-').reverse().join('/'):'--';
-  var eb='';  // El estado es de la orden, no del parte
-  var matHTML='';
   // Procesar detalle con precios si cliente de cobro
   var _detalleHTML = r.detalle||'<div style="color:var(--text2);padding:10px">Sin detalle.</div>';
   var _totalHTML = '';
@@ -7913,12 +7936,18 @@ function verParte(idx){
         '</div>';
     }
   }
-  $('parteBody').innerHTML=
-    '<div class="card"><div class="card-title">&#128203; '+escHtml(r.tienda)+' &middot; '+fF+'</div>'+
-
+  return '<div class="card-title">&#128203; '+escHtml(r.tienda)+' &middot; '+fF+'</div>'+
     _detalleHTML+
     _totalHTML+
-    (function(){ var _obsCompl=observacionesCompletas(r); return _obsCompl?('<div class="divider"></div><div class="rrow obs-row" style="height:auto"><span class="rc" style="align-self:flex-start;padding-top:8px">Obs.</span><span class="rl" style="white-space:pre-wrap;word-break:break-word;height:auto;flex:1">'+escHtml(_obsCompl)+'</span></div>'):''; })()+
+    (function(){ var _obsCompl=observacionesCompletas(r); return _obsCompl?('<div class="divider"></div><div class="rrow obs-row" style="height:auto"><span class="rc" style="align-self:flex-start;padding-top:8px">Obs.</span><span class="rl" style="white-space:pre-wrap;word-break:break-word;height:auto;flex:1">'+escHtml(_obsCompl)+'</span></div>'):''; })();
+}
+
+function verParte(idx){
+  $('ordenView').style.display='none'; $('parteView').style.display='block';
+  var all=getH(); var r=all[idx]; if(!r) return;
+  var matHTML='';
+  $('parteBody').innerHTML=
+    '<div class="card">'+parteCuerpoHTML(r)+
     '<div class="divider"></div><div class="brow" style="margin-bottom:8px;">'+
     '<button class="btn btn-s btn-sm" onclick="hacerPDF('+idx+')">PDF</button>'+
     '<button class="btn btn-s btn-sm" onclick="compartirParte('+idx+')">Compartir</button>'+
@@ -8570,12 +8599,69 @@ function _moverAPapelera(coleccion, docId, razon){
     });
   });
 }
+// Devuelve una promesa que, si la orden tuvo que cambiar de número, trae el texto para avisar ("…con el número IRV-0046…"); si no, nada.
 function _restaurarDePapelera(idPapelera){
   return _db.collection('papelera').doc(idPapelera).get().then(function(snap){
     if(!snap.exists) throw new Error('No existe en la papelera.');
     var p = snap.data();
+    if(p.coleccionOriginal==='incidencias' && _numeroIRV((p.datos||{}).pedido)) return _restaurarOrdenIRV(idPapelera, p);
     return _db.collection(p.coleccionOriginal).doc(p.docIdOriginal).set(p.datos).then(function(){
       return _db.collection('papelera').doc(idPapelera).delete();
+    });
+  });
+}
+// "IRV-0044" -> 44; cualquier otro número de orden -> 0
+function _numeroIRV(pedido){
+  var m=/^IRV-(\d+)$/i.exec(String(pedido||'').trim());
+  var n=m?parseInt(m[1],10):0;
+  return n>0?n:0;
+}
+// ¿Hay ya OTRA orden o parte con este número IRV? (la propia orden restaurada y sus partes no cuentan)
+function _numeroIRVOcupado(pedido, centro, idOrdenPropia){
+  return Promise.all([
+    _db.collection('incidencias').where('pedido','==',pedido).get(),
+    _db.collection('partes').where('pedido','==',pedido).get()
+  ]).then(function(r){
+    var otraOrden=r[0].docs.some(function(x){ return x.id!==idOrdenPropia; });
+    var otroParte=r[1].docs.some(function(x){ return (x.data().centro||'')!==(centro||''); });
+    return otraOrden||otroParte;
+  });
+}
+// Restaurar una orden IRV: si su número sigue libre conserva el suyo (así cuadra con sus partes) y el contador avanza si hace falta; si ya lo
+// tomó otra orden, recibe directamente el último número disponible (el contador del servidor) y el contador avanza.
+function _restaurarOrdenIRV(idPapelera, p){
+  var d=p.datos||{}, viejo=d.pedido, nViejo=_numeroIRV(viejo), idPropio=p.docIdOriginal, ref=_db.collection('config').doc('contadorIRV');
+  return _numeroIRVOcupado(viejo, d.centro, idPropio).then(function(ocupado){
+    if(!ocupado){
+      return _db.collection('incidencias').doc(idPropio).set(d).then(function(){
+        _avanzarContadorIRV(viejo);
+        return _db.collection('papelera').doc(idPapelera).delete();
+      });
+    }
+    // Número ocupado: se toma el siguiente libre del contador (en transacción, por si otro móvil pide uno a la vez) y se comprueba que de verdad esté libre
+    function tomar(intentos){
+      return _db.runTransaction(function(t){
+        return t.get(ref).then(function(doc){
+          var s=(doc.exists && +doc.data().siguiente)||0;
+          var n=Math.max(s, nViejo+1);
+          t.set(ref, {siguiente:n+1});
+          return n;
+        });
+      }).then(function(n){
+        var nuevo='IRV-'+('000'+n).slice(-4);
+        return _numeroIRVOcupado(nuevo, '*', '').then(function(otro){   // número recién tomado: cualquier orden o parte que lo lleve lo ocupa
+          if(otro && intentos<5) return tomar(intentos+1);
+          if(otro) throw new Error('No se encontró un número libre.');
+          return nuevo;
+        });
+      });
+    }
+    return tomar(0).then(function(nuevo){
+      var nd=Object.assign({}, d, {pedido:nuevo}, _marcaModificacion('Restaurada de la papelera con el número '+nuevo+' ('+viejo+' ya estaba ocupado)'));
+      return _db.collection('incidencias').doc(incidenciaId(d.centro, nuevo)).set(nd).then(function(){
+        try{ var local=+(localStorage.getItem('pm_siguiente_irv')||0), sig=parseInt(nuevo.replace('IRV-',''),10)+1; if(sig>local) localStorage.setItem('pm_siguiente_irv', String(sig)); }catch(e){ _fallo('_restaurarOrdenIRV contador local')(e); }
+        return _db.collection('papelera').doc(idPapelera).delete();
+      }).then(function(){ return 'La orden se restauró con el número '+nuevo+', porque el '+viejo+' ya lo tenía otra orden.'; });
     });
   });
 }
@@ -10420,6 +10506,15 @@ function guardarAsignacion() {
   if (!_asgTec) { showMsg('asgMsg','Falta: Técnico principal (toca uno de los botones).','error'); _irAlCampo('asgTecTgl'); return; }
   if (!$('asgDescripcion').value.trim()) { showMsg('asgMsg','Falta: Descripción de lo que hay que hacer.','error'); _irAlCampo('asgDescripcion'); return; }
 
+  // Numero de orden como en el formulario del parte: los clientes que no son Mercadona y las "Obras" de Mercadona llevan SIEMPRE un numero IRV propio.
+  // Si no se escribio ninguno, se genera aqui (nextIRV) para que la asignacion y su parte sean la MISMA orden. Antes la asignacion se guardaba sin numero,
+  // el parte generaba otro IRV y creaba una incidencia aparte, y la asignacion se quedaba pendiente para siempre. Mercadona con otros trabajos: el numero
+  // es suyo y se escribe a mano (no cambia).
+  // Mercadona (salvo Obras) da su propio numero de orden: sin el no se puede crear la asignacion, porque luego el parte no podria enlazar con ella.
+  if (curCliente.tipo==='mercadona' && _asgJob!=='Obras' && !pedido) { showMsg('asgMsg','Falta: Nº orden (en Mercadona lo da Mercadona; solo con Obras se genera un IRV solo).','error'); _irAlCampo('asgPedido'); return; }
+  var _irvGenerado=false;
+  if(!pedido && (curCliente.tipo!=='mercadona' || _asgJob==='Obras')){ pedido=nextIRV(); _irvGenerado=true; }
+
   function _guardar(refLegado){
     var data = {
       clienteId: curCliente.id,
@@ -10444,7 +10539,11 @@ function guardarAsignacion() {
       : pedido ? _db.collection('incidencias').doc(incidenciaId(data.centro, pedido)).set(data)
       : _db.collection('incidencias').add(data);
     _guardarPromise.then(function(){
-      showMsg('asgMsg','✓ Incidencia asignada.','success');
+      if(_irvGenerado){   // el numero generado ya queda usado: el contador avanza ahora (como al guardar un parte) para que la siguiente asignacion no lo repita
+        try{ var _nIrv=parseInt(String(pedido).replace('IRV-',''),10)+1, _lIrv=+(localStorage.getItem('pm_siguiente_irv')||0); if(_nIrv>_lIrv) localStorage.setItem('pm_siguiente_irv',String(_nIrv)); }catch(e){ _fallo('guardarAsignacion contador local')(e); }
+        _avanzarContadorIRV(pedido);
+      }
+      showMsg('asgMsg','✓ Incidencia asignada.'+(_irvGenerado?' N'+String.fromCharCode(186)+' '+pedido+'.':''),'success');
       _subirAgendaEntry(data.clienteId, data.centro, data.tienda, data.dir, data.tel, data.km, data.tr);
       $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
       _asgJob=''; _asgTec='';
@@ -11347,7 +11446,7 @@ function _renderPapelera(){
   }).catch(function(){ el.innerHTML='<p style="font-size:.85rem;color:var(--red);padding:10px 0;">Error al consultar la papelera.</p>'; });
 }
 function _restaurarDePapeleraUI(idPapelera){
-  _restaurarDePapelera(idPapelera).then(function(){ _renderPapelera(); }).catch(function(){ _toast('No se pudo restaurar. Comprueba tu conexión e inténtalo de nuevo.', _AVISO_ROJO); });
+  _restaurarDePapelera(idPapelera).then(function(aviso){ _renderPapelera(); if(aviso) _toast(aviso); }).catch(function(){ _toast('No se pudo restaurar. Comprueba tu conexión e inténtalo de nuevo.', _AVISO_ROJO); });
 }
 function _purgarDePapeleraUI(idPapelera){
   if(!(window._sesion && window._sesion.rol==='creador')) return;
