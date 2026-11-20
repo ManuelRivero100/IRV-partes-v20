@@ -279,7 +279,7 @@ textarea{resize:vertical;min-height:72px}
 .cat-concepto-cod{font-family:monospace;font-size:.72rem;background:var(--green);color:#fff;padding:2px 6px;border-radius:4px;flex-shrink:0;min-width:58px;text-align:center}
 .cat-concepto-precio{width:80px;padding:4px 8px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-size:.82rem;text-align:right;background:var(--surface2);font-family:inherit}
 .cat-concepto-precio:focus{border-color:var(--green);background:var(--surface2);color:var(--text);outline:none}
-.cat-tabs{display:flex;border-bottom:2px solid var(--border);margin-bottom:14px;gap:4px}
+.cat-tabs{display:none}
 .cat-tab{padding:8px 14px;border:none;background:none;font-family:inherit;font-size:.84rem;font-weight:600;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .14s}
 .cat-tab.active{color:var(--green);border-bottom-color:var(--green)}
 .cat-tab:hover:not(.active){color:var(--text)}
@@ -539,7 +539,8 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
   </div>
 </div>
 <div id="w-catalogo" class="win">
-  <div class="navrow"><button class="back" onclick="goTo('w-clientes')">&#8592; Atr&aacute;s</button></div>
+  <div class="navrow"><button class="back" onclick="_catAtras()">&#8592; Atr&aacute;s</button><button class="back" id="catBtnInicio" style="display:none" onclick="goTo('w-clientes')">&#8962; Inicio</button></div>
+  <div id="catMenu" class="app-grid"></div>
   <div class="cat-tabs">
     <button class="cat-tab active" onclick="catTab('materiales',this)">&#128295; Materiales<span id="catMatFlotanteBadge" style="display:none;background:var(--amber);color:#fff;font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:20px;margin-left:5px;">0</span></button>
     <button class="cat-tab" onclick="catTab('conceptos',this)">&#9201; Conceptos</button>
@@ -1257,7 +1258,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-20d-clientes-en-catalogo';
+var APP_BUILD_ID = 'build-2026-11-20e-catalogo-en-iconos';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -1324,7 +1325,7 @@ function goTo(id){
   // y enseñaba resultados que no eran del cliente actual. Solo al entrar; moverse dentro del Historial (abrir una orden, volver) no lo borra.
   if(id==='w-hist'){ $('busca').value=''; $('buscaF').value=''; refreshCounts(); renderHistTecBtns(); renderSearchResults(); }
   if(id==='w-stats') statsInit();
-  if(id==='w-catalogo'){$('catTabMat').style.display='block';$('catTabConc').style.display='none';$('catFamiliaView').style.display='none';renderCatGrupos();catActualizarBadge();}
+  if(id==='w-catalogo'){ catMostrarMenu(); }
   if(id==='w-clientes'){
     curCliente=null;
     $('hdr-sub').textContent='Selecciona un cliente';
@@ -2636,9 +2637,57 @@ function _volverACatalogoClientes(){
   goTo('w-catalogo');
   var b=$('catTabBtnClientes'); if(b) catTab('clientes',b);
 }
+// Catalogo como la pantalla inicial: un icono por apartado; al tocar uno se abre su pantalla entera ("Atras" vuelve a este menu e "Inicio" a la pantalla inicial).
+var _catSeccion=null;
+var _CAT_APARTADOS=[
+  {id:'materiales',ico:'&#128295;',nom:'Materiales',badge:'catMatFlotanteBadge'},
+  {id:'conceptos',ico:'&#9201;&#65039;',nom:'Conceptos'},
+  {id:'tecnicos',ico:'&#128119;',nom:'T&eacute;cnicos'},
+  {id:'agenda',ico:'&#128220;',nom:'Agenda',badge:'catAgendaBadge'},
+  {id:'clientes',ico:'&#128101;',nom:'Clientes'}
+];
+function renderCatMenu(){
+  var el=$('catMenu'); if(!el) return;
+  el.innerHTML='';
+  _CAT_APARTADOS.forEach(function(a){
+    var div=document.createElement('div');
+    div.className='app-icon';
+    var img=document.createElement('div');
+    img.className='app-icon-img ico-other';
+    img.innerHTML=a.ico;
+    div.appendChild(img);
+    var src=a.badge?$(a.badge):null, n=src?(+src.textContent||0):0;
+    if(n>0){
+      var b=document.createElement('span');
+      b.className='app-badge';
+      b.textContent=n;
+      div.appendChild(b);
+    }
+    var l=document.createElement('span');
+    l.className='app-icon-label';
+    l.innerHTML=a.nom;
+    div.appendChild(l);
+    div.addEventListener('click',function(){ catAbrirApartado(a.id); });
+    el.appendChild(div);
+  });
+}
+function catAbrirApartado(id){
+  var btn=document.querySelector(".cat-tab[onclick*=\"catTab('"+id+"'\"]");
+  if(btn) catTab(id,btn);
+}
+function catMostrarMenu(){
+  ['catTabMat','catTabConc','catTabTec','catTabAgenda','catTabClientes','catFamiliaView'].forEach(function(i){ var e=$(i); if(e) e.style.display='none'; });
+  _catSeccion=null;
+  var m=$('catMenu'); if(m) m.style.display='';
+  var bi=$('catBtnInicio'); if(bi) bi.style.display='none';
+  catActualizarBadge();
+  renderCatMenu();
+}
+function _catAtras(){ if(_catSeccion) catMostrarMenu(); else goTo('w-clientes'); }
 function catTab(tab,btn){
   document.querySelectorAll('.cat-tab').forEach(function(b){b.classList.remove('active');});
   btn.classList.add('active');
+  _catSeccion=tab; var cm=$('catMenu'); if(cm) cm.style.display='none'; var cbi=$('catBtnInicio'); if(cbi) cbi.style.display='';
   var m=$('catTabMat'),c=$('catTabConc'),f=$('catFamiliaView'),tc=$('catTabTec'),ag=$('catTabAgenda');
   m.style.display=tab==='materiales'?'block':'none';
   c.style.display=tab==='conceptos'?'block':'none';
@@ -3170,6 +3219,7 @@ function catActualizarBadge(){
   if(ab){ var np=agendaPendientesCount(); ab.textContent=np; ab.style.display=np>0?'inline-block':'none'; }
   var amb=$('catMatFlotanteBadge');
   if(amb){ amb.textContent=pendMatFlotante; amb.style.display=pendMatFlotante>0?'inline-block':'none'; }
+  if(!_catSeccion) renderCatMenu();
 }
 function _agDomId(key){ return key.replace(/[^a-zA-Z0-9]/g,'_'); }
 
