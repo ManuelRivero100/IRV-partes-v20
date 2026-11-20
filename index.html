@@ -344,13 +344,15 @@ textarea{resize:vertical;min-height:72px}
 .app-icon{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;position:relative;}
 .app-icon-img{width:72px;height:72px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 4px 16px rgba(0,0,0,.4);transition:transform .15s;}
 .app-icon:active .app-icon-img{transform:scale(.9);}
-.app-icon-label{font-size:.75rem;font-weight:500;color:rgba(255,255,255,.9);text-align:center;text-shadow:0 1px 3px rgba(0,0,0,.6);max-width:80px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.app-icon-label{font-size:.75rem;font-weight:500;color:rgba(255,255,255,.9);text-align:center;text-shadow:0 1px 3px rgba(0,0,0,.6);max-width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;line-height:1.2;}
 .app-badge{position:absolute;top:-4px;right:2px;background:#ef4444;color:#fff;font-size:.62rem;font-weight:700;padding:2px 6px;border-radius:20px;min-width:18px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.3);}
 .section-label{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin:20px 0 12px 4px;}
 .ico-mercadona{background:linear-gradient(145deg,#1a6b3a,#2d9e5f);}
 .ico-other{background:linear-gradient(145deg,#1d4ed8,#3b82f6);}
 .ico-particular{background:linear-gradient(145deg,#7c3aed,#a855f7);}
 .ico-nuevo{background:rgba(255,255,255,.12);border:2px dashed rgba(255,255,255,.25);}
+.app-icon-abierto .app-icon-img{box-shadow:0 0 0 3px rgba(255,255,255,.55),0 4px 16px rgba(0,0,0,.4);}
+.obras-panel{grid-column:1/-1;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:16px 4px 10px;}
 .ico-catalogo{background:linear-gradient(145deg,#b45309,#f59e0b);}
 .ico-stats{background:linear-gradient(145deg,#0f766e,#14b8a6);}
 
@@ -1247,7 +1249,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-19d-irv-al-asignar-pdf-y-restaurar';
+var APP_BUILD_ID = 'build-2026-11-20a-obras-nombres-y-agenda-con-cero';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -2094,8 +2096,11 @@ function agendaBuscar(clienteId,centro){
   var a=getAgenda();
   return a[agendaKey(clienteId,centro)]||null;
 }
+// Valor de km / desplazamiento para la Agenda: el 0 es un dato valido (p. ej. la nave, que somos nosotros) y se guarda como "0";
+// solo null, undefined y "" son "sin dato". Un numero distinto de 0 se guarda como siempre.
+function _agendaValor(v){ return (v===0||v==='0') ? '0' : (v||''); }
 function _completarAgendaFaltantes(clienteId, centro, km, tr){
-  if(!centro || !km) return; // nada que completar
+  if(!centro || _agendaValor(km)==='') return; // nada que completar (el 0 si es un dato)
   if(typeof _db === 'undefined' || !_db) return;
   clienteId=clienteId||'mercadona';
   var k=agendaKey(clienteId,centro);
@@ -2104,8 +2109,8 @@ function _completarAgendaFaltantes(clienteId, centro, km, tr){
   if(!entry) return; // si no existe la entrada, la crea _subirAgendaEntry por separado
   if(entry.km) return; // ya tiene km — nunca sobreescribir un dato que ya está correcto
   var docId=k.replace(/[\/\s]/g,'-');
-  _db.collection('agenda').doc(docId).update({ km: km, tr: tr||'' }).then(function(){
-    entry.km=km; entry.tr=tr||''; local[k]=entry; setAgenda(local);
+  _db.collection('agenda').doc(docId).update({ km: _agendaValor(km), tr: _agendaValor(tr) }).then(function(){
+    entry.km=_agendaValor(km); entry.tr=_agendaValor(tr); local[k]=entry; setAgenda(local);
   }).catch(_fallo('_completarAgendaFaltantes'));
 }
 function _subirAgendaEntry(clienteId,centro,tienda,dir,tel,km,tr){
@@ -2124,7 +2129,7 @@ function _subirAgendaEntry(clienteId,centro,tienda,dir,tel,km,tr){
       return;
     }
     var esAdmin=window._sesion && (window._sesion.rol==='admin'||window._sesion.rol==='creador');
-    var data={clienteId:clienteId,centro:centro,tienda:tienda||'',dir:dir||'',tel:tel||'',km:km||'',tr:tr||'',creadoPor:(window._sesion&&window._sesion.nombre)||'',fechaCreacion:Date.now(),estado:esAdmin?'aceptada':'pendiente',vistaAdmin:false};
+    var data={clienteId:clienteId,centro:centro,tienda:tienda||'',dir:dir||'',tel:tel||'',km:_agendaValor(km),tr:_agendaValor(tr),creadoPor:(window._sesion&&window._sesion.nombre)||'',fechaCreacion:Date.now(),estado:esAdmin?'aceptada':'pendiente',vistaAdmin:false};
     ref.set(data).then(function(){
       var a=getAgenda(); a[k]=data; setAgenda(a);
     }).catch(_fallo('_subirAgendaEntry'));
@@ -6085,13 +6090,16 @@ function renderClientes(){
   var el=$('clientesGrid');
   if(!el) return;
   el.innerHTML='';
-  lista.forEach(function(c){
+  // Pantalla inicial con TRES iconos: Mercadona, Servicios y Reparaciones (clientes "particular") y "Obras" (todos los clientes fijos). Mercadona y Servicios y
+  // Reparaciones entran directos a su menu; "Obras" despliega debajo a sus clientes (y "Anadir" para el administrador). Se recuerda si esta desplegado.
+  var _esAdm=_esAdminOCreador();
+  function _iconoCliente(c){
     var s=stats[c.id]||{activas:0,ultimaFin:''};
     var ico=c.tipo==='mercadona'?'&#127978;':c.tipo==='particular'?'&#128100;':'&#127970;';
     var cls=c.tipo==='mercadona'?'ico-mercadona':c.tipo==='particular'?'ico-particular':'ico-other';
     var div=document.createElement('div');
     div.className='app-icon';
-    if(c.id!=='mercadona' && _esAdminOCreador()){
+    if(c.id!=='mercadona' && _esAdm){
       var db=document.createElement('button');
       db.className='app-del-btn';
       db.innerHTML='&#x2715;';
@@ -6112,24 +6120,58 @@ function renderClientes(){
     lbl.className='app-icon-label';
     lbl.textContent=c.nombre;
     div.appendChild(lbl);
-    (function(cid2){div.addEventListener('click',function(){seleccionarCliente(cid2);});})(c.id);
-    el.appendChild(div);
-  });
-  if(_esAdminOCreador()){
-    var addDiv=document.createElement('div');
-    addDiv.className='app-icon';
-    var ai=document.createElement('div');
-    ai.className='app-icon-img ico-nuevo';
-    ai.style.fontSize='28px';
-    ai.innerHTML='&#43;';
-    addDiv.appendChild(ai);
-    var al=document.createElement('span');
-    al.className='app-icon-label';
-    al.style.color='rgba(255,255,255,.5)';
-    al.textContent='Añadir';
-    addDiv.appendChild(al);
-    addDiv.addEventListener('click',function(){goTo('w-nuevo-cliente');});
-    el.appendChild(addDiv);
+    (function(cid2){div.addEventListener('click',function(){window._obrasAbierto=false; seleccionarCliente(cid2);});})(c.id);
+    return div;
+  }
+  var _directos=lista.filter(function(c){ return c.tipo==='mercadona'; }).concat(lista.filter(function(c){ return c.tipo==='particular'; }));
+  var _obras=lista.filter(function(c){ return c.tipo!=='mercadona' && c.tipo!=='particular'; });
+  _directos.forEach(function(c){ el.appendChild(_iconoCliente(c)); });
+  if(_obras.length || _esAdm){
+    var _abierto=!!window._obrasAbierto;
+    var _sumaAct=0; _obras.forEach(function(c){ _sumaAct+=(stats[c.id]||{activas:0}).activas; });
+    var gDiv=document.createElement('div');
+    gDiv.className='app-icon'+(_abierto?' app-icon-abierto':'');
+    var gImg=document.createElement('div');
+    gImg.className='app-icon-img ico-other';
+    gImg.innerHTML='&#127959;&#65039;';
+    gDiv.appendChild(gImg);
+    if(_sumaAct>0){
+      var gBadge=document.createElement('span');
+      gBadge.className='app-badge';
+      gBadge.textContent=_sumaAct;
+      gDiv.appendChild(gBadge);
+    }
+    var gLbl=document.createElement('span');
+    gLbl.className='app-icon-label';
+    gLbl.textContent='Obras';
+    gDiv.appendChild(gLbl);
+    gDiv.addEventListener('click',function(){ window._obrasAbierto=!window._obrasAbierto; renderClientes(); });
+    el.appendChild(gDiv);
+    if(_abierto){
+      var panel=document.createElement('div');
+      panel.className='obras-panel';
+      var sub=document.createElement('div');
+      sub.className='app-grid';
+      _obras.forEach(function(c){ sub.appendChild(_iconoCliente(c)); });
+      if(_esAdm){
+        var addDiv=document.createElement('div');
+        addDiv.className='app-icon';
+        var ai=document.createElement('div');
+        ai.className='app-icon-img ico-nuevo';
+        ai.style.fontSize='28px';
+        ai.innerHTML='&#43;';
+        addDiv.appendChild(ai);
+        var al=document.createElement('span');
+        al.className='app-icon-label';
+        al.style.color='rgba(255,255,255,.5)';
+        al.innerHTML='A&ntilde;adir';
+        addDiv.appendChild(al);
+        addDiv.addEventListener('click',function(){goTo('w-nuevo-cliente');});
+        sub.appendChild(addDiv);
+      }
+      panel.appendChild(sub);
+      el.appendChild(panel);
+    }
   }
 }
 
