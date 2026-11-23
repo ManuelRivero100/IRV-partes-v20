@@ -677,6 +677,10 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
     <div class="field"><label>Tipo de trabajo <span class="req">*</span></label>
       <div class="tgl" id="asgJobTgl"></div>
       <input type="hidden" id="asgJob">
+      <div class="tgl" id="asgObrasTipoTgl" style="display:none;margin-top:8px;">
+        <button onclick="setAsgObrasTipo('Climatización',this)">Climatización</button>
+        <button onclick="setAsgObrasTipo('Conductos',this)">Conductos</button>
+      </div>
     </div>
     <div class="field"><label>T&eacute;cnico principal <span class="req">*</span></label>
       <div class="tgl" id="asgTecTgl"></div>
@@ -700,6 +704,27 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
     <div class="field"><label>Selecciona <span class="req">*</span></label>
       <div class="tgl" id="jobTgl"></div>
       <input type="hidden" id="job">
+    </div>
+    <!-- Solo con Mercadona > Obras: al elegir Obras se pide ya Climatizacion o Conductos (decide los materiales Y los codigos). Los demas trabajos no cambian. -->
+    <div class="field" style="margin-bottom:0;">
+      <div id="obrasMatTipoTgl" class="tgl" style="display:none;margin-top:4px;">
+        <button onclick="setObrasMatTipo('Climatización',this)">Climatización</button>
+        <button onclick="setObrasMatTipo('Conductos',this)">Conductos</button>
+      </div>
+      <div id="obrasCondExtras" style="display:none;margin-top:12px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;font-weight:600;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:10px;">
+          <input type="checkbox" id="cdDietaComp" style="width:20px;height:20px;padding:0;cursor:pointer;accent-color:var(--green);flex:none;-webkit-appearance:checkbox;appearance:auto;">
+          Dieta completa
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;font-weight:600;color:var(--text);text-transform:none;letter-spacing:0;margin-bottom:10px;">
+          <input type="checkbox" id="cdElev" style="width:20px;height:20px;padding:0;cursor:pointer;accent-color:var(--green);flex:none;-webkit-appearance:checkbox;appearance:auto;">
+          Medios de elevaci&oacute;n
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;font-weight:600;color:var(--text);text-transform:none;letter-spacing:0;">
+          <input type="checkbox" id="cdSupl" style="width:20px;height:20px;padding:0;cursor:pointer;accent-color:var(--green);flex:none;-webkit-appearance:checkbox;appearance:auto;">
+          Suplemento por cambio de jornada
+        </label>
+      </div>
     </div>
   </div>
   <div class="card"><div class="card-title">&#128203; Datos de la orden</div>
@@ -832,10 +857,6 @@ html.recuperando #w-login, html.recuperando #splash { display: none !important; 
     <button class="btn btn-s btn-full" style="margin-bottom:10px;" id="btnMateriales" onclick="toggleCard('cardMatForm',this)">&#128230; Materiales</button>
     <div class="card" id="cardMatForm" style="display:none">
       <div class="card-title">&#128230; Materiales utilizados</div>
-      <div id="obrasMatTipoTgl" class="tgl" style="display:none;margin-bottom:10px;">
-        <button onclick="setObrasMatTipo('Climatización',this)">Climatización</button>
-        <button onclick="setObrasMatTipo('Conductos',this)">Conductos</button>
-      </div>
       <div id="parteMatCard"></div>
     </div>
   </div>
@@ -1301,7 +1322,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-23b-cierre-de-asignar-y-busqueda';
+var APP_BUILD_ID = 'build-2026-11-23f-obras-conductos-medios-elev';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -3815,11 +3836,12 @@ function statsRenderResumen(datos){
       if(!acum[c.cod])acum[c.cod]={cod:c.cod,lab:c.lab,v:0,u:c.u};
       acum[c.cod].v+=c.v;
     });});
-    var hs=[],ks=[],ds=[];
-    Object.values(acum).forEach(function(c){if(c.u==='h')hs.push(c);else if(c.u==='km')ks.push(c);else if(c.u==='dieta')ds.push(c);});
+    var hs=[],ks=[],ds=[],os=[];
+    Object.values(acum).forEach(function(c){if(c.u==='h')hs.push(c);else if(c.u==='km')ks.push(c);else if(c.u==='dieta')ds.push(c);else if(c.u==='ud'||c.u==='sin')os.push(c);});
     if(hs.length){html+='<div class="rgroup-title">Horas</div>';var th=0;hs.forEach(function(c){html+=cRow(c.cod,c.lab,statsFmtH(c.v));th+=c.v;});if(hs.length>1)html+=totRow(statsFmtH(th));}
     if(ks.length){html+='<div class="rgroup-title">Kilometraje</div>';var tk=0;ks.forEach(function(c){html+=cRow(c.cod,c.lab,Math.round(c.v)+' km');tk+=c.v;});if(ks.length>1)html+=totRow(Math.round(tk)+' km');}
     if(ds.length){html+='<div class="rgroup-title">Dietas</div>';ds.forEach(function(c){html+=cRow(c.cod,c.lab,c.v+'');});}
+    if(os.length){html+='<div class="rgroup-title">Otros conceptos</div>';os.forEach(function(c){html+=cRow(c.cod,c.lab,c.u==='sin'?'':c.v+'');});}
   }
   el.innerHTML=html;
 }
@@ -4468,7 +4490,7 @@ function generarCore(){
   var totMin=trI+(esNocturno?(1440-arr+lea):(lea-arr))+trO;
   var clienteIdActual=curCliente?curCliente.id:'mercadona';
   var sameCliente=same.filter(function(x){ return (x.clienteId||'mercadona')===clienteIdActual; });
-  var dietaYa=sameCliente.some(function(x){ return x.dieta; });
+  var dietaYa=sameCliente.some(function(x){ return x.dieta || (x.cdExtras && x.cdExtras.indexOf('cdDietaComp')>=0); });
   // La media dieta solo acumula horas de un tramo REALMENTE continuo: se suma un parte
   // anterior solo si el hueco hasta el siguiente (o hasta el actual) es de 1h o menos, O si
   // los dos partes están enlazados de verdad (Con enlace / Auto) — un enlace ya explica y
@@ -4491,7 +4513,9 @@ function generarCore(){
     _inicioTramo=tm(_prev.arr);
     _enlazadoConAnterior=(_prev.linkType==='Auto');
   }
-  var dieta=acum>=300&&!dietaYa;
+  var _cdSel=_cdMarcados();
+  var _cdDietaComp=_cdSel.some(function(c){ return c.id==='cdDietaComp'; });
+  var dieta=acum>=300&&!dietaYa&&!_cdDietaComp;   // con dieta completa marcada no se aplica ademas la media dieta automatica
   html+='<div style="height:1px;background:var(--border);margin:10px 0"></div>';
   var subtotalServicio=0;
   if(dieta){
@@ -4502,6 +4526,8 @@ function generarCore(){
     else { html+=cRow(dCod,'\u00bd Dieta',dVal); }
   }
   else { var info=dietaYa?'&#9989; Media dieta ya aplicada hoy':'&#9203; Acumulado: '+fmt(acum/60)+' h de 5 h (faltan '+fmt(Math.max(0,300-acum)/60)+' h)'; html+='<div style="font-size:.82rem;color:var(--text2);padding:7px 10px;background:var(--surface2);border-radius:var(--r-sm);border:1px solid var(--border2)">'+info+'</div>'; }
+  // Obras de conductos: conceptos marcados (Dieta Compt y Suplt Jornd por nº de tecnicos; Medios Elev. solo codigo y concepto)
+  _cdSel.forEach(function(c){ html+=cRow(c.cod,c.lab,c.mult?(w>1?'× '+w:'× 1'):''); });
   var durTotal=esNocturno?(1440-arr+lea):(lea-arr);
   var noms=wNames.filter(function(n){ return n&&n.trim(); });
 
@@ -4601,12 +4627,13 @@ function generarCore(){
     codigos.push({cod:gc(curJob,dL[k],''),lab:dA[k],v:(gD[k]/60)*w,u:'h'});
   });
   if(dieta) codigos.push({cod:gc(curJob,'Dieta',''),lab:'½ Dieta',v:w,u:'dieta'});
+  _cdSel.forEach(function(c){ codigos.push({cod:c.cod,lab:c.lab,v:c.mult?w:1,u:c.mult?'ud':'sin'}); });
 
   window.recTmp={
     fecha:fecha, pedido:pedidoVal, numParte:($('numParte').value||'').trim(), actObras:(esMercadona&&esObras)?pedidoVal:null,
     centro:$('centro').value, tienda:$('tienda').value,
     dir:$('dir').value, tel:$('tel').value, km:kmG, tr:trG,
-    job:curJob, catJob:_MS.catJob||null, roles:roles, detalle:html, fin:lea, trS:trO, totalMin:totMin, dieta:dieta,
+    job:curJob, catJob:_MS.catJob||null, cdExtras:_cdSel.map(function(c){ return c.id; }), roles:roles, detalle:html, fin:lea, trS:trO, totalMin:totMin, dieta:dieta,
     arr:$('arr').value, lea:$('lea').value, obs:'', linkType:curLink,
     kmDif:kmDG, trDif:trDG, horaEnlace:heG, tipoDia:td,
     enlaceDestinoCentro:(typeof _centroDestinoVal!=='undefined'&&_centroDestinoVal)?_centroDestinoVal:null,
@@ -4807,6 +4834,7 @@ function nuevo(){
   $('cardMatForm').style.display='none'; msInitSel([]);
   _MS.catJob=null;
   var omt=$('obrasMatTipoTgl'); if(omt) omt.style.display='none';
+  if(typeof _cdActualizar==='function') _cdActualizar();
   $('fecha').value=hoy(); onFechaChange(); renderWorkers();
   renderJobTgl();
   adaptarFormularioACliente();
@@ -5867,7 +5895,7 @@ function ejecutarAsgTec() {
   }
   // Los datos de la tienda salen de la AGENDA si la tienda esta en ella (ver _asgConAgenda); la asignacion solo aporta lo que la agenda no tiene.
   var dg = _asgConAgenda(d);
-  var datos = { centro:d.centro, tienda:dg.tienda, dir:dg.dir, tel:dg.tel, km:dg.km, tr:dg.tr, job:d.job, descripcion:d.descripcion };
+  var datos = { centro:d.centro, tienda:dg.tienda, dir:dg.dir, tel:dg.tel, km:dg.km, tr:dg.tr, job:d.job, catJob:d.catJob||null, descripcion:d.descripcion };
   _rellenarFormulario(datos);
   if (d.pedido) ocultarLectura();
 }
@@ -6849,7 +6877,9 @@ function calcMin(ini,fin,td){
 var COD={
   'Conductos':{ 'H. Normal':{c:'MF9404',r:false},'H. Extra':{c:'MF9405',r:false},'H. Nocturna':{c:'MF9406',r:false},'H. Festiva':{c:'MF9407',r:false},'D. Normal':{c:'MK9OVB',r:false},'D. Extra':{c:'MB8723',r:false},'D. Nocturno':{c:'MB8725',r:false},'D. Festivo':{c:'MB8724',r:false},'Km':{c:'MF9412',r:false},'Dieta':{c:'MF9896',r:false} },
   'Climatizacion':{ 'H. Normal':{c:{Oficial:'MF9344',Peón:'MF9348'},r:true},'H. Extra':{c:{Oficial:'MF9345',Peón:'MF9349'},r:true},'H. Nocturna':{c:{Oficial:'MF9346',Peón:'MF9350'},r:true},'H. Festiva':{c:{Oficial:'MF9347',Peón:'MF9351'},r:true},'D. Normal':{c:'M71077',r:false},'D. Extra':{c:'MB8726',r:false},'D. Nocturno':{c:'MB8728',r:false},'D. Festivo':{c:'MB8727',r:false},'Km':{c:'MF9352',r:false},'Dieta':{c:'MF9895',r:false} },
-  'Obras':{ 'H. Normal':{c:'MA4836',r:false},'H. Extra':{c:'M71088',r:false},'H. Nocturna':{c:'MA4837',r:false},'H. Festiva':{c:'MA4838',r:false},'D. Normal':{c:'M71077',r:false},'D. Extra':{c:'MB8726',r:false},'D. Nocturno':{c:'MB8728',r:false},'D. Festivo':{c:'MB8727',r:false},'Km':{c:'MA4841',r:false},'Dieta':{c:'MA4839',r:false} }
+  'Obras':{ 'H. Normal':{c:'MA4836',r:false},'H. Extra':{c:'M71088',r:false},'H. Nocturna':{c:'MA4837',r:false},'H. Festiva':{c:'MA4838',r:false},'D. Normal':{c:'M71077',r:false},'D. Extra':{c:'MB8726',r:false},'D. Nocturno':{c:'MB8728',r:false},'D. Festivo':{c:'MB8727',r:false},'Km':{c:'MA4841',r:false},'Dieta':{c:'MA4839',r:false} },
+  // Obras de CONDUCTOS (Mercadona > Obras > boton "Conductos"): sus propios codigos de hora, kilometraje y media dieta; los desplazamientos son los mismos que Conductos.
+  'ObrasConductos':{ 'H. Normal':{c:'MD1477',r:false},'H. Extra':{c:'MD1478',r:false},'H. Nocturna':{c:'MA4956',r:false},'H. Festiva':{c:'MA4957',r:false},'D. Normal':{c:'MK9OVB',r:false},'D. Extra':{c:'MB8723',r:false},'D. Nocturno':{c:'MB8725',r:false},'D. Festivo':{c:'MB8724',r:false},'Km':{c:'MA4960',r:false},'Dieta':{c:'MA4958',r:false} }
 };
 
 var FN=['01-01','01-06','05-01','08-15','10-12','11-01','12-06','12-08','12-25'];
@@ -7081,6 +7111,7 @@ function setJob(v,btn){
     tgl.style.display='none';
     _MS.catJob=null;
   }
+  _cdActualizar();
   msRender('parteMatCard');
   // Mostrar/ocultar campo pedido vs actuación obras
   var esMercadona=curCliente&&curCliente.tipo==='mercadona';
@@ -7100,6 +7131,7 @@ function setObrasMatTipo(tipo,btn){
   _MS.catJob=tipo;
   document.querySelectorAll('#obrasMatTipoTgl button').forEach(function(b){ b.classList.remove('active'); });
   if(btn) btn.classList.add('active');
+  _cdActualizar();
   msRender('parteMatCard');
 }
 
@@ -7151,7 +7183,7 @@ function verOrden(enc){
     (p.r.codigos||parsearCodigos(p.r.detalle||'', p.r.roles||[])).forEach(function(c){ sumarCodigo(c.cod,c.lab,c.v,c.u); });
   });
 
-  function fmtVal(v,u){ if(u==='km') return Math.round(v)+' km'; if(u==='dieta') return ''+Math.round(v); return fmtH(v); }
+  function fmtVal(v,u){ if(u==='km') return Math.round(v)+' km'; if(u==='dieta'||u==='ud') return ''+Math.round(v); if(u==='sin') return ''; return fmtH(v); }
 
   var matAcum={};
   partes.forEach(function(p){
@@ -7558,7 +7590,7 @@ function compartirOrden(){
   lines.push('');
   lines.push('CÓDIGOS ACUMULADOS');
   Object.values(o.codAcum).forEach(function(c){
-    var v=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?''+Math.round(c.v):fmtH(c.v);
+    var v=_vCod(c);
     lines.push(c.rc+' · '+c.rl+': '+v);
   });
   if(Object.keys(o.matAcum).length){
@@ -8739,7 +8771,7 @@ function _mostrarResumenTotal(modo){
 
 function _renderAcum(codAcum){
   return Object.values(codAcum).length
-    ?Object.values(codAcum).map(function(c){var v=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?''+Math.round(c.v):fmtH(c.v);return '<div class="acum-row"><span>'+c.rc+' &middot; '+c.rl+'</span><span style="font-weight:600;">'+v+'</span></div>';}).join('')
+    ?Object.values(codAcum).map(function(c){var v=_vCod(c);return '<div class="acum-row"><span>'+c.rc+' &middot; '+c.rl+'</span><span style="font-weight:600;">'+v+'</span></div>';}).join('')
     :'<div style="font-size:.82rem;color:var(--text3);">Sin datos.</div>';
 }
 
@@ -8754,7 +8786,11 @@ var _codConcepto = {
   'MB8728':'Despl. Nocturno','MB8725':'Despl. Nocturno',
   'MB8727':'Despl. Festivo','MB8724':'Despl. Festivo',
   'MF9352':'Kilometraje','MF9412':'Kilometraje','MA4841':'Kilometraje',
-  'MF9895':'½ Dieta','MF9896':'½ Dieta','MA4839':'½ Dieta'
+  'MF9895':'½ Dieta','MF9896':'½ Dieta','MA4839':'½ Dieta',
+  // Obras de conductos
+  'MD1477':'H. Normal','MD1478':'H. Extra','MA4956':'H. Nocturna','MA4957':'H. Festiva','MA4960':'Kilometraje','MA4958':'½ Dieta',
+  // conceptos extra de obras de conductos
+  'MA4959':'Dieta Compt','MD6380':'Medios Elev.','MKA1QJ':'Suplt Jornd'
 };
 function _renderAcumAgrupado(codAcum){
   // Agrupar por concepto
@@ -8766,19 +8802,20 @@ function _renderAcumAgrupado(codAcum){
   });
   // Orden fijo
   var orden=['Kilometraje','H. Normal','H. Extra','H. Nocturna','H. Festiva',
-             'Despl. Normal','Despl. Extra','Despl. Nocturno','Despl. Festivo','½ Dieta'];
+             'Despl. Normal','Despl. Extra','Despl. Nocturno','Despl. Festivo','½ Dieta',
+             'Dieta Compt','Medios Elev.','Suplt Jornd'];
   var html='';
   orden.forEach(function(k){
     if(!grupos[k])return;
     var c=grupos[k];
-    var v=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?''+Math.round(c.v):fmtH(c.v);
+    var v=_vCod(c);
     html+='<div class="acum-row"><span>'+k+'</span><span style="font-weight:600;">'+v+'</span></div>';
   });
   // Cualquier otro que no esté en el orden
   Object.keys(grupos).forEach(function(k){
     if(orden.indexOf(k)>=0)return;
     var c=grupos[k];
-    var v=c.u==='km'?Math.round(c.v)+' km':c.u==='dieta'?''+Math.round(c.v):fmtH(c.v);
+    var v=_vCod(c);
     html+='<div class="acum-row"><span>'+k+'</span><span style="font-weight:600;">'+v+'</span></div>';
   });
   return html||'<div style="font-size:.82rem;color:var(--text3);">Sin datos.</div>';
@@ -9063,7 +9100,29 @@ function _fmtFechaHora(ms){
 
 function fmt(v){ var r=Math.round(v*100)/100; return Number.isInteger(r)?''+r:(''+r).replace(/0+$/,'').replace(/\.$/,''); }
 
-function gc(job,lab,rol){ if(!curCliente||curCliente.tipo!=='mercadona') return lab; var e=COD[jk(job)]&&COD[jk(job)][lab]; if(!e) return lab; if(e.r&&rol) return e.c[rol]||lab; return e.c||lab; }
+// Codigos de facturacion segun el tipo de trabajo. En Obras de Mercadona manda el boton Climatizacion / Conductos (_MS.catJob): el mismo que ya elegia los materiales ahora elige tambien la tabla de codigos.
+function _tablaCod(job){ var k=jk(job); if(k==='Obras' && typeof _MS!=='undefined' && _MS && _MS.catJob==='Conductos') return 'ObrasConductos'; return k; }
+function gc(job,lab,rol){ if(!curCliente||curCliente.tipo!=='mercadona') return lab; var t=_tablaCod(job); var e=COD[t]&&COD[t][lab]; if(!e) return lab; if(e.r&&rol) return e.c[rol]||lab; return e.c||lab; }
+
+// Conceptos EXTRA de Obras de conductos (botones de marcar en el parte; solo se ven con Mercadona > Obras > Conductos):
+//  - Dieta completa (MA4959) y Suplemento por cambio de jornada (MKA1QJ): si se marcan, salen multiplicados por el nº de tecnicos (unidad 'ud').
+//  - Medios de elevacion (MD6380): si se marca, sale solo el codigo y el concepto, sin cantidad (unidad 'sin').
+//  Si se marca la dieta completa NO se aplica ademas la media dieta automatica.
+var _CD_CONC=[
+  {id:'cdDietaComp',cod:'MA4959',lab:'Dieta Compt',mult:true},
+  {id:'cdElev',cod:'MD6380',lab:'Medios Elev.',mult:false},
+  {id:'cdSupl',cod:'MKA1QJ',lab:'Suplt Jornd',mult:true}
+];
+function _cdVisible(){ return !!(curCliente && curCliente.tipo==='mercadona' && curJob==='Obras' && typeof _MS!=='undefined' && _MS && _MS.catJob==='Conductos'); }
+function _cdActualizar(){
+  var v=_cdVisible(), b=$('obrasCondExtras'); if(b) b.style.display=v?'block':'none';
+  if(!v) _CD_CONC.forEach(function(c){ var e=$(c.id); if(e) e.checked=false; });
+}
+function _cdMarcados(){
+  if(!_cdVisible()) return [];
+  return _CD_CONC.filter(function(c){ var e=$(c.id); return !!(e && e.checked); });
+}
+function _vCod(c){ if(c.u==='km') return Math.round(c.v)+' km'; if(c.u==='dieta'||c.u==='ud') return ''+Math.round(c.v); if(c.u==='sin') return ''; return fmtH(c.v); }
 
 function histShow(ids){
   ['histOpts','secView','centrosView','incidenciasView','ordenView','parteView',
@@ -9237,6 +9296,11 @@ function _rellenarFormulario(datos){
     document.querySelectorAll('#obrasMatTipoTgl button').forEach(function(b){
       if(b.textContent.trim()===datos.catJob) setObrasMatTipo(datos.catJob,b);
     });
+  }
+  // Obras de conductos: botones de marcar (Dieta Compt, Medios Elev., Suplt Jornd) tal como se guardaron
+  if(datos.cdExtras && datos.cdExtras.length){
+    _cdActualizar();
+    datos.cdExtras.forEach(function(id){ var e=$(id); if(e) e.checked=true; });
   }
   if(datos.descripcion){
     var fd=$('fieldDescIncidencia'); var dd=$('descIncidencia');
@@ -10801,7 +10865,7 @@ function buscarKmAsg(centro){
 
 function abrirAsignar() {
   if (!curCliente) return;
-  _asgJob = ''; _asgTec = '';
+  _asgJob = ''; _asgTec = ''; _asgCatJob = ''; _asgActualizarObrasTipo();
   $('asgRaw').value='';
   $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
   ['asgTienda','asgDir','asgTel','asgKm','asgTr'].forEach(function(id){
@@ -10862,7 +10926,17 @@ function asgElegirAgenda(i){
   _asgSugs=[];
 }
 
-function setAsgJob(j, el) { _asgJob = j; document.querySelectorAll('#asgJobTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
+// En Mercadona, al elegir Obras se pide ya Climatizacion o Conductos (igual que en el parte): decide los materiales y los codigos del parte que salga de esta asignacion.
+var _asgCatJob='';
+function _asgActualizarObrasTipo(){
+  var t=$('asgObrasTipoTgl'); if(!t) return;
+  var si=!!(curCliente && curCliente.tipo==='mercadona' && _asgJob==='Obras');
+  t.style.display=si?'flex':'none';
+  if(si){ if(!_asgCatJob) _asgCatJob='Climatización'; } else _asgCatJob='';
+  t.querySelectorAll('button').forEach(function(b){ b.classList.toggle('active', si && b.textContent.trim()===_asgCatJob); });
+}
+function setAsgObrasTipo(tipo, el){ _asgCatJob=tipo; document.querySelectorAll('#asgObrasTipoTgl button').forEach(function(b){b.classList.remove('active');}); if(el) el.classList.add('active'); }
+function setAsgJob(j, el) { _asgJob = j; document.querySelectorAll('#asgJobTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); _asgActualizarObrasTipo(); }
 function setAsgTec(t, el) { _asgTec = t; document.querySelectorAll('#asgTecTgl button').forEach(function(b){b.classList.remove('active');}); el.classList.add('active'); }
 
 function _irAlCampo(id){
@@ -10895,6 +10969,7 @@ function guardarAsignacion() {
       pedido: pedido,
       centro: $('asgCentro').value.trim(),
       tienda: tienda, dir: dir, tel: tel, job: _asgJob,
+      catJob: (curCliente.tipo==='mercadona' && _asgJob==='Obras') ? (_asgCatJob||'Climatización') : null,
       km: $('asgKm').value.trim(), tr: $('asgTr').value.trim(),
       descripcion: $('asgDescripcion').value.trim(),
       tecnicoPrincipal: _asgTec,
@@ -10920,7 +10995,7 @@ function guardarAsignacion() {
       showMsg('asgMsg','✓ Incidencia asignada.'+(_irvGenerado?' N'+String.fromCharCode(186)+' '+pedido+'.':''),'success');
       _subirAgendaEntry(data.clienteId, data.centro, data.tienda, data.dir, data.tel, data.km, data.tr);
       $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
-      _asgJob=''; _asgTec='';
+      _asgJob=''; _asgTec=''; _asgCatJob=''; _asgActualizarObrasTipo();
       document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
       renderAsgLista();
       _asgCerrarFormulario('✓ Incidencia asignada.'+(_irvGenerado?' N'+String.fromCharCode(186)+' '+pedido+'.':''));
@@ -10930,7 +11005,7 @@ function guardarAsignacion() {
   // Reapertura desde Asignar: se actualiza la MISMA orden (conserva sus datos, fechas y partes) en vez de reescribirla encima.
   function _reabrir(c){
     var desc=String(c.datos.descripcion||'').trim(), nueva=$('asgDescripcion').value.trim();
-    var upd=Object.assign({ estado:'pendiente', vista:false, tecnicoPrincipal:_asgTec, job:_asgJob, descripcion: desc ? desc+'\n\nReapertura: '+nueva : nueva },
+    var upd=Object.assign({ estado:'pendiente', vista:false, tecnicoPrincipal:_asgTec, job:_asgJob, catJob:((curCliente&&curCliente.tipo==='mercadona'&&_asgJob==='Obras')?(_asgCatJob||'Climatización'):null), descripcion: desc ? desc+'\n\nReapertura: '+nueva : nueva },
       _marcaModificacion('Reabierta desde Asignar'));
     c.ref.update(upd).then(function(){
       showMsg('asgMsg','✓ Orden reabierta y asignada.','success');
@@ -10985,7 +11060,7 @@ function _asgCerrarFormulario(msg){
 }
 function _asgLimpiarFormulario(){
   $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
-  _asgJob=''; _asgTec='';
+  _asgJob=''; _asgTec=''; _asgCatJob=''; _asgActualizarObrasTipo();
   document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
 }
 
@@ -11040,7 +11115,7 @@ function _renderAsgTecGrupoBody(nom){
     html += '<div class="card" style="margin-bottom:8px;">'
       +'<div style="font-weight:700;font-size:.9rem;">'+d.tienda+'</div>'
       +(refs.length?'<div style="font-size:.78rem;color:var(--text2);">'+refs.join(' · ')+'</div>':'')
-      +'<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+d.job+' · '+estLabel+'</div>';
+      +'<div style="font-size:.78rem;color:var(--text2);margin-top:2px;">'+d.job+(d.catJob?' ('+d.catJob+')':'')+' · '+estLabel+'</div>';
     html += '<div style="margin-top:8px;"><label style="font-size:.75rem;color:var(--text2);font-weight:700;">Reasignar a:</label>'
       +'<select onchange="reasignarIncidencia(\''+d.id+'\',this.value)" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r-sm);border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;">'
       +'<option value="">-- mantener --</option>'
