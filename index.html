@@ -1301,7 +1301,7 @@ REGLAS DE MODIFICACIÓN
 */
 
 // Marca de versión — se actualiza en cada entrega. Sirve para que la app detecte sola cuando hay una versión nueva desplegada.
-var APP_BUILD_ID = 'build-2026-11-20j-minutos-de-15-en-15';
+var APP_BUILD_ID = 'build-2026-11-23b-cierre-de-asignar-y-busqueda';
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -7869,7 +7869,10 @@ function renderSearchResults(){
     }
     return '<div class="hist-item" data-enc="'+enc+'" data-idx="'+gi+'">'+
       '<div><div class="hi-title">'+dot+escHtml(g.tienda)+'</div>'+
-      '<div class="hi-sub">'+subTitle+' · '+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+badge+'</div>'+
+      // La orden y el tipo de trabajo en una línea y la cantidad de partes debajo, en la suya: en una sola línea, el plural («partes») se partía de su número al no caber.
+      '<div class="hi-sub">'+subTitle+'</div>'+
+      '<div class="hi-sub">'+g.partes.length+' parte'+(g.partes.length===1?'':'s')+'</div>'+
+      '<div style="margin-top:4px;">'+badge+'</div></div>'+
       '<div class="hi-date">'+fr+'</div></div>';
   }).join('');
   el.style.display='block';
@@ -10920,6 +10923,7 @@ function guardarAsignacion() {
       _asgJob=''; _asgTec='';
       document.querySelectorAll('#asgJobTgl button, #asgTecTgl button').forEach(function(b){b.classList.remove('active');});
       renderAsgLista();
+      _asgCerrarFormulario('✓ Incidencia asignada.'+(_irvGenerado?' N'+String.fromCharCode(186)+' '+pedido+'.':''));
     }).catch(function(){ showMsg('asgMsg','Error al guardar.','error'); });
   }
 
@@ -10932,6 +10936,7 @@ function guardarAsignacion() {
       showMsg('asgMsg','✓ Orden reabierta y asignada.','success');
       _asgLimpiarFormulario();
       renderAsgLista();
+      _asgCerrarFormulario('✓ Orden reabierta y asignada.');
     }).catch(function(){ showMsg('asgMsg','Error al guardar.','error'); });
   }
 
@@ -10968,6 +10973,15 @@ function respAsgExiste(reabrir){
   if (reabrir) { if (f) f(); return; }
   _asgLimpiarFormulario();
   showMsg('asgMsg','Asignación descartada. No se ha guardado nada.','success');
+}
+// Tras asignar, el formulario se cierra y se oculta (queda solo el boton "Crear asignacion") y se avisa con un mensaje; para otra asignacion se vuelve a abrir.
+function _asgCerrarFormulario(msg){
+  var c=$('cardCrearAsg'); if(c) c.style.display='none';
+  var b=document.querySelector('#w-asignar > button[onclick*="cardCrearAsg"]');
+  if(b){ b.style.background=''; b.style.borderColor=''; b.style.color=''; }
+  var m=$('asgMsg'); if(m) m.className='msg';
+  if(msg && typeof _toast==='function') _toast(msg);
+  window.scrollTo(0,0);
 }
 function _asgLimpiarFormulario(){
   $('asgPedido').value=''; $('asgCentro').value=''; $('asgTienda').value=''; $('asgDir').value=''; $('asgTel').value=''; $('asgKm').value=''; $('asgTr').value=''; $('asgDescripcion').value='';
